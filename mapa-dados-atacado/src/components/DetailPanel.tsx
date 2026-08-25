@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { GraphNodeData } from './graph-types'
 import { isDerivado, nodeKind } from './graph-types'
+import type { LineageEntry, LineageSource } from './lineage'
 import { DEBITO_LABEL, domainColor } from './palette'
 import Markdown from './Markdown'
 
@@ -17,6 +18,8 @@ interface DetailPanelProps {
   incoming: Connection[]
   /** Dados ligados a um nó derivado (sistema/origem); vazio para dados. */
   derivadoDados: GraphNodeData[]
+  /** Árvore de linhagem montante do dado (null para derivados/fantasmas). */
+  lineage: LineageEntry | null
   /** O nó já é o centro do modo foco (esconde o botão Focar). */
   isFocused: boolean
   resolveWikiLink(target: string): string | null
@@ -69,11 +72,72 @@ function ConnectionList({
   )
 }
 
+/** Linha de fonte/origem na árvore: clicável se real, inerte se placeholder. */
+function LineageSourceRow({
+  source,
+  papel,
+  onNavigate,
+}: {
+  source: LineageSource
+  papel: 'fonte' | 'origem'
+  onNavigate(id: string): void
+}) {
+  return (
+    <li className="lineage__row">
+      <span className="lineage__papel">{papel}</span>
+      {source.placeholder ? (
+        <span className="lineage__placeholder">{source.node.nome}</span>
+      ) : (
+        <button type="button" className="wikilink" onClick={() => onNavigate(source.node.id)}>
+          {source.node.nome}
+        </button>
+      )}
+    </li>
+  )
+}
+
+/** Ramo recursivo da linhagem: o dado, sua fonte/origem e seus insumos. */
+function LineageBranch({
+  entry,
+  isRoot = false,
+  onNavigate,
+}: {
+  entry: LineageEntry
+  isRoot?: boolean
+  onNavigate(id: string): void
+}) {
+  return (
+    <li className="lineage__row">
+      {isRoot ? (
+        <span className="lineage__self">{entry.data.nome}</span>
+      ) : (
+        <button type="button" className="wikilink" onClick={() => onNavigate(entry.data.id)}>
+          {entry.data.nome}
+        </button>
+      )}
+      {(entry.sistema || entry.origem || entry.insumos.length > 0) && (
+        <ul className="lineage__children">
+          {entry.sistema && (
+            <LineageSourceRow source={entry.sistema} papel="fonte" onNavigate={onNavigate} />
+          )}
+          {entry.origem && (
+            <LineageSourceRow source={entry.origem} papel="origem" onNavigate={onNavigate} />
+          )}
+          {entry.insumos.map((filho, i) => (
+            <LineageBranch key={`${filho.data.id}-${i}`} entry={filho} onNavigate={onNavigate} />
+          ))}
+        </ul>
+      )}
+    </li>
+  )
+}
+
 export default function DetailPanel({
   node,
   outgoing,
   incoming,
   derivadoDados,
+  lineage,
   isFocused,
   resolveWikiLink,
   onNavigate,
@@ -173,6 +237,15 @@ export default function DetailPanel({
             <Markdown text={node.corpo} resolveWikiLink={resolveWikiLink} onNavigate={onNavigate} />
           )}
         </>
+      )}
+
+      {lineage && (
+        <section className="connections lineage">
+          <h3>Linhagem</h3>
+          <ul className="lineage__tree">
+            <LineageBranch entry={lineage} isRoot onNavigate={onNavigate} />
+          </ul>
+        </section>
       )}
 
       <ConnectionList title="Consome →" items={outgoing} onNavigate={onNavigate} showLabel />

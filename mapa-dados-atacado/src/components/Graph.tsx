@@ -3,7 +3,7 @@ import ForceGraph2D from 'react-force-graph-2d'
 import type { Ref } from 'react'
 import type { GraphLinkData, GraphMethods, GraphNodeData, SimLink, SimNode } from './graph-types'
 import { linkEndId, nodeKind } from './graph-types'
-import { BACKGROUND, nodeColor } from './palette'
+import { BACKGROUND, PLACEHOLDER_FILL, PLACEHOLDER_STROKE, nodeColor } from './palette'
 
 export interface GraphHandle {
   /** Centraliza e dá zoom no nó (usado por painel, busca e ?no= da URL). */
@@ -19,6 +19,9 @@ interface GraphProps {
   selectedId: string | null
   /** Nó a centralizar quando a física estabilizar (seleção vinda da URL). */
   initialFocusId: string | null
+  /** Vista em níveis: todos os nós vêm com fx/fy — física desligada,
+   *  arestas levemente curvas e enquadramento a cada troca de dados. */
+  fixedLayout: boolean
   onNodeClick(id: string): void
   onNodeHover(id: string | null): void
   onBackgroundClick(): void
@@ -41,6 +44,7 @@ export default function Graph({
   hoverId,
   selectedId,
   initialFocusId,
+  fixedLayout,
   onNodeClick,
   onNodeHover,
   onBackgroundClick,
@@ -65,11 +69,18 @@ export default function Graph({
   useEffect(() => {
     if (dataRef.current === data) return
     dataRef.current = data
-    if (!settledRef.current) return
+    if (fixedLayout || !settledRef.current) return
     pendingFitRef.current = true
     const t = window.setTimeout(() => fitView(500), 350)
     return () => window.clearTimeout(t)
-  }, [data, fitView])
+  }, [data, fixedLayout, fitView])
+
+  // Layout fixo: não há física para estabilizar — enquadra logo após render.
+  useEffect(() => {
+    if (!fixedLayout) return
+    const t = window.setTimeout(() => fitView(400), 150)
+    return () => window.clearTimeout(t)
+  }, [fixedLayout, data, fitView])
 
   useEffect(() => {
     const onResize = () => setSize({ w: window.innerWidth, h: window.innerHeight })
@@ -94,7 +105,7 @@ export default function Graph({
     if (!settledRef.current) {
       settledRef.current = true
       if (initialFocusId) focusNode(initialFocusId)
-      else fgRef.current?.zoomToFit(500, 80)
+      else fitView(500)
       return
     }
     if (pendingFitRef.current) {
@@ -107,7 +118,8 @@ export default function Graph({
     (node: SimNode, ctx: CanvasRenderingContext2D, scale: number) => {
       const x = node.x ?? 0
       const y = node.y ?? 0
-      const r = radiusOf(degreeById.get(node.id) ?? 0)
+      // Placeholders não existem no grafo global (sem grau): raio mínimo legível.
+      const r = radiusOf(degreeById.get(node.id) ?? (node.placeholder ? 2 : 0))
       const dimmed = dimmedIds.has(node.id)
       const kind = nodeKind(node)
       ctx.globalAlpha = dimmed ? DIM_ALPHA : 1
@@ -129,9 +141,20 @@ export default function Graph({
         ctx.arc(x, y, r, 0, 2 * Math.PI)
       }
       if (kind !== 'dado') {
-        // Derivados: preenchimento sólido, nunca borda de incompletude.
-        ctx.fillStyle = nodeColor(node)
-        ctx.fill()
+        if (node.placeholder) {
+          // Fonte/origem desconhecida (vista de linhagem): cinza tracejado.
+          ctx.fillStyle = PLACEHOLDER_FILL
+          ctx.fill()
+          ctx.setLineDash([3 / scale, 2 / scale])
+          ctx.strokeStyle = PLACEHOLDER_STROKE
+          ctx.lineWidth = 1.4 / scale
+          ctx.stroke()
+          ctx.setLineDash([])
+        } else {
+          // Derivados: preenchimento sólido, nunca borda de incompletude.
+          ctx.fillStyle = nodeColor(node)
+          ctx.fill()
+        }
       } else if (node.fantasma) {
         // Fantasma: sem preenchimento sólido, contorno cinza tracejado.
         ctx.fillStyle = 'rgba(90, 90, 90, 0.25)'
@@ -209,8 +232,9 @@ export default function Graph({
       width={size.w}
       height={size.h}
       backgroundColor={BACKGROUND}
-      cooldownTicks={150}
+      cooldownTicks={fixedLayout ? 0 : 150}
       onEngineStop={handleEngineStop}
+      linkCurvature={fixedLayout ? 0.18 : 0}
       autoPauseRedraw={false}
       nodeLabel={() => ''}
       nodeCanvasObject={drawNode}

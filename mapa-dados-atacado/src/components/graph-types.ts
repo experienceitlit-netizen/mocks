@@ -28,6 +28,8 @@ export interface GraphNodeData {
   fantasma?: boolean
   /** Nó derivado pelo build (camada de linhagem): sistema ou origem. */
   derivado?: boolean
+  /** Nó sintetizado na UI: fonte/origem desconhecida na vista de linhagem. */
+  placeholder?: boolean
   /** Corpo markdown do .md (pode não existir no JSON gerado). */
   corpo?: string
 }

@@ -15,6 +15,10 @@ export const COLOR_SISTEMA = '#5C7A99'
 export const COLOR_SISTEMA_LEGADO = COLOR_LEGADO
 export const COLOR_ORIGEM = '#41566B'
 
+/* Placeholders da vista de linhagem (fonte/origem desconhecida). */
+export const PLACEHOLDER_FILL = 'rgba(90, 90, 90, 0.25)'
+export const PLACEHOLDER_STROKE = '#8A8A8A'
+
 const LEGADO_RE = /legado|on-premise|planilha|excel/i
 
 /** Cor do nó por precedência: débito sim > avaliar > sistema legado > curado.

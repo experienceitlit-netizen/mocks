@@ -142,6 +142,33 @@
   cursor: default;
 }
 
+.focus-bar__vista {
+  display: flex;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.focus-bar__vista button {
+  border: none;
+  background: transparent;
+  color: #9a9a9a;
+  font-size: 0.72rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.focus-bar__vista button:hover {
+  color: #d0d0d0;
+}
+
+.focus-bar__vista button.focus-bar__vista--active {
+  background: rgba(127, 180, 232, 0.15);
+  color: #7fb4e8;
+}
+
 .focus-bar__depth {
   display: flex;
   align-items: center;
@@ -485,6 +512,52 @@
 
 .connections .wikilink {
   font-size: 0.85rem;
+}
+
+/* árvore de linhagem no painel (origem → fonte → produto, recursiva) */
+
+.lineage__tree,
+.lineage__children {
+  list-style: none;
+}
+
+.lineage__children {
+  margin: 0.15rem 0 0.35rem 0.3rem;
+  padding-left: 0.7rem;
+  border-left: 1px solid #3a3a3a;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.lineage__row {
+  font-size: 0.82rem;
+  color: #d0d0d0;
+}
+
+.lineage__row .wikilink {
+  font-size: 0.82rem;
+}
+
+.lineage__papel {
+  display: inline-block;
+  min-width: 2.9rem;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8a8a8a;
+  margin-right: 0.35rem;
+}
+
+.lineage__placeholder {
+  color: #9a9a9a;
+  font-style: italic;
+  border-bottom: 1px dashed #6a6a6a;
+}
+
+.lineage__self {
+  color: #f0f0f0;
+  font-weight: 600;
 }
 
 .edge-label {

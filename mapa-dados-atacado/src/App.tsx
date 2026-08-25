@@ -7,10 +7,12 @@ import type { Connection } from './components/DetailPanel'
 import SearchBox from './components/SearchBox'
 import Filters from './components/Filters'
 import FocusBar from './components/FocusBar'
+import type { Vista } from './components/FocusBar'
 import Legend from './components/Legend'
 import type { Counts } from './components/Filters'
 import type { Debito, GraphJson, GraphNodeData, SimLink, SimNode } from './components/graph-types'
 import { isDerivado, linkEndId } from './components/graph-types'
+import { buildLineage, buildLineageTree } from './components/lineage'
 import './App.css'
 
 /** Busca insensível a caixa e acentos. */
@@ -33,6 +35,11 @@ function readUrlFocus(): string | null {
 function readUrlDepth(): number {
   const raw = Number(new URLSearchParams(window.location.search).get('prof'))
   return Number.isInteger(raw) && raw >= 1 && raw <= 3 ? raw : 1
+}
+
+/** ?vista=niveis|forca; ausente (links antigos com ?foco=) = níveis. */
+function readUrlVista(): Vista {
+  return new URLSearchParams(window.location.search).get('vista') === 'forca' ? 'forca' : 'niveis'
 }
 
 function toggled<T>(set: ReadonlySet<T>, value: T): Set<T> {
@@ -140,6 +147,7 @@ function App() {
     return foco ? [foco] : []
   })
   const [depth, setDepth] = useState<number>(readUrlDepth)
+  const [vista, setVista] = useState<Vista>(readUrlVista)
   const [layersOn, setLayersOn] = useState<boolean>(() => readUrlFocus() !== null)
   // Estado da camada antes de entrar em foco, restaurado ao sair.
   const layersBeforeFocusRef = useRef(false)
@@ -208,6 +216,16 @@ function App() {
     [simData, visibleIds],
   )
 
+  // Vista em níveis: linhagem montante completa do nó focado, em colunas.
+  // null quando o foco é um derivado (sem linhagem própria) — cai na força.
+  const lineage = useMemo(
+    () => (focusId && vista === 'niveis' ? buildLineage(focusId, nodes, links) : null),
+    [focusId, vista, nodes, links],
+  )
+
+  const graphData = lineage ? lineage.graph : visibleData
+  const shownIds = lineage ? lineage.ids : visibleIds
+
   const searchMatches = useMemo(() => {
     if (!normQuery) return []
     const starts: GraphNodeData[] = []
@@ -228,17 +246,21 @@ function App() {
     selDominios.size > 0 || selDebitos.size > 0 || somenteSemOwner || normQuery.length > 0
 
   const dimmedIds = useMemo(() => {
-    // Hover tem prioridade: acende o nó + vizinhos, esmaece todo o resto.
+    // Hover tem prioridade: acende o nó + vizinhos (na vista em níveis, a
+    // cadeia inteira de ancestrais/descendentes) e esmaece todo o resto.
     if (hoverId) {
-      const lit = new Set([hoverId, ...(neighborsById.get(hoverId) ?? [])])
-      return new Set([...visibleIds].filter((id) => !lit.has(id)))
+      const lit = lineage
+        ? lineage.chainOf(hoverId)
+        : new Set([hoverId, ...(neighborsById.get(hoverId) ?? [])])
+      return new Set([...shownIds].filter((id) => !lit.has(id)))
     }
     if (!hasActiveFilter) return new Set<string>()
     const matchIds = new Set(searchMatches.map((n) => n.id))
     return new Set(
-      [...visibleIds].filter((id) => {
+      [...shownIds].filter((id) => {
         const n = nodesById.get(id)
-        if (!n) return false
+        // Placeholder da linhagem: só reage à busca (nunca casa com ela).
+        if (!n) return normQuery.length > 0
         if (isDerivado(n)) {
           // Derivados só reagem à busca; os demais filtros são de governança
           // e valem apenas para dados.
@@ -252,10 +274,11 @@ function App() {
       }),
     )
   }, [
-    visibleIds,
+    shownIds,
     nodesById,
     hoverId,
     neighborsById,
+    lineage,
     hasActiveFilter,
     normQuery,
     searchMatches,
@@ -274,6 +297,7 @@ function App() {
     (id: string) => {
       layersBeforeFocusRef.current = layersOn
       setLayersOn(true)
+      setVista('niveis') // vista padrão ao entrar em foco
       setFocusPath([id])
     },
     [layersOn],
@@ -300,6 +324,8 @@ function App() {
   const lastClickRef = useRef({ id: '', t: 0 })
   const handleNodeClick = useCallback(
     (id: string) => {
+      // Placeholders da linhagem são só visuais: não selecionam nem focam.
+      if (lineage?.placeholderIds.has(id)) return
       const now = performance.now()
       const isDouble = lastClickRef.current.id === id && now - lastClickRef.current.t < DBLCLICK_MS
       lastClickRef.current = { id, t: now }
@@ -312,23 +338,27 @@ function App() {
         enterFocus(id)
       }
     },
-    [select, focusId, pushFocus, enterFocus],
+    [select, focusId, pushFocus, enterFocus, lineage],
   )
 
-  // URL reflete seleção (?no=) e foco (?foco=&prof=) sem poluir o histórico.
+  // URL reflete seleção (?no=) e foco (?foco=&vista=, com &prof= só na vista
+  // de força) sem poluir o histórico.
   useEffect(() => {
     const url = new URL(window.location.href)
     if (selectedId) url.searchParams.set('no', selectedId)
     else url.searchParams.delete('no')
     if (focusId) {
       url.searchParams.set('foco', focusId)
-      url.searchParams.set('prof', String(depth))
+      url.searchParams.set('vista', vista)
+      if (vista === 'forca') url.searchParams.set('prof', String(depth))
+      else url.searchParams.delete('prof')
     } else {
       url.searchParams.delete('foco')
       url.searchParams.delete('prof')
+      url.searchParams.delete('vista')
     }
     window.history.replaceState(null, '', url)
-  }, [selectedId, focusId, depth])
+  }, [selectedId, focusId, depth, vista])
 
   // Esc em dois estágios: fecha o painel primeiro, depois sai do foco.
   // Handlers globais leem o estado corrente via ref para registrar uma só vez.
@@ -345,6 +375,7 @@ function App() {
       setSelectedId(id)
       setFocusPath(foco ? [foco] : [])
       setDepth(readUrlDepth())
+      setVista(readUrlVista())
       if (foco) setLayersOn(true)
       if (id) graphRef.current?.focusNode(id)
     }
@@ -360,6 +391,15 @@ function App() {
   }, [])
 
   const selectedNode = selectedId ? (nodesById.get(selectedId) ?? null) : null
+
+  // Árvore de linhagem do painel (só dados reais têm rota própria).
+  const selectedLineage = useMemo(
+    () =>
+      selectedNode && !isDerivado(selectedNode) && !selectedNode.fantasma
+        ? buildLineageTree(selectedNode.id, nodes, links)
+        : null,
+    [selectedNode, nodes, links],
+  )
 
   const { outgoing, incoming } = useMemo(() => {
     const out: Connection[] = []
@@ -414,16 +454,22 @@ function App() {
     [focusPath, nodesById],
   )
 
+  // Foco num derivado (sistema/origem) não tem linhagem própria: sem switch,
+  // sempre na vista de força.
+  const focusedNode = focusId ? (nodesById.get(focusId) ?? null) : null
+  const canNiveis = focusedNode !== null && !isDerivado(focusedNode)
+
   return (
     <div className="app">
       <Graph
         ref={graphRef}
-        data={visibleData}
+        data={graphData}
         degreeById={degreeById}
         dimmedIds={dimmedIds}
         hoverId={hoverId}
         selectedId={selectedId}
         initialFocusId={initialFocusId}
+        fixedLayout={lineage !== null}
         onNodeClick={handleNodeClick}
         onNodeHover={setHoverId}
         onBackgroundClick={() => setSelectedId(null)}
@@ -449,8 +495,11 @@ function App() {
         <FocusBar
           path={breadcrumb}
           depth={depth}
+          vista={lineage ? 'niveis' : 'forca'}
+          canNiveis={canNiveis}
           onCrumbClick={(i) => setFocusPath((path) => path.slice(0, i + 1))}
           onDepthChange={setDepth}
+          onVistaChange={setVista}
           onExit={exitFocus}
         />
       )}
@@ -483,6 +532,7 @@ function App() {
           outgoing={outgoing}
           incoming={incoming}
           derivadoDados={derivadoDados}
+          lineage={selectedLineage}
           isFocused={selectedId === focusId}
           resolveWikiLink={resolveWikiLink}
           onNavigate={(id) => select(id, true)}

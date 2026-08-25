@@ -102,7 +102,8 @@ src/
     Graph.tsx               # canvas do grafo (react-force-graph-2d)
     DetailPanel.tsx         # drawer de detalhe do nó selecionado
     Filters.tsx             # domínio, débito, "somente sem owner", camada de linhagem, contadores
-    FocusBar.tsx            # barra do modo foco: breadcrumb, profundidade, sair
+    FocusBar.tsx            # barra do modo foco: breadcrumb, vista (níveis/força), sair
+    lineage.ts              # vista de linhagem em níveis: cadeia montante + layout em colunas
     SearchBox.tsx           # busca por nome/descrição
     Legend.tsx              # legenda fixa de cores/bordas
     Markdown.tsx            # renderizador mínimo do corpo dos .md
@@ -114,15 +115,24 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
 
 ## Navegação
 
-- **Clique** num nó abre o painel de detalhe; `Esc` ou clique fora fecha.
+- **Clique** num nó abre o painel de detalhe; `Esc` ou clique fora fecha. Para um dado,
+  o painel traz a seção **"Linhagem"**: a árvore indentada de tudo de que ele depende
+  (origem / fonte / produto por nível, recursiva), com itens clicáveis.
 - **Duplo clique** num nó (ou o botão **"⌖ Focar neste nó"** do painel) entra no **modo
-  foco**: só o nó e sua vizinhança ficam visíveis, com slider de **profundidade** (1–3),
-  **breadcrumb** do caminho navegado e botão "Ver mapa completo" para sair (`Esc` sai em
-  dois estágios: primeiro fecha o painel, depois o foco).
+  foco**, com **breadcrumb** do caminho navegado, botão "Ver mapa completo" para sair
+  (`Esc` sai em dois estágios: primeiro fecha o painel, depois o foco) e clique em outro
+  nó para re-focar nele. O foco tem duas vistas, no switch da barra:
+  - **Níveis** (padrão): a linhagem montante **completa** do dado focado, em colunas da
+    esquerda para a direita — origem → fonte → produto, com os níveis de produto se
+    repetindo até o nó focado na extrema direita. Fonte ou origem ainda desconhecida
+    ("a confirmar", "a identificar"…) aparece como **placeholder cinza tracejado**, para
+    a cadeia sempre mostrar o nível. Passar o mouse destaca a cadeia inteira do nó.
+  - **Força**: a vizinhança em grafo de força, com slider de **profundidade** (1–3).
 - O toggle **"Fontes e origens"** liga a camada de linhagem: além dos dados (**círculos**),
   aparecem os **sistemas** (quadrados) e as **origens** (losangos) derivados do
   frontmatter. Fica desligado no mapa global e liga automaticamente ao entrar em foco.
   Contadores e filtros de governança continuam contando só os dados.
 - A URL reflete o estado e pode ser compartilhada: `?no=rar-12m` seleciona um nó,
-  `?foco=rar-12m&prof=2` abre direto o modo foco com a profundidade escolhida.
+  `?foco=rar-12m` abre o foco na vista de níveis e `?foco=rar-12m&vista=forca&prof=2`
+  na vista de força com a profundidade escolhida.
 - O toggle **"somente sem owner"** nos filtros acende os nós sem responsável definido.
