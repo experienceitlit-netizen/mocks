@@ -9,6 +9,7 @@ import Filters from './components/Filters'
 import FocusBar from './components/FocusBar'
 import type { Vista } from './components/FocusBar'
 import Legend from './components/Legend'
+import TableView from './components/TableView'
 import type { Counts } from './components/Filters'
 import type { Debito, GraphJson, GraphNodeData, SimLink, SimNode } from './components/graph-types'
 import { isDerivado, linkEndId } from './components/graph-types'
@@ -40,6 +41,13 @@ function readUrlDepth(): number {
 /** ?vista=niveis|forca; ausente (links antigos com ?foco=) = níveis. */
 function readUrlVista(): Vista {
   return new URLSearchParams(window.location.search).get('vista') === 'forca' ? 'forca' : 'niveis'
+}
+
+type Aba = 'mapa' | 'tabela'
+
+/** ?aba=tabela; ausente ou qualquer outro valor = mapa. */
+function readUrlAba(): Aba {
+  return new URLSearchParams(window.location.search).get('aba') === 'tabela' ? 'tabela' : 'mapa'
 }
 
 function toggled<T>(set: ReadonlySet<T>, value: T): Set<T> {
@@ -133,6 +141,9 @@ function App() {
   )
 
   // --- estado de UI ---
+  // Aba ativa: o mapa (grafo) continua montado sob a tabela, preservando
+  // pan/zoom, foco e filtros ao alternar.
+  const [aba, setAba] = useState<Aba>(readUrlAba)
   const [selectedId, setSelectedId] = useState<string | null>(readUrlSelection)
   const [hoverId, setHoverId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -292,6 +303,16 @@ function App() {
     if (id && focus) graphRef.current?.focusNode(id)
   }, [])
 
+  /** Clique no nome de um dado na tabela: volta ao mapa já com o nó
+   *  selecionado e centralizado (mesmo caminho do ?no=). */
+  const openFromTable = useCallback(
+    (id: string) => {
+      setAba('mapa')
+      select(id, true)
+    },
+    [select],
+  )
+
   // --- modo foco ---
   const enterFocus = useCallback(
     (id: string) => {
@@ -341,10 +362,12 @@ function App() {
     [select, focusId, pushFocus, enterFocus, lineage],
   )
 
-  // URL reflete seleção (?no=) e foco (?foco=&vista=, com &prof= só na vista
-  // de força) sem poluir o histórico.
+  // URL reflete aba (?aba=tabela), seleção (?no=) e foco (?foco=&vista=, com
+  // &prof= só na vista de força) sem poluir o histórico.
   useEffect(() => {
     const url = new URL(window.location.href)
+    if (aba === 'tabela') url.searchParams.set('aba', 'tabela')
+    else url.searchParams.delete('aba')
     if (selectedId) url.searchParams.set('no', selectedId)
     else url.searchParams.delete('no')
     if (focusId) {
@@ -358,13 +381,15 @@ function App() {
       url.searchParams.delete('vista')
     }
     window.history.replaceState(null, '', url)
-  }, [selectedId, focusId, depth, vista])
+  }, [aba, selectedId, focusId, depth, vista])
 
-  // Esc em dois estágios: fecha o painel primeiro, depois sai do foco.
+  // Esc em dois estágios: fecha o painel primeiro, depois sai do foco. Na aba
+  // Tabela, volta ao mapa (o estado do mapa é invisível ali — não mexe nele).
   // Handlers globais leem o estado corrente via ref para registrar uma só vez.
   const escRef = useRef(() => {})
   escRef.current = () => {
-    if (selectedId) setSelectedId(null)
+    if (aba === 'tabela') setAba('mapa')
+    else if (selectedId) setSelectedId(null)
     else if (focusId) exitFocus()
   }
 
@@ -372,6 +397,7 @@ function App() {
     const onPopState = () => {
       const id = readUrlSelection()
       const foco = readUrlFocus()
+      setAba(readUrlAba())
       setSelectedId(id)
       setFocusPath(foco ? [foco] : [])
       setDepth(readUrlDepth())
@@ -475,23 +501,47 @@ function App() {
         onBackgroundClick={() => setSelectedId(null)}
       />
 
+      {aba === 'tabela' && (
+        <div className="table-layer">
+          <TableView nodes={nodes} links={links} onSelectNode={openFromTable} />
+        </div>
+      )}
+
       <header className="topbar">
         <div className="topbar__title">
           <h1>Mapa de Dados do Atacado</h1>
           <span>quem produz e quem consome cada dado</span>
         </div>
-        <SearchBox
-          query={query}
-          matchCount={searchMatches.length}
-          onQueryChange={setQuery}
-          onSubmit={() => {
-            const first = searchMatches[0]
-            if (first) select(first.id, true)
-          }}
-        />
+        <nav className="topbar__tabs" aria-label="Visão">
+          <button
+            type="button"
+            className={aba === 'mapa' ? 'topbar__tab topbar__tab--active' : 'topbar__tab'}
+            onClick={() => setAba('mapa')}
+          >
+            Mapa
+          </button>
+          <button
+            type="button"
+            className={aba === 'tabela' ? 'topbar__tab topbar__tab--active' : 'topbar__tab'}
+            onClick={() => setAba('tabela')}
+          >
+            Tabela
+          </button>
+        </nav>
+        {aba === 'mapa' && (
+          <SearchBox
+            query={query}
+            matchCount={searchMatches.length}
+            onQueryChange={setQuery}
+            onSubmit={() => {
+              const first = searchMatches[0]
+              if (first) select(first.id, true)
+            }}
+          />
+        )}
       </header>
 
-      {focusId && (
+      {aba === 'mapa' && focusId && (
         <FocusBar
           path={breadcrumb}
           depth={depth}
@@ -504,29 +554,31 @@ function App() {
         />
       )}
 
-      <Filters
-        dominios={dominios}
-        selectedDominios={selDominios}
-        selectedDebitos={selDebitos}
-        somenteSemOwner={somenteSemOwner}
-        layersOn={layersOn}
-        counts={counts}
-        hasActiveFilter={hasActiveFilter}
-        onToggleDominio={(d) => setSelDominios((prev) => toggled(prev, d))}
-        onToggleDebito={(d) => setSelDebitos((prev) => toggled(prev, d))}
-        onToggleSemOwner={() => setSomenteSemOwner((v) => !v)}
-        onToggleLayers={() => setLayersOn((v) => !v)}
-        onClear={() => {
-          setQuery('')
-          setSelDominios(new Set())
-          setSelDebitos(new Set())
-          setSomenteSemOwner(false)
-        }}
-      />
+      {aba === 'mapa' && (
+        <Filters
+          dominios={dominios}
+          selectedDominios={selDominios}
+          selectedDebitos={selDebitos}
+          somenteSemOwner={somenteSemOwner}
+          layersOn={layersOn}
+          counts={counts}
+          hasActiveFilter={hasActiveFilter}
+          onToggleDominio={(d) => setSelDominios((prev) => toggled(prev, d))}
+          onToggleDebito={(d) => setSelDebitos((prev) => toggled(prev, d))}
+          onToggleSemOwner={() => setSomenteSemOwner((v) => !v)}
+          onToggleLayers={() => setLayersOn((v) => !v)}
+          onClear={() => {
+            setQuery('')
+            setSelDominios(new Set())
+            setSelDebitos(new Set())
+            setSomenteSemOwner(false)
+          }}
+        />
+      )}
 
-      <Legend layersVisible={layersOn} />
+      {aba === 'mapa' && <Legend layersVisible={layersOn} />}
 
-      {selectedNode && (
+      {aba === 'mapa' && selectedNode && (
         <DetailPanel
           node={selectedNode}
           outgoing={outgoing}

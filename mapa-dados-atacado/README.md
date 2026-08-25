@@ -105,11 +105,13 @@ src/
     FocusBar.tsx            # barra do modo foco: breadcrumb, vista (níveis/força), sair
     lineage.ts              # vista de linhagem em níveis: cadeia montante + layout em colunas
     SearchBox.tsx           # busca por nome/descrição
+    TableView.tsx           # visão de tabela dos dados (aba "Tabela")
+    table-utils.ts          # helpers puros da tabela: filtro, ordenação, agrupamento
     Legend.tsx              # legenda fixa de cores/bordas
     Markdown.tsx            # renderizador mínimo do corpo dos .md
     palette.ts              # fonte única das cores
     graph-types.ts          # tipos do schema + wrapper tipado da lib de grafo
-  App.tsx                   # estado da UI (seleção, hover, filtros, foco, URL ?no= e ?foco=)
+  App.tsx                   # estado da UI (aba, seleção, hover, filtros, foco, URL ?no= e ?foco=)
 FUTURO.md                   # itens fora do MVP (Fase 6)
 ```
 
@@ -132,7 +134,13 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
   aparecem os **sistemas** (quadrados) e as **origens** (losangos) derivados do
   frontmatter. Fica desligado no mapa global e liga automaticamente ao entrar em foco.
   Contadores e filtros de governança continuam contando só os dados.
+- O seletor **Mapa | Tabela** no topo alterna entre o grafo e a **visão de tabela**: as
+  mesmas colunas da tabela executiva que originou o projeto (domínio, origem, fonte,
+  produto, descrição, centro de custo, owner, débito, status), agrupadas por domínio, com
+  filtro rápido e ordenação próprios. Clicar no nome de um dado volta ao mapa com o nó
+  selecionado e centralizado; o estado do mapa (foco, filtros, zoom) sobrevive à ida e
+  volta. `Esc` na tabela retorna ao mapa.
 - A URL reflete o estado e pode ser compartilhada: `?no=rar-12m` seleciona um nó,
-  `?foco=rar-12m` abre o foco na vista de níveis e `?foco=rar-12m&vista=forca&prof=2`
-  na vista de força com a profundidade escolhida.
+  `?foco=rar-12m` abre o foco na vista de níveis, `?foco=rar-12m&vista=forca&prof=2`
+  na vista de força com a profundidade escolhida e `?aba=tabela` abre direto na tabela.
 - O toggle **"somente sem owner"** nos filtros acende os nós sem responsável definido.

@@ -1,0 +1,314 @@
+/* Visão de tabela — dark coerente com o app (#1E1E1E, cinzas, chips).
+   A tabela rola horizontal e verticalmente dentro do próprio container;
+   o cabeçalho fica fixo via position: sticky. */
+
+.table-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: #1e1e1e;
+  color: #d0d0d0;
+  font-size: 0.82rem;
+}
+
+/* ---------- toolbar (filtro rápido) ---------- */
+
+.table-view__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  flex: 0 0 auto;
+}
+
+.table-view__filter {
+  width: 24rem;
+  max-width: 60vw;
+  padding: 0.45rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #3a3a3a;
+  background: #262626;
+  color: #e0e0e0;
+  font-size: 0.82rem;
+}
+
+.table-view__filter::placeholder {
+  color: #7a7a7a;
+}
+
+.table-view__filter:focus {
+  outline: none;
+  border-color: #5c7a99;
+}
+
+.table-view__clear {
+  background: none;
+  border: none;
+  color: #8a8a8a;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.25rem 0.4rem;
+}
+
+.table-view__clear:hover {
+  color: #d0d0d0;
+  text-decoration: underline;
+}
+
+/* ---------- container rolável ---------- */
+
+.table-view__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid #2e2e2e;
+  border-bottom: 1px solid #2e2e2e;
+}
+
+.table-view__table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 72rem; /* força o scroll horizontal em telas estreitas */
+}
+
+/* ---------- cabeçalho ---------- */
+
+.table-view__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #262626;
+  color: #b8b8b8;
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: left;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid #3a3a3a;
+  white-space: nowrap;
+}
+
+.table-view__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+.table-view__sort:hover {
+  color: #f0f0f0;
+}
+
+.table-view__sort--active {
+  color: #f0f0f0;
+}
+
+.table-view__sort-arrow {
+  font-size: 0.65rem;
+  opacity: 0.55;
+}
+
+.table-view__sort--active .table-view__sort-arrow {
+  opacity: 1;
+}
+
+/* ---------- corpo ---------- */
+
+.table-view__table tbody td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #2a2a2a;
+  vertical-align: top;
+  line-height: 1.35;
+}
+
+/* zebra sutil */
+.table-view__table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.table-view__table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+/* separador mais forte no início de cada grupo de domínio */
+.table-view__row--group-start td {
+  border-top: 1px solid #3a3a3a;
+}
+
+/* ---------- células ---------- */
+
+.table-view__cell--dominio {
+  white-space: nowrap;
+}
+
+.table-view__domain-chip {
+  display: inline-block;
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* repetição discreta: só um traço na cor do domínio */
+.table-view__domain-tick {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.18rem;
+  border-radius: 2px;
+  margin-left: 0.55rem;
+  opacity: 0.55;
+}
+
+.table-view__cell--nome {
+  white-space: nowrap;
+}
+
+.table-view__name,
+.table-view__name-link {
+  font-weight: 650;
+  color: #f0f0f0;
+}
+
+.table-view__name-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  text-align: left;
+}
+
+.table-view__name-link:hover {
+  color: #7fb4e8;
+  text-decoration: underline;
+}
+
+.table-view__kind {
+  margin-left: 0.45rem;
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid #4a4a4a;
+  font-size: 0.62rem;
+  letter-spacing: 0.03em;
+  color: #a0a0a0;
+  vertical-align: 1px;
+}
+
+.table-view__kind--produto {
+  border-color: #5c7a99;
+  color: #9dbbd8;
+}
+
+.table-view__cell--descricao {
+  min-width: 16rem;
+  max-width: 26rem;
+  color: #b8b8b8;
+}
+
+.table-view__cell--origem,
+.table-view__cell--sistema {
+  min-width: 10rem;
+  color: #c8c8c8;
+}
+
+.table-view__cell--cc,
+.table-view__cell--owner {
+  white-space: nowrap;
+}
+
+/* ---------- estados de valor (mesmo padrão do DetailPanel) ---------- */
+
+.table-view__missing {
+  color: #b8860b;
+  font-style: italic;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.table-view__pending {
+  color: #8a8a8a;
+  font-style: italic;
+}
+
+/* ---------- chips de débito (cores do App.css) ---------- */
+
+.table-view__chip {
+  display: inline-block;
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.table-view__chip--debito-sim {
+  border-color: #cc092f;
+  color: #ff5a75;
+}
+
+.table-view__chip--debito-nao {
+  border-color: #3a7d44;
+  color: #6fbf7d;
+}
+
+.table-view__chip--debito-avaliar {
+  border-color: #8a8a8a;
+  color: #b0b0b0;
+}
+
+/* ---------- status ---------- */
+
+.table-view__status {
+  white-space: nowrap;
+}
+
+.table-view__status::before {
+  content: '';
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  margin-right: 0.35rem;
+  background: #8a8a8a;
+}
+
+.table-view__status--producao::before {
+  background: #3a7d44;
+}
+
+.table-view__status--transicao::before {
+  background: #b8860b;
+}
+
+.table-view__status--investigacao::before {
+  background: #8a8a8a;
+}
+
+/* ---------- vazio e rodapé ---------- */
+
+.table-view__empty {
+  text-align: center;
+  color: #8a8a8a;
+  font-style: italic;
+  padding: 1.5rem 0;
+}
+
+.table-view__footer {
+  flex: 0 0 auto;
+  padding: 0.55rem 1rem;
+  font-size: 0.72rem;
+  color: #8a8a8a;
+}
