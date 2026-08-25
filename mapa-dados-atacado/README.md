@@ -57,6 +57,18 @@ npm run preview  # serve o dist/ localmente
 
 O `dist/` é estático puro: pode ser aberto em qualquer hosting interno de arquivos.
 
+## Distribuição
+
+Dois pacotes ficam em `../entregas/` (fora do git):
+
+- **App pronto para rodar** (`mapa-dados-atacado-app.zip`): um único HTML
+  autocontido que abre por duplo clique, sem Node nem servidor. Regenerar:
+  `npm run build:standalone` gera `dist-standalone/index.html`; renomeie para
+  `Mapa de Dados do Atacado.html` e zipe junto com um `LEIA-ME.txt`.
+- **Fonte** (`mapa-dados-atacado-fonte.zip`): snapshot limpo do repositório.
+  Regenerar na raiz do repo: `git archive --format=zip -o entregas/mapa-dados-atacado-fonte.zip HEAD`
+  e acrescente um `COMO-RODAR.txt` (Node 20+, `npm install && npm run dev`).
+
 ## Como adicionar um dado novo (menos de 5 minutos)
 
 1. Copie o template para um novo arquivo com o slug do dado:
