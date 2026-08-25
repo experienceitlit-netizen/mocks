@@ -23,11 +23,12 @@ export interface GraphNode {
   corpo?: string
 }
 
-/** Nó materializado a partir de `sistema`/`origem` do frontmatter dos dados. */
+/** Nó materializado pelo build: `sistema`/`origem` do frontmatter dos dados
+ *  ou o domínio dos produtos finais agregados pela raiz. */
 export interface DerivedNode {
   id: string
   nome: string
-  tipo: 'sistema' | 'origem'
+  tipo: 'sistema' | 'origem' | 'dominio'
   derivado: true
   incompleto: false
   fantasma?: undefined
@@ -251,6 +252,56 @@ export function derivarSistemasOrigens(dados: GraphNode[]): { nodes: DerivedNode
   return { nodes: [...sistemas.values(), ...origens.values()], links }
 }
 
+/** O frontmatter guarda domínios sem acento; o nó derivado exibe com. */
+const DOMINIO_DISPLAY: Record<string, string> = {
+  Regulatorio: 'Regulatório',
+}
+
+/**
+ * Insere o nível de domínio entre a raiz e os produtos finais: cada aresta
+ * "agrega" raiz→produto vira raiz→dom-<slug do domínio> e dom-<slug>→produto
+ * (ambas "agrega", deduplicadas). As demais arestas passam intactas.
+ * Devolve os nós de domínio derivados e a lista de arestas já reescrita.
+ */
+export function derivarDominios(
+  dados: GraphNode[],
+  links: GraphLink[],
+): { nodes: DerivedNode[]; links: GraphLink[] } {
+  const porId = new Map(dados.map((n) => [n.id, n]))
+  const dominios = new Map<string, DerivedNode>()
+  const saida: GraphLink[] = []
+  const arestasVistas = new Set<string>()
+
+  const addAgrega = (source: string, target: string): void => {
+    const chave = `${source} ${target}`
+    if (arestasVistas.has(chave)) return
+    arestasVistas.add(chave)
+    saida.push({ source, target, label: 'agrega' })
+  }
+
+  for (const l of links) {
+    if (l.label !== 'agrega') {
+      saida.push(l)
+      continue
+    }
+    const dominio = porId.get(l.target)?.dominio ?? 'A definir'
+    const id = `dom-${slugify(dominio)}`
+    if (!dominios.has(id)) {
+      dominios.set(id, {
+        id,
+        nome: DOMINIO_DISPLAY[dominio] ?? dominio,
+        tipo: 'dominio',
+        derivado: true,
+        incompleto: false,
+      })
+    }
+    addAgrega(l.source, id)
+    addAgrega(id, l.target)
+  }
+
+  return { nodes: [...dominios.values()], links: saida }
+}
+
 function nodeFantasma(nomeAlvo: string): GraphNode {
   return {
     id: slugify(nomeAlvo) || nomeAlvo.toLowerCase(),
@@ -321,18 +372,24 @@ export function buildGraph(files: VaultFile[]): BuildResult {
     }
   }
 
+  const dominios = derivarDominios([...nodes, ...fantasmas.values()], links)
   const derivados = derivarSistemasOrigens(nodes)
-  const todosNodes: AnyNode[] = [...nodes, ...fantasmas.values(), ...derivados.nodes]
-  links.push(...derivados.links)
+  const todosNodes: AnyNode[] = [
+    ...nodes,
+    ...fantasmas.values(),
+    ...dominios.nodes,
+    ...derivados.nodes,
+  ]
+  const todosLinks = [...dominios.links, ...derivados.links]
 
   todosNodes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-  links.sort((a, b) => {
+  todosLinks.sort((a, b) => {
     const ka = `${a.source}\u0000${a.target}\u0000${a.label}`
     const kb = `${b.source}\u0000${b.target}\u0000${b.label}`
     return ka < kb ? -1 : ka > kb ? 1 : 0
   })
 
-  return { graph: { nodes: todosNodes, links }, warnings }
+  return { graph: { nodes: todosNodes, links: todosLinks }, warnings }
 }
 
 export { CAMPOS_OBRIGATORIOS }

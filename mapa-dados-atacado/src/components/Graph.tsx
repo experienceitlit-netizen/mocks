@@ -41,6 +41,9 @@ function radiusOf(degree: number): number {
 const RAIZ_RADIUS = 14
 /** Circunraio do hexágono da raiz com área ~equivalente ao círculo. */
 const HEX_SCALE = 1.1
+/** Nó de domínio: raio fixo entre a raiz e os produtos (grau não conta,
+ *  todas as suas arestas são "agrega"). */
+const DOMINIO_RADIUS = 10
 
 export default function Graph({
   data,
@@ -124,12 +127,16 @@ export default function Graph({
       const x = node.x ?? 0
       const y = node.y ?? 0
       const raiz = isRaiz(node)
+      const kind = nodeKind(node)
       // Placeholders não existem no grafo global (sem grau): raio mínimo legível.
-      const r = raiz ? RAIZ_RADIUS : radiusOf(degreeById.get(node.id) ?? (node.placeholder ? 2 : 0))
+      const r = raiz
+        ? RAIZ_RADIUS
+        : kind === 'dominio'
+          ? DOMINIO_RADIUS
+          : radiusOf(degreeById.get(node.id) ?? (node.placeholder ? 2 : 0))
       // Extensão visual além do centro: vértice do hexágono da raiz ou o raio.
       const extent = raiz ? r * HEX_SCALE : r
       const dimmed = dimmedIds.has(node.id)
-      const kind = nodeKind(node)
       ctx.globalAlpha = dimmed ? DIM_ALPHA : 1
 
       ctx.beginPath()
@@ -143,6 +150,10 @@ export default function Graph({
           else ctx.lineTo(px, py)
         }
         ctx.closePath()
+      } else if (kind === 'dominio') {
+        // Quadrado arredondado na cor do domínio (nível raiz → domínios).
+        const s = r * 0.95
+        ctx.roundRect(x - s, y - s, 2 * s, 2 * s, 3)
       } else if (kind === 'sistema') {
         // Quadrado com área ~equivalente ao círculo de raio r.
         const s = r * 0.9
@@ -228,7 +239,11 @@ export default function Graph({
 
   const paintPointerArea = useCallback(
     (node: SimNode, color: string, ctx: CanvasRenderingContext2D) => {
-      const r = isRaiz(node) ? RAIZ_RADIUS * HEX_SCALE : radiusOf(degreeById.get(node.id) ?? 0)
+      const r = isRaiz(node)
+        ? RAIZ_RADIUS * HEX_SCALE
+        : nodeKind(node) === 'dominio'
+          ? DOMINIO_RADIUS
+          : radiusOf(degreeById.get(node.id) ?? 0)
       ctx.fillStyle = color
       ctx.beginPath()
       ctx.arc(node.x ?? 0, node.y ?? 0, r + 3, 0, 2 * Math.PI)

@@ -7,7 +7,14 @@
 // placeholder só na UI, um por dado, para a cadeia sempre mostrar o nível
 // origem → fonte → produto.
 import type { GraphLinkData, GraphNodeData, SimLink, SimNode } from './graph-types'
-import { isDerivado } from './graph-types'
+import { nodeKind } from './graph-types'
+
+/** Sistema/origem não entram na árvore de dados (têm coluna própria no fim);
+ *  nós de domínio derivados entram — são um nível entre a raiz e os finais. */
+function isSysOrg(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): boolean {
+  const kind = nodeKind(node)
+  return kind === 'sistema' || kind === 'origem'
+}
 
 /** Distância entre colunas (x) e entre linhas de uma coluna (y). */
 export const NIVEIS_COL_X = 220
@@ -74,7 +81,8 @@ function makeSource(
   }
 }
 
-/** Árvore de linhagem montante de um dado; null para nó derivado/inexistente. */
+/** Árvore de linhagem montante de um dado ou domínio; null para
+ *  sistema/origem ou nó inexistente. */
 export function buildLineageTree(
   rootId: string,
   nodes: readonly GraphNodeData[],
@@ -82,7 +90,7 @@ export function buildLineageTree(
 ): LineageEntry | null {
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const rootData = byId.get(rootId)
-  if (!rootData || isDerivado(rootData)) return null
+  if (!rootData || isSysOrg(rootData)) return null
 
   const sysByName = new Map<string, GraphNodeData>()
   const orgByName = new Map<string, GraphNodeData>()
@@ -98,7 +106,7 @@ export function buildLineageTree(
     const label = l.label ?? 'consome'
     if (label !== 'consome' && label !== 'agrega') continue
     const alvo = byId.get(l.target)
-    if (!alvo || isDerivado(alvo)) continue
+    if (!alvo || isSysOrg(alvo)) continue
     if (!consome.has(l.source)) consome.set(l.source, [])
     consome.get(l.source)?.push(l.target)
   }
@@ -109,7 +117,7 @@ export function buildLineageTree(
     const cached = entries.get(id)
     if (cached) return cached
     const data = byId.get(id)
-    if (!data || isDerivado(data)) return null
+    if (!data || isSysOrg(data)) return null
     const entry: LineageEntry = {
       data,
       sistema: makeSource(data, 'sistema', sysByName),
@@ -127,8 +135,9 @@ export function buildLineageTree(
   return build(rootId, new Set([rootId]))
 }
 
-/** Linhagem completa com layout em colunas: nó focado à direita, cada fonte
- *  uma coluna à esquerda do seu produto e cada origem uma coluna além. */
+/** Linhagem completa com layout em colunas, lida da esquerda para a direita:
+ *  nó focado à esquerda (x=0), cada fonte uma coluna à direita do seu produto
+ *  e cada origem uma coluna além. */
 export function buildLineage(
   rootId: string,
   nodes: readonly GraphNodeData[],
@@ -195,7 +204,7 @@ export function buildLineage(
     }
   }
 
-  // Colunas da direita (focado, x=0) para a esquerda; espaçamento vertical
+  // Colunas da esquerda (focado, x=0) para a direita; espaçamento vertical
   // uniforme por coluna, centrado, na ordem de visita da árvore.
   const porColuna = new Map<number, SimNode[]>()
   for (const [id, n] of nodeById) {
@@ -205,7 +214,7 @@ export function buildLineage(
   }
   for (const [r, coluna] of porColuna) {
     coluna.forEach((n, i) => {
-      const x = -r * NIVEIS_COL_X
+      const x = r * NIVEIS_COL_X
       const y = (i - (coluna.length - 1) / 2) * NIVEIS_ROW_Y
       n.x = x
       n.y = y

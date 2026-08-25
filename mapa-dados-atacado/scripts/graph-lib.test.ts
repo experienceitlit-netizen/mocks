@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   buildGraph,
+  derivarDominios,
   derivarSistemasOrigens,
   extractWikilinks,
   parseVaultFile,
@@ -202,6 +203,58 @@ describe('buildGraph', () => {
   })
 })
 
+describe('derivarDominios', () => {
+  const raiz = completo({
+    id: 'raiz',
+    nome: 'Raiz',
+    nivel: 'raiz',
+    tipo: 'dominio',
+    sistema: null,
+    origem: null,
+  }, 'Agrega [[Alfa|agrega]], [[Beta|agrega]] e [[Gama|agrega]].')
+  const arquivos: VaultFile[] = [
+    { name: 'raiz.md', raw: raiz },
+    { name: 'a.md', raw: completo({ id: 'alfa', nome: 'Alfa', nivel: 'secundario', dominio: 'Risco', sistema: null, origem: null }) },
+    { name: 'b.md', raw: completo({ id: 'beta', nome: 'Beta', nivel: 'secundario', dominio: 'Risco', sistema: null, origem: null }) },
+    { name: 'c.md', raw: completo({ id: 'gama', nome: 'Gama', nivel: 'secundario', dominio: 'Regulatorio', sistema: null, origem: null }) },
+  ]
+
+  it('substitui raiz→produto por raiz→domínio→produto, deduplicando raiz→domínio', () => {
+    const { graph, warnings } = buildGraph(arquivos)
+    expect(warnings).toEqual([])
+    const doms = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'dominio')
+    expect(doms).toEqual([
+      { id: 'dom-regulatorio', nome: 'Regulatório', tipo: 'dominio', derivado: true, incompleto: false },
+      { id: 'dom-risco', nome: 'Risco', tipo: 'dominio', derivado: true, incompleto: false },
+    ])
+    expect(graph.links).toEqual([
+      { source: 'dom-regulatorio', target: 'gama', label: 'agrega' },
+      { source: 'dom-risco', target: 'alfa', label: 'agrega' },
+      { source: 'dom-risco', target: 'beta', label: 'agrega' },
+      { source: 'raiz', target: 'dom-regulatorio', label: 'agrega' },
+      { source: 'raiz', target: 'dom-risco', label: 'agrega' },
+    ])
+  })
+
+  it('função pura: arestas não-"agrega" passam intactas', () => {
+    const nodes = arquivos.map((a) => parseVaultFile(a).node)
+    const { nodes: doms, links } = derivarDominios(nodes, [
+      { source: 'alfa', target: 'beta', label: 'consome' },
+      { source: 'raiz', target: 'alfa', label: 'agrega' },
+    ])
+    expect(doms.map((n) => n.id)).toEqual(['dom-risco'])
+    expect(links).toEqual([
+      { source: 'alfa', target: 'beta', label: 'consome' },
+      { source: 'raiz', target: 'dom-risco', label: 'agrega' },
+      { source: 'dom-risco', target: 'alfa', label: 'agrega' },
+    ])
+  })
+
+  it('determinismo: mesma saída independentemente da ordem dos arquivos', () => {
+    expect(buildGraph([...arquivos].reverse()).graph).toEqual(buildGraph(arquivos).graph)
+  })
+})
+
 describe('derivarSistemasOrigens', () => {
   it('sistema compartilhado vira UM nó, com aresta sistema→origem deduplicada', () => {
     const { graph } = buildGraph([
@@ -314,17 +367,17 @@ describe('vault real (catálogo em 4 níveis)', () => {
     ])
   })
 
-  it('68 nós e 76 arestas no total: 25 consome + 13 agrega + 19 vem de + 19 origina de', () => {
-    expect(graph.nodes).toHaveLength(68)
-    expect(graph.links).toHaveLength(76)
+  it('73 nós e 81 arestas no total: 25 consome + 18 agrega + 19 vem de + 19 origina de', () => {
+    expect(graph.nodes).toHaveLength(73)
+    expect(graph.links).toHaveLength(81)
     const porLabel = (label: string) => graph.links.filter((l) => l.label === label).length
     expect(porLabel('consome')).toBe(25)
-    expect(porLabel('agrega')).toBe(13)
+    expect(porLabel('agrega')).toBe(18)
     expect(porLabel('vem de')).toBe(19)
     expect(porLabel('origina de')).toBe(19)
   })
 
-  it('raiz atacado-dados: incompleto false e 13 arestas "agrega" para todos os produtos finais', () => {
+  it('raiz atacado-dados: incompleto false e "agrega" só para os 5 nós de domínio', () => {
     const raiz = dados.find((n) => n.id === 'atacado-dados')
     expect(raiz).toMatchObject({
       nivel: 'raiz',
@@ -334,26 +387,48 @@ describe('vault real (catálogo em 4 níveis)', () => {
       sistema: null,
       origem: null,
     })
-    const agrega = graph.links.filter((l) => l.label === 'agrega')
-    expect(agrega.every((l) => l.source === 'atacado-dados')).toBe(true)
-    expect(agrega.map((l) => l.target).sort()).toEqual([
-      'account',
-      'endividamento-de-mercado',
-      'estoque-carteira',
-      'evolucao-do-resultado',
-      'evolucao-do-resultado-por-produto',
-      'faturamento',
+    const daRaiz = graph.links.filter((l) => l.source === 'atacado-dados')
+    expect(daRaiz.every((l) => l.label === 'agrega')).toBe(true)
+    expect(daRaiz.map((l) => l.target).sort()).toEqual([
+      'dom-cadastro',
+      'dom-mercado',
+      'dom-regulatorio',
+      'dom-resultado',
+      'dom-risco',
+    ])
+    // a raiz não deriva sistema/origem nem consome ninguém
+    expect(graph.links.filter((l) => l.target === 'atacado-dados')).toEqual([])
+  })
+
+  it('5 nós de domínio entre a raiz e os 13 produtos finais', () => {
+    const doms = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'dominio')
+    expect(doms.map((n) => n.nome).sort()).toEqual([
+      'Cadastro',
+      'Mercado',
+      'Regulatório',
+      'Resultado',
+      'Risco',
+    ])
+    const produtosDe = (id: string) =>
+      graph.links
+        .filter((l) => l.source === id && l.label === 'agrega')
+        .map((l) => l.target)
+        .sort()
+    expect(produtosDe('dom-cadastro')).toEqual(['account', 'faturamento'])
+    expect(produtosDe('dom-mercado')).toEqual([
       'localizacao',
-      'rar-12m',
-      'rating',
-      'restritivos-e-tipos',
-      'resultado',
       'segmentacao-e-encarteiramento',
       'setorizacao',
     ])
-    // a raiz não deriva sistema/origem nem consome ninguém
-    expect(graph.links.filter((l) => l.source === 'atacado-dados' && l.label !== 'agrega')).toEqual([])
-    expect(graph.links.filter((l) => l.target === 'atacado-dados')).toEqual([])
+    expect(produtosDe('dom-risco')).toEqual(['rating', 'restritivos-e-tipos'])
+    expect(produtosDe('dom-resultado')).toEqual([
+      'estoque-carteira',
+      'evolucao-do-resultado',
+      'evolucao-do-resultado-por-produto',
+      'rar-12m',
+      'resultado',
+    ])
+    expect(produtosDe('dom-regulatorio')).toEqual(['endividamento-de-mercado'])
   })
 
   it('25 arestas "consome", sem self-loop e sem consumo nos itens a mapear', () => {

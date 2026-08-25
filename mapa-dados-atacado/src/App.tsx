@@ -13,7 +13,7 @@ import Legend from './components/Legend'
 import TableView from './components/TableView'
 import type { Counts } from './components/Filters'
 import type { Debito, GraphJson, GraphNodeData, SimLink, SimNode } from './components/graph-types'
-import { isDerivado, isRaiz, linkEndId } from './components/graph-types'
+import { isDerivado, isDominio, isRaiz, linkEndId } from './components/graph-types'
 import { buildLineage, buildLineageTree } from './components/lineage'
 import './App.css'
 
@@ -159,6 +159,9 @@ function App() {
     [nodes],
   )
 
+  // Há nós de domínio derivados (nível raiz → domínio → produtos)?
+  const hasDominios = useMemo(() => nodes.some((n) => isDominio(n)), [nodes])
+
   const dominios = useMemo(
     () =>
       [
@@ -201,9 +204,12 @@ function App() {
   // --- subgrafo visível (camadas + modo foco) ---
   const visibleIds = useMemo(() => {
     // Fora da simulação, não só esmaecidos: derivados saem quando a camada
-    // está desligada. O nó em foco fica sempre visível, mesmo derivado.
+    // está desligada. Domínios são sempre visíveis (são o caminho da raiz aos
+    // produtos finais) e o nó em foco também, mesmo derivado.
     const allowed = new Set(
-      nodes.filter((n) => layersOn || !isDerivado(n) || n.id === focusId).map((n) => n.id),
+      nodes
+        .filter((n) => layersOn || !isDerivado(n) || isDominio(n) || n.id === focusId)
+        .map((n) => n.id),
     )
     if (!focusId || !allowed.has(focusId)) return allowed
 
@@ -270,8 +276,8 @@ function App() {
     const contains: GraphNodeData[] = []
     const inDesc: GraphNodeData[] = []
     for (const n of nodes) {
-      // Dados sempre; sistemas/origens só quando a camada está visível.
-      if (isDerivado(n) && !layersOn) continue
+      // Dados e domínios sempre; sistemas/origens só com a camada visível.
+      if (isDerivado(n) && !isDominio(n) && !layersOn) continue
       const nome = norm(n.nome)
       if (nome.startsWith(normQuery)) starts.push(n)
       else if (nome.includes(normQuery)) contains.push(n)
@@ -525,10 +531,10 @@ function App() {
     [focusPath, nodesById],
   )
 
-  // Foco num derivado (sistema/origem) não tem linhagem própria: sem switch,
-  // sempre na vista de força.
+  // Foco num sistema/origem não tem linhagem própria: sem switch, sempre na
+  // vista de força. Domínios têm (raiz → domínio → produtos → cadeias).
   const focusedNode = focusId ? (nodesById.get(focusId) ?? null) : null
-  const canNiveis = focusedNode !== null && !isDerivado(focusedNode)
+  const canNiveis = focusedNode !== null && (!isDerivado(focusedNode) || isDominio(focusedNode))
 
   return (
     <div className="app">
@@ -626,7 +632,12 @@ function App() {
       )}
 
       {aba === 'mapa' && (
-        <Legend layersVisible={layersOn} hasNiveis={hasNiveis} hasRaiz={RAIZ_ID !== null} />
+        <Legend
+          layersVisible={layersOn}
+          hasNiveis={hasNiveis}
+          hasRaiz={RAIZ_ID !== null}
+          hasDominios={hasDominios}
+        />
       )}
 
       {aba === 'mapa' && selectedNode && (

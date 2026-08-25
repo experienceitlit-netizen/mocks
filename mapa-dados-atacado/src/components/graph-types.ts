@@ -44,18 +44,27 @@ export interface GraphNodeData {
   corpo?: string
 }
 
-/** Camada visual do nó: dado (círculo), sistema (quadrado), origem (losango). */
-export type NodeKind = 'dado' | 'sistema' | 'origem'
+/** Camada visual do nó: dado (círculo), domínio (quadrado arredondado na cor
+ *  da área), sistema (quadrado), origem (losango). */
+export type NodeKind = 'dado' | 'dominio' | 'sistema' | 'origem'
 
 export function nodeKind(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): NodeKind {
   if (node.tipo === 'sistema') return 'sistema'
   if (node.tipo === 'origem') return 'origem'
+  // A raiz também tem tipo "dominio", mas é nó de dado (arquivo no vault);
+  // só o nó de domínio derivado pelo build ganha a forma própria.
+  if (node.tipo === 'dominio' && node.derivado === true) return 'dominio'
   return 'dado'
 }
 
-/** Nó da camada de linhagem (sistema/origem emitido pelo build). */
+/** Nó derivado pelo build (domínio, sistema ou origem — sem arquivo no vault). */
 export function isDerivado(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): boolean {
   return node.derivado === true || nodeKind(node) !== 'dado'
+}
+
+/** Nó de domínio derivado (nível entre a raiz e os produtos finais). */
+export function isDominio(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): boolean {
+  return nodeKind(node) === 'dominio'
 }
 
 /** Nível "ambos" conta nos dois lados do modelo executivo. */

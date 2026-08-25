@@ -193,6 +193,41 @@
       "corpo": "Base das operações de empréstimos (DEF) e câmbio, consumida pelo Atacado. Há a hipótese de que a estrutura carregue também os saldos (estoque de carteira) além do resultado — hipótese a validar. Dois domínios misturados na mesma estrutura e a base SQL on-premise, fora da plataforma curada, caracterizam o débito técnico."
     },
     {
+      "id": "dom-cadastro",
+      "nome": "Cadastro",
+      "tipo": "dominio",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "dom-mercado",
+      "nome": "Mercado",
+      "tipo": "dominio",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "dom-regulatorio",
+      "nome": "Regulatório",
+      "tipo": "dominio",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "dom-resultado",
+      "nome": "Resultado",
+      "tipo": "dominio",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "dom-risco",
+      "nome": "Risco",
+      "tipo": "dominio",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
       "id": "endividamento-de-mercado",
       "nome": "Endividamento de mercado",
       "tipo": "produto",
@@ -814,67 +849,27 @@
     },
     {
       "source": "atacado-dados",
-      "target": "account",
+      "target": "dom-cadastro",
       "label": "agrega"
     },
     {
       "source": "atacado-dados",
-      "target": "endividamento-de-mercado",
+      "target": "dom-mercado",
       "label": "agrega"
     },
     {
       "source": "atacado-dados",
-      "target": "estoque-carteira",
+      "target": "dom-regulatorio",
       "label": "agrega"
     },
     {
       "source": "atacado-dados",
-      "target": "evolucao-do-resultado",
+      "target": "dom-resultado",
       "label": "agrega"
     },
     {
       "source": "atacado-dados",
-      "target": "evolucao-do-resultado-por-produto",
-      "label": "agrega"
-    },
-    {
-      "source": "atacado-dados",
-      "target": "faturamento",
-      "label": "agrega"
-    },
-    {
-      "source": "atacado-dados",
-      "target": "localizacao",
-      "label": "agrega"
-    },
-    {
-      "source": "atacado-dados",
-      "target": "rar-12m",
-      "label": "agrega"
-    },
-    {
-      "source": "atacado-dados",
-      "target": "rating",
-      "label": "agrega"
-    },
-    {
-      "source": "atacado-dados",
-      "target": "restritivos-e-tipos",
-      "label": "agrega"
-    },
-    {
-      "source": "atacado-dados",
-      "target": "resultado",
-      "label": "agrega"
-    },
-    {
-      "source": "atacado-dados",
-      "target": "segmentacao-e-encarteiramento",
-      "label": "agrega"
-    },
-    {
-      "source": "atacado-dados",
-      "target": "setorizacao",
+      "target": "dom-risco",
       "label": "agrega"
     },
     {
@@ -921,6 +916,71 @@
       "source": "def-cambio",
       "target": "sys-base-sql-on-premise",
       "label": "vem de"
+    },
+    {
+      "source": "dom-cadastro",
+      "target": "account",
+      "label": "agrega"
+    },
+    {
+      "source": "dom-cadastro",
+      "target": "faturamento",
+      "label": "agrega"
+    },
+    {
+      "source": "dom-mercado",
+      "target": "localizacao",
+      "label": "agrega"
+    },
+    {
+      "source": "dom-mercado",
+      "target": "segmentacao-e-encarteiramento",
+      "label": "agrega"
+    },
+    {
+      "source": "dom-mercado",
+      "target": "setorizacao",
+      "label": "agrega"
+    },
+    {
+      "source": "dom-regulatorio",
+      "target": "endividamento-de-mercado",
+      "label": "agrega"
+    },
+    {
+      "source": "dom-resultado",
+      "target": "estoque-carteira",
+      "label": "agrega"
+    },
+    {
+      "source": "dom-resultado",
+      "target": "evolucao-do-resultado",
+      "label": "agrega"
+    },
+    {
+      "source": "dom-resultado",
+      "target": "evolucao-do-resultado-por-produto",
+      "label": "agrega"
+    },
+    {
+      "source": "dom-resultado",
+      "target": "rar-12m",
+      "label": "agrega"
+    },
+    {
+      "source": "dom-resultado",
+      "target": "resultado",
+      "label": "agrega"
+    },
+    {
+      "source": "dom-risco",
+      "target": "rating",
+      "label": "agrega"
+    },
+    {
+      "source": "dom-risco",
+      "target": "restritivos-e-tipos",
+      "label": "agrega"
     },
     {
       "source": "endividamento-de-mercado",

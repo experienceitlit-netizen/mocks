@@ -686,6 +686,16 @@
   margin: 0 0.05rem;
 }
 
+/* Nó de domínio: quadrado arredondado; o gradiente resume as cores das áreas
+   (mesmas de DOMAIN_COLORS — cada nó usa a cor do seu domínio no canvas). */
+.legend__dominio {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #4a90d9, #9b59b6, #e67e22, #2e8b57, #b03a48);
+}
+
 /* Nó-raiz: hexágono de topo pontudo, como desenhado no canvas. */
 .legend__hex {
   width: 0.75rem;

@@ -19,6 +19,8 @@ interface LegendProps {
   hasNiveis: boolean
   /** Grafo já tem o nó-raiz do domínio: explica o hexágono azul. */
   hasRaiz: boolean
+  /** Grafo já tem nós de domínio derivados: explica o quadrado arredondado. */
+  hasDominios: boolean
 }
 
 function Dot({ color }: { color: string }) {
@@ -33,7 +35,7 @@ function Diamond({ color }: { color: string }) {
   return <span className="legend__diamond" style={{ background: color }} />
 }
 
-export default function Legend({ layersVisible, hasNiveis, hasRaiz }: LegendProps) {
+export default function Legend({ layersVisible, hasNiveis, hasRaiz, hasDominios }: LegendProps) {
   return (
     <div className="legend" aria-label="Legenda do grafo">
       <ul>
@@ -41,6 +43,11 @@ export default function Legend({ layersVisible, hasNiveis, hasRaiz }: LegendProp
           <li>
             <span className="legend__hex" style={{ background: COLOR_RAIZ }} /> Atacado — Dados
             (raiz)
+          </li>
+        )}
+        {hasDominios && (
+          <li>
+            <span className="legend__dominio" /> domínio (cor da área)
           </li>
         )}
         <li>

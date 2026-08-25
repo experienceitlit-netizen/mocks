@@ -24,10 +24,11 @@ export const PLACEHOLDER_STROKE = '#8A8A8A'
 const LEGADO_RE = /legado|on-premise|planilha|excel/i
 
 /** Cor do nó por precedência: débito sim > avaliar > sistema legado > curado.
- *  Nós derivados (sistema/origem) têm paleta própria da camada de linhagem. */
+ *  Nós derivados (domínio/sistema/origem) têm paleta própria. */
 export function nodeColor(node: GraphNodeData): string {
   if (isRaiz(node)) return COLOR_RAIZ
   const kind = nodeKind(node)
+  if (kind === 'dominio') return domainColor(node.nome)
   if (kind === 'sistema') return LEGADO_RE.test(node.nome) ? COLOR_SISTEMA_LEGADO : COLOR_SISTEMA
   if (kind === 'origem') return COLOR_ORIGEM
   if (node.fantasma) return COLOR_FANTASMA
@@ -48,8 +49,21 @@ export const DOMAIN_COLORS: Record<string, string> = {
   'A definir': '#8A8A8A',
 }
 
+// Lookup insensível a acentos: o nó de domínio derivado exibe "Regulatório",
+// mas a chave da paleta (e o frontmatter) é "Regulatorio".
+const DOMAIN_COLORS_NORM = new Map(
+  Object.entries(DOMAIN_COLORS).map(([k, v]) => [normalizeDomainKey(k), v]),
+)
+
+function normalizeDomainKey(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+}
+
 export function domainColor(dominio: string | undefined): string {
-  return DOMAIN_COLORS[dominio ?? ''] ?? '#8A8A8A'
+  return DOMAIN_COLORS_NORM.get(normalizeDomainKey(dominio ?? '')) ?? '#8A8A8A'
 }
 
 export const DEBITO_LABEL: Record<Debito, string> = {

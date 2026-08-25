@@ -26,11 +26,18 @@ primário → produto secundário**:
   produtos finais (secundários e "ambos"). Não é um produto de dado: desenhado como
   **hexágono azul** de tamanho fixo, fica fora dos contadores, dos filtros e da tabela,
   e owner/centro de custo não se aplicam (o painel mostra "—", sem ⚠).
+- **Domínio** (derivado pelo build, sem arquivo no vault): entre a raiz e os produtos
+  finais o build insere um nó por domínio (`dom-cadastro`, `dom-mercado`, `dom-risco`,
+  `dom-resultado`, `dom-regulatorio`), reescrevendo cada aresta raiz→produto como
+  raiz→domínio→produto. Navegação: **Atacado — Dados → domínio → produto secundário →
+  produto primário → fonte → origem**. Desenhado como **quadrado arredondado na cor do
+  domínio**, sempre visível no mapa, focável, e — como a raiz — fora de contadores,
+  filtros e tabela.
 
 Hoje o vault tem **35 dados** (22 primários, 11 secundários, 2 "ambos") — **36 nós de
-dados contando a raiz** — com **25 cadeias "consome"** primário→secundário e **13
-arestas "agrega"** da raiz; com os sistemas e origens derivados do frontmatter, o
-`graph.json` fecha em **68 nós e 76 arestas**.
+dados contando a raiz** — com **25 cadeias "consome"** primário→secundário e **18
+arestas "agrega"** (raiz → 5 domínios → 13 produtos finais); com os domínios, sistemas
+e origens derivados, o `graph.json` fecha em **73 nós e 81 arestas**.
 
 ## Como rodar
 
@@ -114,7 +121,9 @@ Bordas:
 - **Anel externo fino** na cor do nó = produto **secundário/final** (`nivel: secundario`
   ou `ambos`).
 
-Tamanho do nó é proporcional ao número de conexões.
+Tamanho do nó é proporcional ao número de conexões (raiz e domínios têm tamanho fixo).
+Formas: **círculo** = dado, **hexágono azul** = raiz, **quadrado arredondado** na cor da
+área = domínio, **quadrado** = sistema, **losango** = origem.
 
 ## Estrutura do projeto
 
@@ -147,11 +156,13 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
 ## Navegação
 
 - **Entrada padrão**: sem parâmetros na URL, o app abre já em **modo foco no nó-raiz
-  "Atacado — Dados"**, vista Níveis, painel fechado — as colunas mostram
-  raiz → secundários → primários → fontes → origens, o portfólio inteiro numa tela.
-  "Ver mapa completo" (ou `Esc`) leva ao mapa global, onde a raiz aparece como hexágono
-  azul ligado aos produtos finais. A URL só ganha `?foco=` quando o estado difere dessa
-  entrada padrão; `?no=` sem `?foco=` continua abrindo o mapa global com o nó selecionado.
+  "Atacado — Dados"**, vista Níveis, painel fechado — as colunas, lidas da esquerda para
+  a direita, mostram raiz → domínios → secundários → primários → fontes → origens, o
+  portfólio inteiro numa tela. "Ver mapa completo" (ou `Esc`) leva ao mapa global, onde
+  a raiz aparece como hexágono azul ligado aos domínios (quadrados arredondados na cor
+  da área) e estes aos produtos finais. A URL só ganha `?foco=` quando o estado difere
+  dessa entrada padrão; `?no=` sem `?foco=` continua abrindo o mapa global com o nó
+  selecionado.
 - **Clique** num nó abre o painel de detalhe; `Esc` ou clique fora fecha. Para um dado,
   o painel traz a seção **"Linhagem"**: a árvore indentada de tudo de que ele depende
   (origem / fonte / produto por nível, recursiva), com itens clicáveis.
@@ -159,11 +170,13 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
   foco**, com **breadcrumb** do caminho navegado, botão "Ver mapa completo" para sair
   (`Esc` sai em dois estágios: primeiro fecha o painel, depois o foco) e clique em outro
   nó para re-focar nele. O foco tem duas vistas, no switch da barra:
-  - **Níveis** (padrão): a linhagem montante **completa** do dado focado, em colunas da
-    esquerda para a direita — origem → fonte → produto, com os níveis de produto se
-    repetindo até o nó focado na extrema direita. Fonte ou origem ainda desconhecida
-    ("a confirmar", "a identificar"…) aparece como **placeholder cinza tracejado**, para
-    a cadeia sempre mostrar o nível. Passar o mouse destaca a cadeia inteira do nó.
+  - **Níveis** (padrão): a linhagem montante **completa** do nó focado, lida da
+    **esquerda para a direita** — o focado na extrema esquerda e a cadeia se abrindo à
+    direita: produto → insumos → fontes → origens (focar Setorização a põe à esquerda,
+    com as origens na última coluna à direita; focar a raiz ou um domínio abre o
+    portfólio inteiro). Fonte ou origem ainda desconhecida ("a confirmar",
+    "a identificar"…) aparece como **placeholder cinza tracejado**, para a cadeia sempre
+    mostrar o nível. Passar o mouse destaca a cadeia inteira do nó.
   - **Força**: a vizinhança em grafo de força, com slider de **profundidade** (1–3).
 - O toggle **"Fontes e origens"** liga a camada de linhagem: além dos dados (**círculos**),
   aparecem os **sistemas** (quadrados) e as **origens** (losangos) derivados do

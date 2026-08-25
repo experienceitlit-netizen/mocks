@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { GraphNodeData } from './graph-types'
-import { isDerivado, isRaiz, nodeKind } from './graph-types'
+import { isDerivado, isDominio, isRaiz, nodeKind } from './graph-types'
 import type { LineageEntry, LineageSource } from './lineage'
 import { DEBITO_LABEL, NIVEL_LABEL, domainColor } from './palette'
 import Markdown from './Markdown'
@@ -178,6 +178,44 @@ export default function DetailPanel({
 
         <ConnectionList
           title="Agrega →"
+          items={outgoing}
+          onNavigate={onNavigate}
+          showLabel={false}
+        />
+        {outgoing.length === 0 && <p className="ghost-note">Sem produtos mapeados.</p>}
+      </aside>
+    )
+  }
+
+  // Painel do nó de domínio: chip na cor da área e os produtos finais que
+  // agrega (as arestas de saída "agrega"), clicáveis.
+  if (isDominio(node)) {
+    return (
+      <aside className="detail-panel" role="dialog" aria-label={`Detalhes de ${node.nome}`}>
+        <button type="button" className="detail-panel__close" onClick={onClose} aria-label="Fechar">
+          ×
+        </button>
+
+        <header className="detail-panel__header">
+          <h2>{node.nome}</h2>
+          <div className="chips">
+            <span
+              className="chip"
+              style={{ borderColor: domainColor(node.nome), color: domainColor(node.nome) }}
+            >
+              Domínio
+            </span>
+          </div>
+        </header>
+
+        {!isFocused && (
+          <button type="button" className="detail-panel__focus" onClick={() => onFocus(node.id)}>
+            ⌖ Focar neste nó
+          </button>
+        )}
+
+        <ConnectionList
+          title="Produtos finais deste domínio"
           items={outgoing}
           onNavigate={onNavigate}
           showLabel={false}
