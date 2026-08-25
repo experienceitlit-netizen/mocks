@@ -1,12 +1,402 @@
+/* Paleta do plano: fundo #1E1E1E, vermelho #CC092F, verde #3A7D44,
+   cinza #8A8A8A, âmbar #B8860B. Overlays flutuam sobre o canvas do grafo. */
+
 .app {
-  min-height: 100vh;
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+.app > canvas,
+.app > div:first-child {
+  position: absolute;
+  inset: 0;
+}
+
+/* ---------- topo: título + busca ---------- */
+
+.topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(20, 20, 20, 0.9), rgba(20, 20, 20, 0));
+  z-index: 10;
+}
+
+.topbar__title h1 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #f0f0f0;
+  letter-spacing: 0.01em;
+}
+
+.topbar__title span {
+  font-size: 0.75rem;
+  color: #8a8a8a;
+}
+
+.search-box {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.search-box input {
+  width: 20rem;
+  max-width: 40vw;
+  padding: 0.45rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #3a3a3a;
+  background: #262626;
+  color: #e0e0e0;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.search-box input:focus {
+  border-color: #6a6a6a;
+}
+
+.search-box input::placeholder {
+  color: #707070;
+}
+
+.search-box__count {
+  font-size: 0.75rem;
+  color: #8a8a8a;
+  white-space: nowrap;
+}
+
+/* ---------- filtros (lateral esquerda) ---------- */
+
+.filters {
+  position: absolute;
+  top: 4.25rem;
+  left: 1rem;
+  width: 15.5rem;
+  padding: 0.9rem;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: rgba(30, 30, 30, 0.92);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.filters__counter {
+  font-size: 0.78rem;
+  color: #b0b0b0;
+  line-height: 1.4;
+}
+
+.filters__counter strong {
+  color: #f0f0f0;
+}
+
+.filters__label {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8a8a8a;
+  margin-bottom: 0.35rem;
+}
+
+.filters__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.filter-chip {
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid #3a3a3a;
+  background: transparent;
+  color: #9a9a9a;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.filter-chip:hover {
+  border-color: #5a5a5a;
+  color: #d0d0d0;
+}
+
+.filter-chip--active {
+  border-color: #e0e0e0;
+  color: #f0f0f0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.filters__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: #d0d0d0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.filters__toggle input {
+  accent-color: #cc092f;
+}
+
+.filters__clear {
+  align-self: flex-start;
+  padding: 0.2rem 0;
+  border: none;
+  background: none;
+  color: #8a8a8a;
+  font-size: 0.72rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.filters__clear:hover {
+  color: #d0d0d0;
+}
+
+/* ---------- painel de detalhe (drawer à direita) ---------- */
+
+.detail-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 360px;
+  max-width: 92vw;
+  padding: 1.25rem 1.25rem 2rem;
+  overflow-y: auto;
+  background: #242424;
+  border-left: 1px solid #3a3a3a;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.45);
+  z-index: 20;
+}
+
+.detail-panel__close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.75rem;
+  border: none;
+  background: none;
+  color: #8a8a8a;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.detail-panel__close:hover {
+  color: #f0f0f0;
+}
+
+.detail-panel__header h2 {
+  font-size: 1.15rem;
+  font-weight: 650;
+  color: #f5f5f5;
+  margin-bottom: 0.5rem;
+  padding-right: 1.5rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.9rem;
+}
+
+.chip {
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}
+
+.chip--neutral {
+  border-color: #4a4a4a;
+  color: #a0a0a0;
+  text-transform: capitalize;
+}
+
+.chip--debito-sim {
+  border-color: #cc092f;
+  color: #ff5a75;
+}
+
+.chip--debito-nao {
+  border-color: #3a7d44;
+  color: #6fbf7d;
+}
+
+.chip--debito-avaliar {
+  border-color: #8a8a8a;
+  color: #b0b0b0;
+}
+
+.detail-panel__descricao {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #d8d8d8;
+  margin-bottom: 1rem;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-bottom: 1.1rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: #2a2a2a;
+}
+
+.field {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.field__label {
+  color: #8a8a8a;
+  flex-shrink: 0;
+}
+
+.field__value {
+  color: #e0e0e0;
+  text-align: right;
+}
+
+.missing {
+  color: #ffb020;
+  font-weight: 600;
+}
+
+.ghost-note {
+  font-size: 0.8rem;
+  color: #9a9a9a;
+  font-style: italic;
+  margin-bottom: 1rem;
+}
+
+/* corpo markdown */
+
+.markdown {
+  font-size: 0.83rem;
+  line-height: 1.55;
+  color: #cfcfcf;
+  margin-bottom: 1.1rem;
+}
+
+.markdown p,
+.markdown ul {
+  margin-bottom: 0.6rem;
+}
+
+.markdown ul {
+  padding-left: 1.1rem;
+}
+
+.markdown h4 {
+  font-size: 0.85rem;
+  color: #e8e8e8;
+  margin: 0.7rem 0 0.35rem;
+}
+
+.markdown code {
+  background: #333;
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  font-size: 0.78rem;
+}
+
+.wikilink {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: #7fb4e8;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.wikilink:hover {
+  text-decoration: underline;
+}
+
+.wikilink--broken {
+  color: #8a8a8a;
+  cursor: default;
+  border-bottom: 1px dashed #8a8a8a;
+}
+
+/* conexões */
+
+.connections {
+  margin-bottom: 1rem;
+}
+
+.connections h3 {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8a8a8a;
+  margin-bottom: 0.4rem;
+}
+
+.connections ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.connections .wikilink {
+  font-size: 0.85rem;
+}
+
+.edge-label {
+  margin-left: 0.4rem;
+  font-size: 0.68rem;
+  color: #8a8a8a;
+  font-style: italic;
+}
+
+/* ---------- estado vazio ---------- */
+
+.empty-state {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: none;
+  z-index: 5;
 }
 
-.app h1 {
-  font-size: 1.75rem;
-  font-weight: 600;
-  color: #e0e0e0;
+.empty-state p {
+  max-width: 26rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #9a9a9a;
+  line-height: 1.6;
+}
+
+.empty-state code {
+  background: #2e2e2e;
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
 }
