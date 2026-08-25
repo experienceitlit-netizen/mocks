@@ -1,5 +1,6 @@
 // Vista de linhagem em níveis: a partir de um dado focado, resolve TUDO de
-// que ele depende seguindo as arestas "consome" (montante, recursivo) e anexa
+// que ele depende seguindo as arestas "consome" — e "agrega", que o nó-raiz
+// usa para apontar os produtos finais — (montante, recursivo) e anexa
 // a rota de cada dado alcançado — fonte (campo `sistema`) e origem (campo
 // `origem`) — casando os campos de texto com os nós derivados do build.
 // Quando o campo não tem nó correspondente (ex.: "a confirmar"), sintetiza um
@@ -90,10 +91,12 @@ export function buildLineageTree(
     else if (n.tipo === 'origem') orgByName.set(norm(n.nome), n)
   }
 
-  // Adjacência "consome" só entre dados (consumidor → insumo).
+  // Adjacência "consome"/"agrega" só entre dados (consumidor → insumo; a
+  // raiz → produto final tem a mesma direção de dependência).
   const consome = new Map<string, string[]>()
   for (const l of links) {
-    if ((l.label ?? 'consome') !== 'consome') continue
+    const label = l.label ?? 'consome'
+    if (label !== 'consome' && label !== 'agrega') continue
     const alvo = byId.get(l.target)
     if (!alvo || isDerivado(alvo)) continue
     if (!consome.has(l.source)) consome.set(l.source, [])
@@ -134,6 +137,10 @@ export function buildLineage(
   const root = buildLineageTree(rootId, nodes, links)
   if (!root) return null
 
+  // Rótulo original de cada aresta dado→dado ("consome" ou "agrega" da raiz).
+  const labelByPair = new Map<string, string>()
+  for (const l of links) labelByPair.set(`${l.source}→${l.target}`, l.label ?? 'consome')
+
   // Achata a árvore em nós únicos (ordem de visita = agrupamento vertical
   // de cada cadeia perto do seu produto) e arestas deduplicadas.
   const nodeById = new Map<string, SimNode>()
@@ -166,7 +173,8 @@ export function buildLineage(
       addLink(entry.data.id, entry.origem.node.id, 'origina de')
     }
     for (const filho of entry.insumos) {
-      addLink(entry.data.id, filho.data.id, 'consome')
+      const label = labelByPair.get(`${entry.data.id}→${filho.data.id}`) ?? 'consome'
+      addLink(entry.data.id, filho.data.id, label)
       walk(filho)
     }
   }

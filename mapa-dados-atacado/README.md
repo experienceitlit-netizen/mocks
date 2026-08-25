@@ -21,10 +21,16 @@ primário → produto secundário**:
   linka com wikilinks **todos** os primários que consome (arestas "consome").
 - **Ambos** (`nivel: ambos`): produto consumido direto e também insumo de outros
   (ex.: `rating`), sem self-loop.
+- **Raiz** (`nivel: raiz`, `tipo: dominio`): o nó único **"Atacado — Dados"**, portfólio
+  do domínio e ponto de entrada do mapa. Agrega com wikilinks `[[...|agrega]]` todos os
+  produtos finais (secundários e "ambos"). Não é um produto de dado: desenhado como
+  **hexágono azul** de tamanho fixo, fica fora dos contadores, dos filtros e da tabela,
+  e owner/centro de custo não se aplicam (o painel mostra "—", sem ⚠).
 
-Hoje o vault tem **35 dados** (22 primários, 11 secundários, 2 "ambos") e **25 cadeias
-"consome"** primário→secundário; com os sistemas e origens derivados do frontmatter, o
-`graph.json` fecha em 67 nós e 63 arestas.
+Hoje o vault tem **35 dados** (22 primários, 11 secundários, 2 "ambos") — **36 nós de
+dados contando a raiz** — com **25 cadeias "consome"** primário→secundário e **13
+arestas "agrega"** da raiz; com os sistemas e origens derivados do frontmatter, o
+`graph.json` fecha em **68 nós e 76 arestas**.
 
 ## Como rodar
 
@@ -77,7 +83,7 @@ O vault também pode ser aberto como vault do Obsidian desktop — os wikilinks 
 | `id` | sim | slug único em kebab-case (ex.: `rar-12m`) | usado na URL (`?no=rar-12m`) e na resolução de links |
 | `nome` | sim | texto livre curto | rótulo do nó; wikilinks resolvem por `nome` ou `id`, sem diferenciar caixa |
 | `tipo` | sim | `produto` \| `insumo` \| `sistema` \| `dominio` | |
-| `nivel` | não (default `primario`) | `primario` \| `secundario` \| `ambos` | nível na cadeia (ver "Modelo em 4 níveis"); chip e filtro "Nível" na UI |
+| `nivel` | não (default `primario`) | `primario` \| `secundario` \| `ambos` \| `raiz` | nível na cadeia (ver "Modelo em 4 níveis"); chip e filtro "Nível" na UI; `raiz` só no nó "Atacado — Dados" |
 | `dominio` | sim | `Cadastro` \| `Mercado` \| `Risco` \| `Resultado` \| `Regulatorio` \| `A definir` | filtro por domínio na UI |
 | `origem` | sim (aceita `null`) | texto ou `null` | área ou processo de origem; `null` em secundários = não se aplica (UI mostra "—") |
 | `sistema` | sim (aceita `null`) | texto ou `null` | se contiver "legado" ou "on-premise", o nó fica âmbar; `null` em secundários = não se aplica |
@@ -140,6 +146,12 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
 
 ## Navegação
 
+- **Entrada padrão**: sem parâmetros na URL, o app abre já em **modo foco no nó-raiz
+  "Atacado — Dados"**, vista Níveis, painel fechado — as colunas mostram
+  raiz → secundários → primários → fontes → origens, o portfólio inteiro numa tela.
+  "Ver mapa completo" (ou `Esc`) leva ao mapa global, onde a raiz aparece como hexágono
+  azul ligado aos produtos finais. A URL só ganha `?foco=` quando o estado difere dessa
+  entrada padrão; `?no=` sem `?foco=` continua abrindo o mapa global com o nó selecionado.
 - **Clique** num nó abre o painel de detalhe; `Esc` ou clique fora fecha. Para um dado,
   o painel traz a seção **"Linhagem"**: a árvore indentada de tudo de que ele depende
   (origem / fonte / produto por nível, recursiva), com itens clicáveis.

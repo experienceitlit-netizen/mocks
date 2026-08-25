@@ -3,7 +3,7 @@
 // de ordenação, agrupamento por domínio e filtro sem acentos — puros, sem
 // React, para facilitar teste.
 import type { Debito, GraphLinkData, GraphNodeData } from './graph-types'
-import { isDerivado } from './graph-types'
+import { isDerivado, isRaiz } from './graph-types'
 
 /** Ordem executiva dos domínios (mesma da tabela que originou o projeto). */
 export const DOMAIN_ORDER: readonly string[] = [
@@ -58,9 +58,10 @@ function statusRank(status: string | undefined): number {
   return status !== undefined && status in STATUS_RANK ? STATUS_RANK[status] : 3
 }
 
-/** Linha da tabela = nó de dado real (nem derivado da linhagem, nem fantasma). */
+/** Linha da tabela = nó de dado real (nem derivado da linhagem, nem fantasma,
+ *  nem o nó-raiz do domínio — que agrega produtos mas não é um). */
 export function isDataNode(node: GraphNodeData): boolean {
-  return !isDerivado(node) && !node.fantasma
+  return !isDerivado(node) && !node.fantasma && !isRaiz(node)
 }
 
 /** Valor ainda pendente de mapeamento ("a confirmar", "a identificar"…). */

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { GraphNodeData } from './graph-types'
-import { isDerivado, nodeKind } from './graph-types'
+import { isDerivado, isRaiz, nodeKind } from './graph-types'
 import type { LineageEntry, LineageSource } from './lineage'
 import { DEBITO_LABEL, NIVEL_LABEL, domainColor } from './palette'
 import Markdown from './Markdown'
@@ -146,6 +146,46 @@ export default function DetailPanel({
 }: DetailPanelProps) {
   const debito = node.debito ?? 'avaliar'
   const kind = nodeKind(node)
+
+  // Painel do nó-raiz do domínio: descrição e a lista de produtos que agrega.
+  // Governança não se aplica (owner/CC = "—", nunca ⚠), sem débito/domínio.
+  if (isRaiz(node)) {
+    return (
+      <aside className="detail-panel" role="dialog" aria-label={`Detalhes de ${node.nome}`}>
+        <button type="button" className="detail-panel__close" onClick={onClose} aria-label="Fechar">
+          ×
+        </button>
+
+        <header className="detail-panel__header">
+          <h2>{node.nome}</h2>
+          <div className="chips">
+            <span className="chip chip--neutral">{NIVEL_LABEL.raiz}</span>
+          </div>
+        </header>
+
+        {!isFocused && (
+          <button type="button" className="detail-panel__focus" onClick={() => onFocus(node.id)}>
+            ⌖ Focar neste nó
+          </button>
+        )}
+
+        {node.descricao && <p className="detail-panel__descricao">{node.descricao}</p>}
+
+        <div className="fields">
+          <Field label="Owner">—</Field>
+          <Field label="Centro de custo">—</Field>
+        </div>
+
+        <ConnectionList
+          title="Agrega →"
+          items={outgoing}
+          onNavigate={onNavigate}
+          showLabel={false}
+        />
+        {outgoing.length === 0 && <p className="ghost-note">Sem produtos mapeados.</p>}
+      </aside>
+    )
+  }
 
   // Painel simplificado para sistema/origem: nome, tipo e dados ligados.
   if (isDerivado(node)) {

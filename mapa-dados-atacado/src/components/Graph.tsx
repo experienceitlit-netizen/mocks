@@ -2,7 +2,7 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'r
 import ForceGraph2D from 'react-force-graph-2d'
 import type { Ref } from 'react'
 import type { GraphLinkData, GraphMethods, GraphNodeData, SimLink, SimNode } from './graph-types'
-import { linkEndId, nodeKind } from './graph-types'
+import { isRaiz, linkEndId, nodeKind } from './graph-types'
 import { BACKGROUND, PLACEHOLDER_FILL, PLACEHOLDER_STROKE, nodeColor } from './palette'
 
 export interface GraphHandle {
@@ -36,6 +36,11 @@ const MAX_FIT_ZOOM = 4
 function radiusOf(degree: number): number {
   return 4 + Math.sqrt(degree) * 2.2
 }
+
+/** Nó-raiz: raio fixo de protagonista, independente do grau. */
+const RAIZ_RADIUS = 14
+/** Circunraio do hexágono da raiz com área ~equivalente ao círculo. */
+const HEX_SCALE = 1.1
 
 export default function Graph({
   data,
@@ -118,14 +123,27 @@ export default function Graph({
     (node: SimNode, ctx: CanvasRenderingContext2D, scale: number) => {
       const x = node.x ?? 0
       const y = node.y ?? 0
+      const raiz = isRaiz(node)
       // Placeholders não existem no grafo global (sem grau): raio mínimo legível.
-      const r = radiusOf(degreeById.get(node.id) ?? (node.placeholder ? 2 : 0))
+      const r = raiz ? RAIZ_RADIUS : radiusOf(degreeById.get(node.id) ?? (node.placeholder ? 2 : 0))
+      // Extensão visual além do centro: vértice do hexágono da raiz ou o raio.
+      const extent = raiz ? r * HEX_SCALE : r
       const dimmed = dimmedIds.has(node.id)
       const kind = nodeKind(node)
       ctx.globalAlpha = dimmed ? DIM_ALPHA : 1
 
       ctx.beginPath()
-      if (kind === 'sistema') {
+      if (raiz) {
+        // Hexágono de topo pontudo: forma exclusiva do nó-raiz.
+        for (let i = 0; i < 6; i++) {
+          const a = -Math.PI / 2 + (i * Math.PI) / 3
+          const px = x + extent * Math.cos(a)
+          const py = y + extent * Math.sin(a)
+          if (i === 0) ctx.moveTo(px, py)
+          else ctx.lineTo(px, py)
+        }
+        ctx.closePath()
+      } else if (kind === 'sistema') {
         // Quadrado com área ~equivalente ao círculo de raio r.
         const s = r * 0.9
         ctx.rect(x - s, y - s, 2 * s, 2 * s)
@@ -189,19 +207,20 @@ export default function Graph({
 
       if (node.id === selectedId || node.id === hoverId) {
         ctx.beginPath()
-        ctx.arc(x, y, r + 2.5 / scale, 0, 2 * Math.PI)
+        ctx.arc(x, y, extent + 2.5 / scale, 0, 2 * Math.PI)
         ctx.strokeStyle =
           node.id === selectedId ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)'
         ctx.lineWidth = (node.id === selectedId ? 1.6 : 1.2) / scale
         ctx.stroke()
       }
 
-      const fontSize = 10 / scale
-      ctx.font = `${fontSize}px system-ui, sans-serif`
+      // Raiz: rótulo um pouco maior e em peso semibold (protagonista).
+      const fontSize = (raiz ? 12.5 : 10) / scale
+      ctx.font = `${raiz ? '600 ' : ''}${fontSize}px system-ui, sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
       ctx.fillStyle = dimmed ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.88)'
-      ctx.fillText(node.nome, x, y + r + 3 / scale)
+      ctx.fillText(node.nome, x, y + extent + 3 / scale)
       ctx.globalAlpha = 1
     },
     [degreeById, dimmedIds, hoverId, selectedId],
@@ -209,7 +228,7 @@ export default function Graph({
 
   const paintPointerArea = useCallback(
     (node: SimNode, color: string, ctx: CanvasRenderingContext2D) => {
-      const r = radiusOf(degreeById.get(node.id) ?? 0)
+      const r = isRaiz(node) ? RAIZ_RADIUS * HEX_SCALE : radiusOf(degreeById.get(node.id) ?? 0)
       ctx.fillStyle = color
       ctx.beginPath()
       ctx.arc(node.x ?? 0, node.y ?? 0, r + 3, 0, 2 * Math.PI)

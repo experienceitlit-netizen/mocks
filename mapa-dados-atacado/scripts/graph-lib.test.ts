@@ -98,6 +98,24 @@ describe('parseVaultFile', () => {
     expect(parsed.node.nivel).toBe('ambos')
   })
 
+  it('nivel "raiz" é aceito e nunca marca incompleto (agregador: owner/CC não se aplicam)', () => {
+    const parsed = parseVaultFile({
+      name: 'x.md',
+      raw: completo({
+        nivel: 'raiz',
+        tipo: 'dominio',
+        dominio: 'Atacado',
+        sistema: null,
+        origem: null,
+        owner: null,
+        centro_de_custo: null,
+      }),
+    })
+    expect(parsed.warnings).toEqual([])
+    expect(parsed.node.nivel).toBe('raiz')
+    expect(parsed.node.incompleto).toBe(false)
+  })
+
   it('nivel ausente gera warning e assume "primario"', () => {
     const raw = fm({
       id: 'a',
@@ -285,14 +303,57 @@ describe('vault real (catálogo em 4 níveis)', () => {
     expect(graph.nodes.filter((n) => n.fantasma === true)).toEqual([])
   })
 
-  it('35 nós de dados: 22 primários, 11 secundários e 2 "ambos"', () => {
-    expect(dados).toHaveLength(35)
+  it('36 nós de dados: 1 raiz, 22 primários, 11 secundários e 2 "ambos"', () => {
+    expect(dados).toHaveLength(36)
+    expect(dados.filter((n) => n.nivel === 'raiz').map((n) => n.id)).toEqual(['atacado-dados'])
     expect(dados.filter((n) => n.nivel === 'primario')).toHaveLength(22)
     expect(dados.filter((n) => n.nivel === 'secundario')).toHaveLength(11)
     expect(dados.filter((n) => n.nivel === 'ambos').map((n) => n.id).sort()).toEqual([
       'rating',
       'restritivos-e-tipos',
     ])
+  })
+
+  it('68 nós e 76 arestas no total: 25 consome + 13 agrega + 19 vem de + 19 origina de', () => {
+    expect(graph.nodes).toHaveLength(68)
+    expect(graph.links).toHaveLength(76)
+    const porLabel = (label: string) => graph.links.filter((l) => l.label === label).length
+    expect(porLabel('consome')).toBe(25)
+    expect(porLabel('agrega')).toBe(13)
+    expect(porLabel('vem de')).toBe(19)
+    expect(porLabel('origina de')).toBe(19)
+  })
+
+  it('raiz atacado-dados: incompleto false e 13 arestas "agrega" para todos os produtos finais', () => {
+    const raiz = dados.find((n) => n.id === 'atacado-dados')
+    expect(raiz).toMatchObject({
+      nivel: 'raiz',
+      tipo: 'dominio',
+      dominio: 'Atacado',
+      incompleto: false,
+      sistema: null,
+      origem: null,
+    })
+    const agrega = graph.links.filter((l) => l.label === 'agrega')
+    expect(agrega.every((l) => l.source === 'atacado-dados')).toBe(true)
+    expect(agrega.map((l) => l.target).sort()).toEqual([
+      'account',
+      'endividamento-de-mercado',
+      'estoque-carteira',
+      'evolucao-do-resultado',
+      'evolucao-do-resultado-por-produto',
+      'faturamento',
+      'localizacao',
+      'rar-12m',
+      'rating',
+      'restritivos-e-tipos',
+      'resultado',
+      'segmentacao-e-encarteiramento',
+      'setorizacao',
+    ])
+    // a raiz não deriva sistema/origem nem consome ninguém
+    expect(graph.links.filter((l) => l.source === 'atacado-dados' && l.label !== 'agrega')).toEqual([])
+    expect(graph.links.filter((l) => l.target === 'atacado-dados')).toEqual([])
   })
 
   it('25 arestas "consome", sem self-loop e sem consumo nos itens a mapear', () => {

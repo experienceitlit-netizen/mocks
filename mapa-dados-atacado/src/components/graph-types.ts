@@ -11,9 +11,10 @@ export type Debito = 'sim' | 'nao' | 'avaliar'
 
 /** Nível do produto de dado no modelo executivo em 4 camadas:
  *  primário (tem origem/sistema próprios, não consome nada), secundário
- *  (derivado de primários via "consome"; sistema/origem null = não se aplica)
- *  ou ambos (primário que também é produto final). */
-export type Nivel = 'primario' | 'secundario' | 'ambos'
+ *  (derivado de primários via "consome"; sistema/origem null = não se aplica),
+ *  ambos (primário que também é produto final) ou raiz (nó único do domínio
+ *  que agrega todos os produtos finais via arestas "agrega"). */
+export type Nivel = 'primario' | 'secundario' | 'ambos' | 'raiz'
 
 /** Nó como emitido pelo build (scripts/build-graph.ts). Campos além de
  *  id/nome são opcionais para tolerar variações do JSON gerado. */
@@ -64,6 +65,12 @@ export function isPrimario(node: Pick<GraphNodeData, 'nivel'>): boolean {
 
 export function isSecundario(node: Pick<GraphNodeData, 'nivel'>): boolean {
   return node.nivel === 'secundario' || node.nivel === 'ambos'
+}
+
+/** Nó-raiz do domínio ("Atacado — Dados"): agrega os produtos finais, mas não
+ *  é um produto de dado — fica fora de contadores, filtros e tabela. */
+export function isRaiz(node: Pick<GraphNodeData, 'nivel'>): boolean {
+  return node.nivel === 'raiz'
 }
 
 export interface GraphLinkData {

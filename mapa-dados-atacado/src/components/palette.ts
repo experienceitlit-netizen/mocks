@@ -1,9 +1,11 @@
 // Paleta central (seção 2 do plano). Graph, DetailPanel e a futura legenda
 // (Fase 5) devem importar daqui para não divergirem.
 import type { Debito, GraphNodeData, Nivel } from './graph-types'
-import { nodeKind } from './graph-types'
+import { isRaiz, nodeKind } from './graph-types'
 
 export const BACKGROUND = '#1E1E1E'
+/** Nó-raiz do domínio: azul accent do app — fora da semântica de débito. */
+export const COLOR_RAIZ = '#7FB4E8'
 export const COLOR_DEBITO = '#CC092F'
 export const COLOR_AVALIAR = '#8A8A8A'
 export const COLOR_LEGADO = '#B8860B'
@@ -24,6 +26,7 @@ const LEGADO_RE = /legado|on-premise|planilha|excel/i
 /** Cor do nó por precedência: débito sim > avaliar > sistema legado > curado.
  *  Nós derivados (sistema/origem) têm paleta própria da camada de linhagem. */
 export function nodeColor(node: GraphNodeData): string {
+  if (isRaiz(node)) return COLOR_RAIZ
   const kind = nodeKind(node)
   if (kind === 'sistema') return LEGADO_RE.test(node.nome) ? COLOR_SISTEMA_LEGADO : COLOR_SISTEMA
   if (kind === 'origem') return COLOR_ORIGEM
@@ -60,4 +63,5 @@ export const NIVEL_LABEL: Record<Nivel, string> = {
   primario: 'Produto primário',
   secundario: 'Produto secundário',
   ambos: 'Primário e final',
+  raiz: 'Raiz',
 }

@@ -686,6 +686,14 @@
   margin: 0 0.05rem;
 }
 
+/* Nó-raiz: hexágono de topo pontudo, como desenhado no canvas. */
+.legend__hex {
+  width: 0.75rem;
+  height: 0.85rem;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  flex-shrink: 0;
+}
+
 .legend__divider {
   margin-top: 0.35rem;
   padding-top: 0.4rem;

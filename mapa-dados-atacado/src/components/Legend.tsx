@@ -7,6 +7,7 @@ import {
   COLOR_FANTASMA,
   COLOR_LEGADO,
   COLOR_ORIGEM,
+  COLOR_RAIZ,
   COLOR_SISTEMA,
   COLOR_SISTEMA_LEGADO,
 } from './palette'
@@ -16,6 +17,8 @@ interface LegendProps {
   layersVisible: boolean
   /** Grafo já migrado para níveis: explica o anel dos produtos finais. */
   hasNiveis: boolean
+  /** Grafo já tem o nó-raiz do domínio: explica o hexágono azul. */
+  hasRaiz: boolean
 }
 
 function Dot({ color }: { color: string }) {
@@ -30,10 +33,16 @@ function Diamond({ color }: { color: string }) {
   return <span className="legend__diamond" style={{ background: color }} />
 }
 
-export default function Legend({ layersVisible, hasNiveis }: LegendProps) {
+export default function Legend({ layersVisible, hasNiveis, hasRaiz }: LegendProps) {
   return (
     <div className="legend" aria-label="Legenda do grafo">
       <ul>
+        {hasRaiz && (
+          <li>
+            <span className="legend__hex" style={{ background: COLOR_RAIZ }} /> Atacado — Dados
+            (raiz)
+          </li>
+        )}
         <li>
           <Dot color={COLOR_DEBITO} /> débito técnico
         </li>

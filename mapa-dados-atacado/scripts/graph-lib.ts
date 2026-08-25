@@ -5,7 +5,7 @@ export interface GraphNode {
   id: string
   nome: string
   tipo: string
-  /** primario | secundario | ambos */
+  /** raiz | primario | secundario | ambos */
   nivel: string
   dominio: string
   debito: string
@@ -178,6 +178,9 @@ export function parseVaultFile(file: VaultFile): ParsedFile {
     status: campo('status'),
     incompleto: owner === null || centroDeCusto === null,
   }
+
+  // nivel "raiz" é um agregador: owner/centro de custo não se aplicam.
+  if (node.nivel === 'raiz') node.incompleto = false
 
   const corpo = content.trim()
   if (corpo !== '') node.corpo = corpo

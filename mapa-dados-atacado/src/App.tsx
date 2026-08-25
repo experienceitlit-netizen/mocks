@@ -13,7 +13,7 @@ import Legend from './components/Legend'
 import TableView from './components/TableView'
 import type { Counts } from './components/Filters'
 import type { Debito, GraphJson, GraphNodeData, SimLink, SimNode } from './components/graph-types'
-import { isDerivado, linkEndId } from './components/graph-types'
+import { isDerivado, isRaiz, linkEndId } from './components/graph-types'
 import { buildLineage, buildLineageTree } from './components/lineage'
 import './App.css'
 
@@ -26,12 +26,27 @@ function norm(s: string): string {
     .trim()
 }
 
+/** Nó-raiz do domínio ("Atacado — Dados"), se o build já o emite. É a entrada
+ *  padrão do app: sem parâmetros na URL, a navegação começa focada nele. */
+const RAIZ_ID = (graphJson as GraphJson).nodes.find((n) => isRaiz(n))?.id ?? null
+
 function readUrlSelection(): string | null {
   return new URLSearchParams(window.location.search).get('no')
 }
 
 function readUrlFocus(): string | null {
   return new URLSearchParams(window.location.search).get('foco')
+}
+
+/** Caminho de foco na carga: ?foco= explícito manda; sem ?foco= e sem ?no=,
+ *  o padrão é abrir focado na raiz (vista Níveis, painel fechado). URL sem
+ *  parâmetros SEMPRE significa essa entrada padrão — o estado "mapa global"
+ *  não é codificado na URL (ver efeito de sincronização abaixo). */
+function readInitialFocusPath(): string[] {
+  const foco = readUrlFocus()
+  if (foco) return [foco]
+  if (RAIZ_ID !== null && readUrlSelection() === null) return [RAIZ_ID]
+  return []
 }
 
 function readUrlDepth(): number {
@@ -99,6 +114,9 @@ function App() {
       return n ? isDerivado(n) : false
     }
     for (const l of links) {
+      // "agrega" (raiz→produto) não infla raio: a raiz tem raio fixo e os
+      // produtos mantêm o tamanho que tinham no mapa sem a raiz.
+      if (l.label === 'agrega') continue
       const sDeriv = derivado(l.source)
       const tDeriv = derivado(l.target)
       if (!sDeriv && !tDeriv) {
@@ -123,9 +141,10 @@ function App() {
     return map
   }, [links])
 
-  // Contadores e filtros atuam só sobre nós de dados (derivados nunca entram).
+  // Contadores e filtros atuam só sobre nós de dados (derivados e a raiz
+  // nunca entram — a raiz não é um produto de dado).
   const counts = useMemo<Counts>(() => {
-    const reais = nodes.filter((n) => !n.fantasma && !isDerivado(n))
+    const reais = nodes.filter((n) => !n.fantasma && !isDerivado(n) && !isRaiz(n))
     return {
       total: reais.length,
       comDebito: reais.filter((n) => n.debito === 'sim').length,
@@ -136,15 +155,17 @@ function App() {
   // Grafo já migrado para o modelo de níveis? Antes disso o filtro de nível
   // e a entrada da legenda ficam ocultos (não haveria o que casar).
   const hasNiveis = useMemo(
-    () => nodes.some((n) => !isDerivado(n) && n.nivel !== undefined),
+    () => nodes.some((n) => !isDerivado(n) && !isRaiz(n) && n.nivel !== undefined),
     [nodes],
   )
 
   const dominios = useMemo(
     () =>
-      [...new Set(nodes.filter((n) => !n.fantasma && n.dominio).map((n) => n.dominio ?? ''))].sort(
-        (a, b) => a.localeCompare(b, 'pt-BR'),
-      ),
+      [
+        ...new Set(
+          nodes.filter((n) => !n.fantasma && !isRaiz(n) && n.dominio).map((n) => n.dominio ?? ''),
+        ),
+      ].sort((a, b) => a.localeCompare(b, 'pt-BR')),
     [nodes],
   )
 
@@ -162,13 +183,10 @@ function App() {
 
   // Camada de linhagem (sistemas/origens): desligada por padrão no mapa global,
   // ligada automaticamente ao entrar em foco. ?foco= na URL já entra em foco.
-  const [focusPath, setFocusPath] = useState<string[]>(() => {
-    const foco = readUrlFocus()
-    return foco ? [foco] : []
-  })
+  const [focusPath, setFocusPath] = useState<string[]>(readInitialFocusPath)
   const [depth, setDepth] = useState<number>(readUrlDepth)
   const [vista, setVista] = useState<Vista>(readUrlVista)
-  const [layersOn, setLayersOn] = useState<boolean>(() => readUrlFocus() !== null)
+  const [layersOn, setLayersOn] = useState<boolean>(() => readInitialFocusPath().length > 0)
   // Estado da camada antes de entrar em foco, restaurado ao sair.
   const layersBeforeFocusRef = useRef(false)
 
@@ -285,9 +303,9 @@ function App() {
         const n = nodesById.get(id)
         // Placeholder da linhagem: só reage à busca (nunca casa com ela).
         if (!n) return normQuery.length > 0
-        if (isDerivado(n)) {
-          // Derivados só reagem à busca; os demais filtros são de governança
-          // e valem apenas para dados.
+        if (isDerivado(n) || isRaiz(n)) {
+          // Derivados e a raiz só reagem à busca; os demais filtros são de
+          // governança e valem apenas para produtos de dados.
           return normQuery.length > 0 && !matchIds.has(n.id)
         }
         if (normQuery && !matchIds.has(n.id)) return true
@@ -384,14 +402,19 @@ function App() {
   )
 
   // URL reflete aba (?aba=tabela), seleção (?no=) e foco (?foco=&vista=, com
-  // &prof= só na vista de força) sem poluir o histórico.
+  // &prof= só na vista de força) sem poluir o histórico. O estado padrão de
+  // entrada (foco na raiz, vista Níveis, nada selecionado) fica com a URL
+  // limpa — o inverso de readInitialFocusPath. Consequência documentada: o
+  // mapa global também tem URL limpa, então recarregar a página a partir dele
+  // volta à entrada padrão (foco na raiz).
   useEffect(() => {
     const url = new URL(window.location.href)
     if (aba === 'tabela') url.searchParams.set('aba', 'tabela')
     else url.searchParams.delete('aba')
     if (selectedId) url.searchParams.set('no', selectedId)
     else url.searchParams.delete('no')
-    if (focusId) {
+    const focoDefault = focusId === RAIZ_ID && vista === 'niveis' && !selectedId
+    if (focusId && !focoDefault) {
       url.searchParams.set('foco', focusId)
       url.searchParams.set('vista', vista)
       if (vista === 'forca') url.searchParams.set('prof', String(depth))
@@ -417,13 +440,13 @@ function App() {
   useEffect(() => {
     const onPopState = () => {
       const id = readUrlSelection()
-      const foco = readUrlFocus()
+      const path = readInitialFocusPath()
       setAba(readUrlAba())
       setSelectedId(id)
-      setFocusPath(foco ? [foco] : [])
+      setFocusPath(path)
       setDepth(readUrlDepth())
       setVista(readUrlVista())
-      if (foco) setLayersOn(true)
+      if (path.length > 0) setLayersOn(true)
       if (id) graphRef.current?.focusNode(id)
     }
     const onKeyDown = (e: KeyboardEvent) => {
@@ -439,10 +462,11 @@ function App() {
 
   const selectedNode = selectedId ? (nodesById.get(selectedId) ?? null) : null
 
-  // Árvore de linhagem do painel (só dados reais têm rota própria).
+  // Árvore de linhagem do painel (só dados reais têm rota própria; a raiz
+  // teria a árvore inteira — o painel dela lista só o que agrega).
   const selectedLineage = useMemo(
     () =>
-      selectedNode && !isDerivado(selectedNode) && !selectedNode.fantasma
+      selectedNode && !isDerivado(selectedNode) && !selectedNode.fantasma && !isRaiz(selectedNode)
         ? buildLineageTree(selectedNode.id, nodes, links)
         : null,
     [selectedNode, nodes, links],
@@ -601,7 +625,9 @@ function App() {
         />
       )}
 
-      {aba === 'mapa' && <Legend layersVisible={layersOn} hasNiveis={hasNiveis} />}
+      {aba === 'mapa' && (
+        <Legend layersVisible={layersOn} hasNiveis={hasNiveis} hasRaiz={RAIZ_ID !== null} />
+      )}
 
       {aba === 'mapa' && selectedNode && (
         <DetailPanel
