@@ -1,0 +1,12 @@
+.app {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app h1 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #e0e0e0;
+}
