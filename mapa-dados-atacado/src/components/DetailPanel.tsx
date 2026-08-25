@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import type { GraphNodeData } from './graph-types'
 import { isDerivado, nodeKind } from './graph-types'
 import type { LineageEntry, LineageSource } from './lineage'
-import { DEBITO_LABEL, domainColor } from './palette'
+import { DEBITO_LABEL, NIVEL_LABEL, domainColor } from './palette'
 import Markdown from './Markdown'
 
 export interface Connection {
@@ -202,7 +202,11 @@ export default function DetailPanel({
               {node.dominio}
             </span>
           )}
-          {node.tipo && <span className="chip chip--neutral">{node.tipo}</span>}
+          {node.nivel ? (
+            <span className={`chip chip--nivel-${node.nivel}`}>{NIVEL_LABEL[node.nivel]}</span>
+          ) : (
+            node.tipo && <span className="chip chip--neutral">{node.tipo}</span>
+          )}
           {!node.fantasma && (
             <span className={`chip chip--debito-${debito}`}>Débito: {DEBITO_LABEL[debito]}</span>
           )}

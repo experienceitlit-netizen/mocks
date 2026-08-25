@@ -69,7 +69,7 @@
 .table-view__table {
   border-collapse: collapse;
   width: 100%;
-  min-width: 72rem; /* força o scroll horizontal em telas estreitas */
+  min-width: 60rem; /* força o scroll horizontal em telas estreitas */
 }
 
 /* ---------- cabeçalho ---------- */
@@ -211,21 +211,22 @@
   color: #9dbbd8;
 }
 
-.table-view__cell--descricao {
-  min-width: 16rem;
-  max-width: 26rem;
-  color: #b8b8b8;
+/* chip de nível ("Primário e final") ao lado do nome do produto */
+.table-view__kind--nivel {
+  border-color: #5c7a99;
+  color: #9dbbd8;
+  white-space: nowrap;
+}
+
+/* primário sem produto secundário */
+.table-view__none {
+  color: #7a7a7a;
 }
 
 .table-view__cell--origem,
 .table-view__cell--sistema {
   min-width: 10rem;
   color: #c8c8c8;
-}
-
-.table-view__cell--cc,
-.table-view__cell--owner {
-  white-space: nowrap;
 }
 
 /* ---------- estados de valor (mesmo padrão do DetailPanel) ---------- */

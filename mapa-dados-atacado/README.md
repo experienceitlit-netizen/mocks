@@ -8,6 +8,24 @@ O conteúdo vive em arquivos Markdown no diretório `vault/` (um arquivo por dad
 de build transforma o vault em `src/data/graph.json`, que o front-end (React + Vite +
 `react-force-graph-2d`) renderiza como grafo interativo. Sem backend, sem banco, sem login.
 
+## Modelo em 4 níveis
+
+O catálogo espelha a tabela executiva em cadeias **origem → fonte (sistema) → produto
+primário → produto secundário**:
+
+- **Primário** (`nivel: primario`): dado bruto/insumo com rota própria — os campos
+  `origem` e `sistema` do frontmatter dizem de onde ele vem. Primários **não** têm
+  wikilinks no corpo.
+- **Secundário** (`nivel: secundario`): produto final montado a partir de primários.
+  Declara `origem: null` e `sistema: null` (não se aplica — a rota vem dos primários) e
+  linka com wikilinks **todos** os primários que consome (arestas "consome").
+- **Ambos** (`nivel: ambos`): produto consumido direto e também insumo de outros
+  (ex.: `rating`), sem self-loop.
+
+Hoje o vault tem **35 dados** (22 primários, 11 secundários, 2 "ambos") e **25 cadeias
+"consome"** primário→secundário; com os sistemas e origens derivados do frontmatter, o
+`graph.json` fecha em 67 nós e 63 arestas.
+
 ## Como rodar
 
 ```bash
@@ -40,9 +58,11 @@ O `dist/` é estático puro: pode ser aberto em qualquer hosting interno de arqu
    abaixo. Não sabe owner ou centro de custo? Deixe `null` — o nó aparece com borda
    tracejada, sinalizando o gap de governança.
 
-3. No corpo (abaixo do segundo `---`), escreva a descrição livre em Markdown e declare as
-   conexões com wikilinks — cada `[[Nome do Outro Dado]]` cria uma aresta "este nó consome
-   o alvo". Para outro rótulo de aresta, use `[[Alvo|produz]]`.
+3. No corpo (abaixo do segundo `---`), escreva a descrição livre em Markdown. Se o dado é
+   **secundário**, declare os primários que ele consome com wikilinks — cada
+   `[[Nome do Outro Dado]]` cria uma aresta "este nó consome o alvo" (outro rótulo:
+   `[[Alvo|produz]]`). Se é **primário**, não use wikilinks: a rota dele são os campos
+   `origem`/`sistema` do frontmatter.
 
 4. Rode `npm run data` (ou apenas `npm run dev`, que já roda antes). Confira o console:
    o build avisa sobre campo faltando, id duplicado e link quebrado (que vira nó
@@ -57,9 +77,10 @@ O vault também pode ser aberto como vault do Obsidian desktop — os wikilinks 
 | `id` | sim | slug único em kebab-case (ex.: `rar-12m`) | usado na URL (`?no=rar-12m`) e na resolução de links |
 | `nome` | sim | texto livre curto | rótulo do nó; wikilinks resolvem por `nome` ou `id`, sem diferenciar caixa |
 | `tipo` | sim | `produto` \| `insumo` \| `sistema` \| `dominio` | |
+| `nivel` | não (default `primario`) | `primario` \| `secundario` \| `ambos` | nível na cadeia (ver "Modelo em 4 níveis"); chip e filtro "Nível" na UI |
 | `dominio` | sim | `Cadastro` \| `Mercado` \| `Risco` \| `Resultado` \| `Regulatorio` \| `A definir` | filtro por domínio na UI |
-| `origem` | sim | texto livre | área ou processo de origem |
-| `sistema` | sim | texto livre | se contiver "legado" ou "on-premise", o nó fica âmbar |
+| `origem` | sim (aceita `null`) | texto ou `null` | área ou processo de origem; `null` em secundários = não se aplica (UI mostra "—") |
+| `sistema` | sim (aceita `null`) | texto ou `null` | se contiver "legado" ou "on-premise", o nó fica âmbar; `null` em secundários = não se aplica |
 | `descricao` | sim | uma linha | aparece no painel e na busca |
 | `centro_de_custo` | sim (aceita `null`) | texto ou `null` | `null` = a definir → nó com borda tracejada |
 | `owner` | sim (aceita `null`) | texto ou `null` | `null` = a definir → nó com borda tracejada |
@@ -84,6 +105,8 @@ Bordas:
   é o que a reunião de governança precisa enxergar).
 - **Contorno cinza tracejado sem preenchimento** = nó fantasma: alvo de wikilink que ainda
   não tem arquivo no vault.
+- **Anel externo fino** na cor do nó = produto **secundário/final** (`nivel: secundario`
+  ou `ambos`).
 
 Tamanho do nó é proporcional ao número de conexões.
 
@@ -101,7 +124,7 @@ src/
   components/
     Graph.tsx               # canvas do grafo (react-force-graph-2d)
     DetailPanel.tsx         # drawer de detalhe do nó selecionado
-    Filters.tsx             # domínio, débito, "somente sem owner", camada de linhagem, contadores
+    Filters.tsx             # domínio, débito, nível, "somente sem owner", camada de linhagem, contadores
     FocusBar.tsx            # barra do modo foco: breadcrumb, vista (níveis/força), sair
     lineage.ts              # vista de linhagem em níveis: cadeia montante + layout em colunas
     SearchBox.tsx           # busca por nome/descrição
@@ -134,12 +157,13 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
   aparecem os **sistemas** (quadrados) e as **origens** (losangos) derivados do
   frontmatter. Fica desligado no mapa global e liga automaticamente ao entrar em foco.
   Contadores e filtros de governança continuam contando só os dados.
-- O seletor **Mapa | Tabela** no topo alterna entre o grafo e a **visão de tabela**: as
-  mesmas colunas da tabela executiva que originou o projeto (domínio, origem, fonte,
-  produto, descrição, centro de custo, owner, débito, status), agrupadas por domínio, com
-  filtro rápido e ordenação próprios. Clicar no nome de um dado volta ao mapa com o nó
-  selecionado e centralizado; o estado do mapa (foco, filtros, zoom) sobrevive à ida e
-  volta. `Esc` na tabela retorna ao mapa.
+- O seletor **Mapa | Tabela** no topo alterna entre o grafo e a **visão de tabela**:
+  espelho da tabela executiva em cadeias, **uma linha por cadeia primário→secundário**
+  (Domínio | Origem | Fonte | Produto primário | Produto secundário | Débito | Status —
+  origem, fonte, débito e status vêm do primário; primário sem produto final mostra "—"
+  na coluna do secundário), agrupada por domínio, com filtro rápido e ordenação próprios.
+  Clicar no nome de um produto volta ao mapa com o nó selecionado e centralizado; o estado
+  do mapa (foco, filtros, zoom) sobrevive à ida e volta. `Esc` na tabela retorna ao mapa.
 - A URL reflete o estado e pode ser compartilhada: `?no=rar-12m` seleciona um nó,
   `?foco=rar-12m` abre o foco na vista de níveis, `?foco=rar-12m&vista=forca&prof=2`
   na vista de força com a profundidade escolhida e `?aba=tabela` abre direto na tabela.

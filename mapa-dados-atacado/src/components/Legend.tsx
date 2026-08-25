@@ -14,6 +14,8 @@ import {
 interface LegendProps {
   /** Camada de linhagem visível: mostra formas/cores de sistema e origem. */
   layersVisible: boolean
+  /** Grafo já migrado para níveis: explica o anel dos produtos finais. */
+  hasNiveis: boolean
 }
 
 function Dot({ color }: { color: string }) {
@@ -28,7 +30,7 @@ function Diamond({ color }: { color: string }) {
   return <span className="legend__diamond" style={{ background: color }} />
 }
 
-export default function Legend({ layersVisible }: LegendProps) {
+export default function Legend({ layersVisible, hasNiveis }: LegendProps) {
   return (
     <div className="legend" aria-label="Legenda do grafo">
       <ul>
@@ -52,6 +54,12 @@ export default function Legend({ layersVisible }: LegendProps) {
           <span className="legend__dot legend__dot--incompleto" /> borda tracejada = sem owner ou
           centro de custo
         </li>
+        {hasNiveis && (
+          <li>
+            <span className="legend__dot legend__dot--secundario" /> anel = produto secundário /
+            final
+          </li>
+        )}
         {layersVisible && (
           <>
             <li className="legend__divider">

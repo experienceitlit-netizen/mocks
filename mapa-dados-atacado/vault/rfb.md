@@ -2,6 +2,7 @@
 id: rfb
 nome: RFB
 tipo: insumo
+nivel: primario
 dominio: Mercado
 origem: "Receita Federal"
 sistema: "Databricks (dado curado)"

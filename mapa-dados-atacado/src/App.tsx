@@ -6,6 +6,7 @@ import DetailPanel from './components/DetailPanel'
 import type { Connection } from './components/DetailPanel'
 import SearchBox from './components/SearchBox'
 import Filters from './components/Filters'
+import type { NivelFiltro } from './components/Filters'
 import FocusBar from './components/FocusBar'
 import type { Vista } from './components/FocusBar'
 import Legend from './components/Legend'
@@ -132,6 +133,13 @@ function App() {
     }
   }, [nodes])
 
+  // Grafo já migrado para o modelo de níveis? Antes disso o filtro de nível
+  // e a entrada da legenda ficam ocultos (não haveria o que casar).
+  const hasNiveis = useMemo(
+    () => nodes.some((n) => !isDerivado(n) && n.nivel !== undefined),
+    [nodes],
+  )
+
   const dominios = useMemo(
     () =>
       [...new Set(nodes.filter((n) => !n.fantasma && n.dominio).map((n) => n.dominio ?? ''))].sort(
@@ -149,6 +157,7 @@ function App() {
   const [query, setQuery] = useState('')
   const [selDominios, setSelDominios] = useState<ReadonlySet<string>>(new Set())
   const [selDebitos, setSelDebitos] = useState<ReadonlySet<Debito>>(new Set())
+  const [selNiveis, setSelNiveis] = useState<ReadonlySet<NivelFiltro>>(new Set())
   const [somenteSemOwner, setSomenteSemOwner] = useState(false)
 
   // Camada de linhagem (sistemas/origens): desligada por padrão no mapa global,
@@ -254,7 +263,11 @@ function App() {
   }, [nodes, normQuery, layersOn])
 
   const hasActiveFilter =
-    selDominios.size > 0 || selDebitos.size > 0 || somenteSemOwner || normQuery.length > 0
+    selDominios.size > 0 ||
+    selDebitos.size > 0 ||
+    selNiveis.size > 0 ||
+    somenteSemOwner ||
+    normQuery.length > 0
 
   const dimmedIds = useMemo(() => {
     // Hover tem prioridade: acende o nó + vizinhos (na vista em níveis, a
@@ -280,6 +293,13 @@ function App() {
         if (normQuery && !matchIds.has(n.id)) return true
         if (selDominios.size > 0 && !selDominios.has(n.dominio ?? '')) return true
         if (selDebitos.size > 0 && !selDebitos.has(n.debito ?? 'avaliar')) return true
+        // "ambos" casa com qualquer lado do filtro de nível.
+        if (
+          selNiveis.size > 0 &&
+          ![...selNiveis].some((v) => n.nivel === v || n.nivel === 'ambos')
+        ) {
+          return true
+        }
         if (somenteSemOwner && (n.fantasma || Boolean(n.owner))) return true
         return false
       }),
@@ -295,6 +315,7 @@ function App() {
     searchMatches,
     selDominios,
     selDebitos,
+    selNiveis,
     somenteSemOwner,
   ])
 
@@ -559,24 +580,28 @@ function App() {
           dominios={dominios}
           selectedDominios={selDominios}
           selectedDebitos={selDebitos}
+          hasNiveis={hasNiveis}
+          selectedNiveis={selNiveis}
           somenteSemOwner={somenteSemOwner}
           layersOn={layersOn}
           counts={counts}
           hasActiveFilter={hasActiveFilter}
           onToggleDominio={(d) => setSelDominios((prev) => toggled(prev, d))}
           onToggleDebito={(d) => setSelDebitos((prev) => toggled(prev, d))}
+          onToggleNivel={(n) => setSelNiveis((prev) => toggled(prev, n))}
           onToggleSemOwner={() => setSomenteSemOwner((v) => !v)}
           onToggleLayers={() => setLayersOn((v) => !v)}
           onClear={() => {
             setQuery('')
             setSelDominios(new Set())
             setSelDebitos(new Set())
+            setSelNiveis(new Set())
             setSomenteSemOwner(false)
           }}
         />
       )}
 
-      {aba === 'mapa' && <Legend layersVisible={layersOn} />}
+      {aba === 'mapa' && <Legend layersVisible={layersOn} hasNiveis={hasNiveis} />}
 
       {aba === 'mapa' && selectedNode && (
         <DetailPanel

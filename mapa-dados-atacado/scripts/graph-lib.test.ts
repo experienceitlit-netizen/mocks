@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   buildGraph,
@@ -5,6 +7,7 @@ import {
   extractWikilinks,
   parseVaultFile,
   slugify,
+  type GraphNode,
   type VaultFile,
 } from './graph-lib.ts'
 
@@ -19,6 +22,7 @@ const completo = (extra: Record<string, string | null>, corpo = ''): string =>
       id: 'x',
       nome: 'X',
       tipo: 'insumo',
+      nivel: 'primario',
       dominio: 'Risco',
       origem: 'o',
       sistema: 's',
@@ -86,6 +90,56 @@ describe('parseVaultFile', () => {
     const raw = fm({ id: 'a', nome: 'A', owner: null, centro_de_custo: null })
     const parsed = parseVaultFile({ name: 'a.md', raw })
     expect(parsed.warnings.some((w) => w.includes('"tipo"'))).toBe(true)
+  })
+
+  it('propaga nivel do frontmatter para o nó', () => {
+    const parsed = parseVaultFile({ name: 'x.md', raw: completo({ nivel: 'ambos' }) })
+    expect(parsed.warnings).toEqual([])
+    expect(parsed.node.nivel).toBe('ambos')
+  })
+
+  it('nivel ausente gera warning e assume "primario"', () => {
+    const raw = fm({
+      id: 'a',
+      nome: 'A',
+      tipo: 'insumo',
+      dominio: 'Risco',
+      origem: 'o',
+      sistema: 's',
+      descricao: 'd',
+      debito: 'nao',
+      status: 'producao',
+      owner: null,
+      centro_de_custo: null,
+    })
+    const parsed = parseVaultFile({ name: 'a.md', raw })
+    expect(parsed.warnings).toEqual(['a.md: frontmatter sem o campo obrigatório "nivel" — assumindo "primario"'])
+    expect(parsed.node.nivel).toBe('primario')
+  })
+
+  it('sistema/origem null explícito são válidos: sem warning, node com null', () => {
+    const parsed = parseVaultFile({ name: 'x.md', raw: completo({ sistema: null, origem: null }) })
+    expect(parsed.warnings).toEqual([])
+    expect(parsed.node.sistema).toBeNull()
+    expect(parsed.node.origem).toBeNull()
+  })
+
+  it('sistema/origem ausentes do frontmatter continuam gerando warning', () => {
+    const raw = fm({
+      id: 'a',
+      nome: 'A',
+      tipo: 'produto',
+      nivel: 'secundario',
+      dominio: 'Risco',
+      descricao: 'd',
+      debito: 'nao',
+      status: 'producao',
+      owner: null,
+      centro_de_custo: null,
+    })
+    const parsed = parseVaultFile({ name: 'a.md', raw })
+    expect(parsed.warnings.some((w) => w.includes('"sistema"'))).toBe(true)
+    expect(parsed.warnings.some((w) => w.includes('"origem"'))).toBe(true)
   })
 })
 
@@ -156,6 +210,15 @@ describe('derivarSistemasOrigens', () => {
     expect(graph.links).toEqual([])
   })
 
+  it('sistema/origem null (secundários) não geram nó derivado nem aresta', () => {
+    const { graph, warnings } = buildGraph([
+      { name: 'a.md', raw: completo({ id: 'a', nome: 'Alfa', nivel: 'secundario', sistema: null, origem: null }) },
+    ])
+    expect(warnings).toEqual([])
+    expect(graph.nodes.filter((n) => n.derivado === true)).toEqual([])
+    expect(graph.links).toEqual([])
+  })
+
   it('sistema desconhecido com origem conhecida liga dado → origem direto', () => {
     const { graph } = buildGraph([
       { name: 'a.md', raw: completo({ id: 'a', nome: 'Alfa', sistema: 'a confirmar', origem: 'Banco Central' }) },
@@ -205,5 +268,58 @@ describe('slugify', () => {
   it('gera kebab-case sem acentos', () => {
     expect(slugify('Capital Regulatório')).toBe('capital-regulatorio')
     expect(slugify('Custo de Capital (KE)')).toBe('custo-de-capital-ke')
+  })
+})
+
+describe('vault real (catálogo em 4 níveis)', () => {
+  const vaultDir = resolve(import.meta.dirname, '..', 'vault')
+  const arquivos: VaultFile[] = readdirSync(vaultDir)
+    .filter((n) => n.endsWith('.md') && !n.startsWith('_'))
+    .map((n) => ({ name: n, raw: readFileSync(join(vaultDir, n), 'utf8') }))
+  const { graph, warnings } = buildGraph(arquivos)
+  const dados = graph.nodes.filter((n): n is GraphNode => n.derivado !== true)
+  const consome = graph.links.filter((l) => l.label === 'consome')
+
+  it('builda sem warnings e sem nós fantasma', () => {
+    expect(warnings).toEqual([])
+    expect(graph.nodes.filter((n) => n.fantasma === true)).toEqual([])
+  })
+
+  it('35 nós de dados: 22 primários, 11 secundários e 2 "ambos"', () => {
+    expect(dados).toHaveLength(35)
+    expect(dados.filter((n) => n.nivel === 'primario')).toHaveLength(22)
+    expect(dados.filter((n) => n.nivel === 'secundario')).toHaveLength(11)
+    expect(dados.filter((n) => n.nivel === 'ambos').map((n) => n.id).sort()).toEqual([
+      'rating',
+      'restritivos-e-tipos',
+    ])
+  })
+
+  it('25 arestas "consome", sem self-loop e sem consumo nos itens a mapear', () => {
+    expect(consome).toHaveLength(25)
+    expect(graph.links.filter((l) => l.source === l.target)).toEqual([])
+    const alvosDe = (id: string) => consome.filter((l) => l.source === id)
+    expect(alvosDe('recta-fedrl')).toEqual([])
+    expect(alvosDe('pcam-57')).toEqual([])
+    expect(alvosDe('rating')).toEqual([])
+    expect(alvosDe('restritivos-e-tipos')).toEqual([])
+  })
+
+  it('secundários com as cadeias esperadas', () => {
+    const alvos = (id: string) =>
+      consome
+        .filter((l) => l.source === id)
+        .map((l) => l.target)
+        .sort()
+    expect(alvos('setorizacao')).toEqual(['bacen', 'classificacao-de-setores', 'gdp', 'rfb'])
+    expect(alvos('rar-12m')).toEqual(['capital-regulatorio', 'custo-de-capital-ke', 'estatag', 'gdad'])
+  })
+
+  it('secundários não derivam sistema/origem (frontmatter null)', () => {
+    for (const n of dados.filter((d) => d.nivel === 'secundario')) {
+      expect(n.sistema).toBeNull()
+      expect(n.origem).toBeNull()
+      expect(graph.links.filter((l) => l.source === n.id && l.label !== 'consome')).toEqual([])
+    }
   })
 })

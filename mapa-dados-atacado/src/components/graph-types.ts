@@ -9,6 +9,12 @@ import type {
 
 export type Debito = 'sim' | 'nao' | 'avaliar'
 
+/** Nível do produto de dado no modelo executivo em 4 camadas:
+ *  primário (tem origem/sistema próprios, não consome nada), secundário
+ *  (derivado de primários via "consome"; sistema/origem null = não se aplica)
+ *  ou ambos (primário que também é produto final). */
+export type Nivel = 'primario' | 'secundario' | 'ambos'
+
 /** Nó como emitido pelo build (scripts/build-graph.ts). Campos além de
  *  id/nome são opcionais para tolerar variações do JSON gerado. */
 export interface GraphNodeData {
@@ -20,8 +26,11 @@ export interface GraphNodeData {
   owner?: string | null
   centroDeCusto?: string | null
   descricao?: string
-  sistema?: string
-  origem?: string
+  /** null = não se aplica (secundário); string pendente = "a confirmar…". */
+  sistema?: string | null
+  /** null = não se aplica (secundário); string pendente = "a confirmar…". */
+  origem?: string | null
+  nivel?: Nivel
   status?: string
   incompleto?: boolean
   /** Nó fantasma: alvo de wikilink sem arquivo no vault. */
@@ -46,6 +55,15 @@ export function nodeKind(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): NodeKi
 /** Nó da camada de linhagem (sistema/origem emitido pelo build). */
 export function isDerivado(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): boolean {
   return node.derivado === true || nodeKind(node) !== 'dado'
+}
+
+/** Nível "ambos" conta nos dois lados do modelo executivo. */
+export function isPrimario(node: Pick<GraphNodeData, 'nivel'>): boolean {
+  return node.nivel === 'primario' || node.nivel === 'ambos'
+}
+
+export function isSecundario(node: Pick<GraphNodeData, 'nivel'>): boolean {
+  return node.nivel === 'secundario' || node.nivel === 'ambos'
 }
 
 export interface GraphLinkData {

@@ -165,7 +165,8 @@ export default function Graph({
         ctx.stroke()
         ctx.setLineDash([])
       } else {
-        ctx.fillStyle = nodeColor(node)
+        const cor = nodeColor(node)
+        ctx.fillStyle = cor
         ctx.fill()
         if (node.incompleto) {
           // Gap de governança: borda branca tracejada.
@@ -174,6 +175,15 @@ export default function Graph({
           ctx.lineWidth = 1.6 / scale
           ctx.stroke()
           ctx.setLineDash([])
+        }
+        if (node.nivel === 'secundario' || node.nivel === 'ambos') {
+          // Produto final: anel externo fino na cor do nó, por fora da borda
+          // tracejada de incompletude (e do halo de seleção/hover).
+          ctx.beginPath()
+          ctx.arc(x, y, r + 3.6 / scale, 0, 2 * Math.PI)
+          ctx.strokeStyle = cor
+          ctx.lineWidth = 1.1 / scale
+          ctx.stroke()
         }
       }
 

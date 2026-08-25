@@ -55,8 +55,10 @@ function makeSource(
   field: 'sistema' | 'origem',
   byName: ReadonlyMap<string, GraphNodeData>,
 ): LineageSource | null {
+  // null = "não se aplica" (secundário só tem cadeias de primários): nunca
+  // sintetiza placeholder — só strings sem nó correspondente viram um.
   const valor = field === 'sistema' ? data.sistema : data.origem
-  if (!valor) return null
+  if (valor === null || valor === undefined || valor.trim() === '') return null
   const real = byName.get(norm(valor))
   if (real) return { node: real, placeholder: false }
   return {

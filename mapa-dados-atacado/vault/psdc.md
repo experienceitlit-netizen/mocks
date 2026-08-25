@@ -2,6 +2,7 @@
 id: psdc
 nome: PSDC
 tipo: insumo
+nivel: primario
 dominio: Cadastro
 origem: "cadastro corporativo"
 sistema: "Databricks (produto de dados)"
@@ -11,4 +12,4 @@ owner: null
 debito: nao
 status: producao
 ---
-O PSDC é a fonte oficial de identificação dos clientes pessoa jurídica: CNPJ, composição de grupos econômicos e centro de custo. É um produto de dados curado no Databricks, mantido pelo cadastro corporativo, e serve de âncora cadastral para praticamente todas as classificações comerciais do Atacado. Por ser a referência de identidade do cliente, é o ponto de partida de derivados como a Setorização e a Localização.
+O PSDC é a fonte oficial de identificação dos clientes pessoa jurídica: CNPJ, composição de grupos econômicos e centro de custo. É um produto de dados curado no Databricks, mantido pelo cadastro corporativo, e serve de base para a conta (Account) do cliente no Salesforce.

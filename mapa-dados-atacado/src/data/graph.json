@@ -1,9 +1,42 @@
 {
   "nodes": [
     {
+      "id": "account",
+      "nome": "Account",
+      "tipo": "produto",
+      "nivel": "secundario",
+      "dominio": "Cadastro",
+      "debito": "nao",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "conta do cliente no Salesforce",
+      "sistema": null,
+      "origem": null,
+      "status": "producao",
+      "incompleto": true,
+      "corpo": "Conta (Account) do cliente no Salesforce, a representação comercial da pessoa jurídica usada pelo time de relacionamento do Atacado. É construída sobre a identificação oficial do cadastro corporativo — sem débito herdado, pois toda a cadeia de entrada é curada.\n\nConsome [[PSDC]]."
+    },
+    {
+      "id": "ajustes-dos-analistas",
+      "nome": "Ajustes dos analistas",
+      "tipo": "insumo",
+      "nivel": "primario",
+      "dominio": "Resultado",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "correções e reclassificações de resultado",
+      "sistema": "planilha / processo manual",
+      "origem": "Atacado — ajustes",
+      "status": "producao",
+      "incompleto": true,
+      "corpo": "Correções e reclassificações aplicadas pelos analistas do Atacado sobre o resultado realizado, refletindo a visão de gestão. O processo hoje é manual, apoiado em planilha e sem trilha de auditoria — é aí que se concentra o débito técnico da rota."
+    },
+    {
       "id": "bacen",
       "nome": "Bacen",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Mercado",
       "debito": "avaliar",
       "owner": null,
@@ -13,27 +46,29 @@
       "origem": "Banco Central",
       "status": "investigacao",
       "incompleto": true,
-      "corpo": "Dados do Banco Central usados como apoio à classificação de clientes (setorização e localização). A rota técnica de acesso e o sistema onde o dado vive ainda estão sendo confirmados, por isso o item está em investigação e o débito segue como \"a avaliar\"."
+      "corpo": "Dados do Banco Central usados como apoio à classificação de clientes (setorização e localização). A fonte e a curadoria ainda estão sendo confirmadas, por isso o item está em investigação e o débito segue como \"a avaliar\"."
     },
     {
       "id": "bacen-3040-45-46",
       "nome": "BACEN 3040/45/46",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Regulatorio",
       "debito": "nao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "operações de crédito reguladas",
-      "sistema": "transferência corporativa de arquivos",
+      "sistema": "transferência corporativa",
       "origem": "BACEN",
       "status": "producao",
       "incompleto": true,
-      "corpo": "Bases regulatórias do BACEN (documentos 3040, 3045 e 3046) com as operações de crédito reguladas do sistema financeiro. Chegam ao banco por transferência corporativa de arquivos e dão ao Atacado visão de endividamento e share dos clientes no mercado de crédito."
+      "corpo": "Bases regulatórias do BACEN (documentos 3040, 3045 e 3046) com as operações de crédito reguladas do sistema financeiro. Chegam ao banco por transferência corporativa de arquivos e dão ao Atacado visão de endividamento e share dos clientes no mercado de crédito. O uso como insumo do endividamento de mercado foi inferido e precisa ser validado com o negócio."
     },
     {
       "id": "capital-regulatorio",
       "nome": "Capital Regulatório",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Risco",
       "debito": "avaliar",
       "owner": null,
@@ -43,12 +78,45 @@
       "origem": "capital / risco",
       "status": "investigacao",
       "incompleto": true,
-      "corpo": "Base de capital regulatório alocado por cliente/operação, insumo direto do denominador do RAR. A área de capital/risco é a origem, mas o sistema oficial de consumo ainda está sendo confirmado — enquanto isso o item permanece em investigação e o débito como \"a avaliar\"."
+      "corpo": "Base de capital regulatório alocado por cliente/operação, insumo direto do denominador do RAR 12M. A área de capital/risco é a origem, mas a fonte e a curadoria ainda estão sendo confirmadas — enquanto isso o item permanece em investigação e o débito como \"a avaliar\"."
+    },
+    {
+      "id": "classificacao-de-localizacao",
+      "nome": "Classificação de localização",
+      "tipo": "insumo",
+      "nivel": "primario",
+      "dominio": "Mercado",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "de-para geográfico mantido pelo Atacado",
+      "sistema": "planilha Excel (de-para)",
+      "origem": "Atacado — classificação",
+      "status": "producao",
+      "incompleto": true,
+      "corpo": "De-para geográfico mantido pela equipe de classificação do Atacado, que traduz o endereço cadastral dos clientes na praça de cobrança do relacionamento. Assim como o de-para setorial, vive em planilha Excel sem trilha de auditoria — o débito está na rota, que precisa ser automatizada."
+    },
+    {
+      "id": "classificacao-de-setores",
+      "nome": "Classificação de setores",
+      "tipo": "insumo",
+      "nivel": "primario",
+      "dominio": "Mercado",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "de-para de setores mantido pelo Atacado",
+      "sistema": "planilha Excel (de-para)",
+      "origem": "Atacado — classificação",
+      "status": "producao",
+      "incompleto": true,
+      "corpo": "De-para de setores mantido pela equipe de classificação do Atacado, que traduz os CNAEs e demais sinais das fontes externas no setor eleito de cada grupo. Hoje o de-para vive em planilha Excel, sem trilha de auditoria — o débito técnico está na rota, que precisa ser automatizada em um processo governado."
     },
     {
       "id": "custo-de-capital-ke",
       "nome": "Custo de Capital (KE)",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Risco",
       "debito": "sim",
       "owner": null,
@@ -58,12 +126,13 @@
       "origem": "crédito (provisório)",
       "status": "transicao",
       "incompleto": true,
-      "corpo": "Taxa de custo de capital (KE) aplicada no cálculo do retorno ajustado ao risco. Hoje é obtida de forma provisória a partir do banco de dados do crédito — uma rota de empréstimo que caracteriza o débito técnico e mantém o dado em transição até que uma fonte oficial seja definida."
+      "corpo": "Taxa de custo de capital (KE) aplicada no cálculo do retorno ajustado ao risco. Hoje é obtida de forma provisória a partir do banco de dados do crédito — uma rota de empréstimo que caracteriza o débito técnico e mantém o dado em transição até que uma fonte oficial seja definida; o próprio domínio do dado ainda está por definir."
     },
     {
-      "id": "de-para-produtos-evol",
-      "nome": "De-para produtos EVOL",
-      "tipo": "produto",
+      "id": "de-para-de-produtos",
+      "nome": "De-para de produtos",
+      "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Mercado",
       "debito": "sim",
       "owner": null,
@@ -73,12 +142,13 @@
       "origem": "Atacado — analistas",
       "status": "producao",
       "incompleto": true,
-      "corpo": "Clusterização dos produtos do Atacado construída pelos analistas para dar visão agregada por família de produto. É um de-para exploratório mantido em planilha Excel — útil na análise, mas ainda sem rota governada, o que caracteriza o débito.\n\nA clusterização é aplicada sobre o resultado ajustado de [[Evolução (EVOL)]]."
+      "corpo": "De-para construído pelos analistas do Atacado para clusterizar os produtos e dar visão agregada por família de produto na EVOL. É um artefato exploratório mantido em planilha Excel — útil na análise, mas ainda sem rota governada, o que caracteriza o débito. Há um MVP no Salesforce com destino planejado no lake."
     },
     {
       "id": "debentures",
       "nome": "Debêntures",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Regulatorio",
       "debito": "sim",
       "owner": null,
@@ -88,27 +158,45 @@
       "origem": "ANBIMA / mercado",
       "status": "producao",
       "incompleto": true,
-      "corpo": "Posições de debêntures do mercado, com dados públicos da ANBIMA. A captura hoje é feita por webscraping do site debentures.com.br — uma rota frágil e não oficial que caracteriza o débito técnico, embora o dado em si seja valioso para a visão de mercado de capitais dos clientes."
+      "corpo": "Posições de debêntures do mercado, com dados públicos da ANBIMA. A captura hoje é feita por webscraping do site debentures.com.br — uma rota frágil e não oficial que caracteriza o débito técnico. O uso como insumo do endividamento de mercado foi inferido e precisa ser validado com o negócio."
     },
     {
       "id": "def-cambio",
       "nome": "DEF_CAMBIO",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Resultado",
       "debito": "sim",
       "owner": null,
       "centroDeCusto": null,
-      "descricao": "resultado de empréstimos e câmbio",
+      "descricao": "resultado e saldos de empréstimos e câmbio",
       "sistema": "base SQL on-premise",
       "origem": "DEF e Câmbio",
       "status": "producao",
       "incompleto": true,
-      "corpo": "Resultado das operações de empréstimos (DEF) e câmbio, consumido pelo Atacado para compor a visão de resultado por cliente. O dado vive em uma base SQL on-premise, fora da plataforma curada, o que caracteriza o débito técnico de rota."
+      "corpo": "Base das operações de empréstimos (DEF) e câmbio, consumida pelo Atacado. Há a hipótese de que a estrutura carregue também os saldos (estoque de carteira) além do resultado — hipótese a validar. Dois domínios misturados na mesma estrutura e a base SQL on-premise, fora da plataforma curada, caracterizam o débito técnico."
+    },
+    {
+      "id": "endividamento-de-mercado",
+      "nome": "Endividamento de mercado",
+      "tipo": "produto",
+      "nivel": "secundario",
+      "dominio": "Regulatorio",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "endividamento dos clientes no mercado",
+      "sistema": null,
+      "origem": null,
+      "status": "investigacao",
+      "incompleto": true,
+      "corpo": "Visão do endividamento dos clientes no mercado, combinando as operações de crédito reguladas do BACEN com as posições de debêntures do mercado de capitais. O produto secundário foi inferido a partir dos insumos e precisa ser validado com o negócio, por isso está em investigação. O débito \"sim\" é herdado da cadeia das Debêntures, capturadas por webscraping frágil.\n\nConsome [[BACEN 3040/45/46]] e [[Debêntures]]."
     },
     {
       "id": "estatag",
       "nome": "ESTATAG",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Risco",
       "debito": "nao",
       "owner": null,
@@ -118,27 +206,77 @@
       "origem": "área de risco",
       "status": "producao",
       "incompleto": true,
-      "corpo": "Componente de risco utilizado no cálculo do RAR, produzido pela área de risco e disponível como produto de dados no Databricks. Entrega a parcela estatística de perda esperada que ajusta o resultado realizado na visão de retorno ao risco."
+      "corpo": "Componente de risco utilizado no cálculo do RAR 12M, produzido pela área de risco e disponível como produto de dados curado no Databricks. Entrega a parcela estatística de perda esperada que ajusta o resultado realizado na visão de retorno ao risco."
     },
     {
-      "id": "evolucao-evol",
-      "nome": "Evolução (EVOL)",
+      "id": "estoque-carteira",
+      "nome": "Estoque (carteira)",
       "tipo": "produto",
+      "nivel": "secundario",
       "dominio": "Resultado",
       "debito": "sim",
       "owner": null,
       "centroDeCusto": null,
-      "descricao": "resultado ajustado pelos analistas",
-      "sistema": "planilha / processo manual",
-      "origem": "Atacado — ajustes",
+      "descricao": "saldos e posições da carteira do Atacado",
+      "sistema": null,
+      "origem": null,
+      "status": "investigacao",
+      "incompleto": true,
+      "corpo": "Estoque da carteira do Atacado: saldos e posições por cliente e produto. A composição ainda está em investigação — há a hipótese de que o DEF_CAMBIO carregue os saldos de empréstimos e câmbio (a validar) e um gap de mapeamento nos sistemas de produto (cash, captação e tesouraria). O débito \"sim\" é herdado da cadeia do DEF_CAMBIO, base SQL on-premise com dois domínios misturados.\n\nConsome [[DEF_CAMBIO]] e [[posições por produto]]."
+    },
+    {
+      "id": "evolucao-do-resultado",
+      "nome": "Evolução do Resultado",
+      "tipo": "produto",
+      "nivel": "secundario",
+      "dominio": "Resultado",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "resultado ajustado pelos analistas (EVOL)",
+      "sistema": null,
+      "origem": null,
       "status": "producao",
       "incompleto": true,
-      "corpo": "Resultado gerencial ajustado pelos analistas do Atacado (EVOL): sobre o realizado, aplicam-se correções e reclassificações que refletem a visão de gestão. O processo hoje é manual, apoiado em planilha, o que concentra o débito técnico na rota de produção do dado.\n\nConsome o resultado realizado de [[GDAD]] e a fonte complementar [[GORC]]."
+      "corpo": "Resultado gerencial ajustado pelos analistas do Atacado (EVOL): sobre o realizado, aplicam-se correções e reclassificações que refletem a visão de gestão. O débito \"sim\" é herdado da cadeia dos Ajustes dos analistas, processo manual em planilha sem trilha de auditoria; o GORC contribui com débito ainda \"a avaliar\".\n\nConsome [[GDAD]], [[GORC]] e [[Ajustes dos analistas]]."
+    },
+    {
+      "id": "evolucao-do-resultado-por-produto",
+      "nome": "Evolução do Resultado por produto",
+      "tipo": "produto",
+      "nivel": "secundario",
+      "dominio": "Resultado",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "EVOL clusterizada por família de produto",
+      "sistema": null,
+      "origem": null,
+      "status": "producao",
+      "incompleto": true,
+      "corpo": "Visão da Evolução do Resultado agregada por família de produto, obtida aplicando a clusterização dos analistas sobre a EVOL. O débito \"sim\" é herdado da cadeia do De-para de produtos, planilha Excel exploratória ainda sem rota governada (há MVP no Salesforce com destino no lake).\n\nConsome [[De-para de produtos]]."
+    },
+    {
+      "id": "faturamento",
+      "nome": "Faturamento",
+      "tipo": "produto",
+      "nivel": "secundario",
+      "dominio": "Cadastro",
+      "debito": "nao",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "visão consolidada do porte do cliente",
+      "sistema": null,
+      "origem": null,
+      "status": "producao",
+      "incompleto": true,
+      "corpo": "Visão consolidada do faturamento e do porte do cliente, combinando a estimativa declarada pelo RM com o porte observado por fontes externas de mercado. Sem débito herdado: nenhuma das cadeias de entrada carrega débito técnico.\n\nConsome [[Faturamento declarado]] e [[Porte observado]]."
     },
     {
       "id": "faturamento-declarado",
       "nome": "Faturamento declarado",
-      "tipo": "produto",
+      "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Cadastro",
       "debito": "nao",
       "owner": null,
@@ -148,12 +286,13 @@
       "origem": "RM (relacionamento)",
       "status": "producao",
       "incompleto": true,
-      "corpo": "Estimativa de faturamento informada pelo gerente de relacionamento (RM) diretamente na conta do cliente no Salesforce. É a visão declarada do porte do cliente, usada na segmentação e no planejamento comercial. Depende da disciplina de atualização do time comercial, e por isso convive com o porte observado de bureau como contraponto de mercado."
+      "corpo": "Estimativa de faturamento informada pelo gerente de relacionamento (RM) diretamente na conta do cliente no Salesforce. É a visão declarada do porte do cliente, governada na plataforma, com a proveniência do dado ainda em definição. Convive com o porte observado de bureau como contraponto de mercado."
     },
     {
       "id": "gdad",
       "nome": "GDAD",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Resultado",
       "debito": "nao",
       "owner": null,
@@ -163,12 +302,13 @@
       "origem": "resultado gerencial",
       "status": "producao",
       "incompleto": true,
-      "corpo": "Resultado gerencial realizado por cliente e produto, disponível como dado curado no Databricks. É a base primária de resultado do Atacado: alimenta tanto os ajustes analíticos da Evolução quanto o cálculo do RAR 12M."
+      "corpo": "Resultado gerencial realizado por cliente e produto, disponível como dado curado no Databricks. É a base primária de resultado do Atacado: alimenta tanto os ajustes analíticos da Evolução do Resultado quanto o cálculo do RAR 12M."
     },
     {
       "id": "gdp",
       "nome": "GDP",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Mercado",
       "debito": "avaliar",
       "owner": null,
@@ -178,42 +318,45 @@
       "origem": "GDP (departamento)",
       "status": "investigacao",
       "incompleto": true,
-      "corpo": "Dados fornecidos pelo departamento GDP como apoio à classificação de clientes do Atacado. O centro de custo é conhecido (o próprio GDP), mas o sistema de origem e a forma de consumo ainda precisam ser confirmados com o departamento, mantendo o item em investigação."
+      "corpo": "Dados fornecidos pelo departamento GDP como apoio à classificação de clientes do Atacado (setorização e localização). O centro de custo é conhecido (o próprio GDP), mas o sistema de origem e a forma de consumo ainda precisam ser confirmados com o departamento, mantendo o item em investigação."
     },
     {
       "id": "gorc",
       "nome": "GORC",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Resultado",
       "debito": "avaliar",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "fonte de resultado complementar",
       "sistema": "a confirmar",
-      "origem": "a detalhar",
+      "origem": "resultado (a detalhar)",
       "status": "investigacao",
       "incompleto": true,
-      "corpo": "Fonte de resultado complementar ao GDAD, usada nos ajustes de resultado da Evolução. A origem exata e o sistema onde o dado vive ainda precisam ser detalhados com as áreas produtoras, por isso o item está em investigação e o débito segue como \"a avaliar\"."
+      "corpo": "Fonte de resultado complementar ao GDAD, usada nos ajustes de resultado da Evolução. A origem exata ainda precisa ser detalhada com as áreas produtoras e o sistema onde o dado vive está por confirmar, por isso o item está em investigação e o débito segue como \"a avaliar\"."
     },
     {
       "id": "localizacao",
       "nome": "Localização",
       "tipo": "produto",
+      "nivel": "secundario",
       "dominio": "Mercado",
       "debito": "sim",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "praça de cobrança do cliente",
-      "sistema": "planilha Excel (de-para)",
-      "origem": "Atacado — classificação",
+      "sistema": null,
+      "origem": null,
       "status": "producao",
       "incompleto": true,
-      "corpo": "Praça de cobrança de cada cliente, definindo a alocação geográfica do relacionamento comercial. Assim como a Setorização, é um produto derivado do Atacado e um ativo de dados legítimo — o débito está no processo: o de-para geográfico vive em planilha Excel e precisa migrar para uma rota governada.\n\nA classificação parte da identificação oficial do CNPJ em [[PSDC]] e usa como apoio o endereço cadastral e a situação em [[RFB]], além de [[Bacen]] e [[GDP]]."
+      "corpo": "Praça de cobrança de cada cliente, definindo a alocação geográfica do relacionamento comercial. O débito \"sim\" é herdado da cadeia da Classificação de localização, cujo de-para geográfico vive em planilha Excel sem trilha de auditoria.\n\nConsome [[RFB]], [[Bacen]], [[GDP]] e [[Classificação de localização]]."
     },
     {
       "id": "mercado-alvo",
       "nome": "Mercado Alvo",
-      "tipo": "produto",
+      "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Mercado",
       "debito": "sim",
       "owner": null,
@@ -223,7 +366,7 @@
       "origem": "base comercial legada",
       "status": "producao",
       "incompleto": true,
-      "corpo": "Lista de clientes-alvo que delimita onde o Atacado atua e prioriza a prospecção comercial. Vive em um banco SQL legado on-premise, o que caracteriza o débito técnico: o dado é vivo, mas a plataforma precisa ser modernizada.\n\nO recorte de atuação usa o setor eleito e a praça de cobrança do cliente para definir quem entra na lista, portanto consome [[Setorização]] e [[Localização]] como critérios de elegibilidade."
+      "corpo": "Lista de clientes-alvo que delimita onde o Atacado atua e prioriza a prospecção comercial. Vive em um banco SQL legado on-premise, o que caracteriza o débito técnico: o dado é vivo, mas a rota precisa migrar para a plataforma corporativa."
     },
     {
       "id": "org-anbima-mercado",
@@ -249,13 +392,6 @@
     {
       "id": "org-atacado-analistas",
       "nome": "Atacado — analistas",
-      "tipo": "origem",
-      "derivado": true,
-      "incompleto": false
-    },
-    {
-      "id": "org-atacado-calculo",
-      "nome": "Atacado — cálculo",
       "tipo": "origem",
       "derivado": true,
       "incompleto": false
@@ -338,6 +474,13 @@
       "incompleto": false
     },
     {
+      "id": "org-resultado-a-detalhar",
+      "nome": "resultado (a detalhar)",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
       "id": "org-resultado-gerencial",
       "nome": "resultado gerencial",
       "tipo": "origem",
@@ -352,9 +495,17 @@
       "incompleto": false
     },
     {
+      "id": "org-sistemas-de-produto-a-mapear",
+      "nome": "sistemas de produto (a mapear)",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
       "id": "pcam-57",
       "nome": "PCAM-57",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "A definir",
       "debito": "avaliar",
       "owner": null,
@@ -364,27 +515,45 @@
       "origem": "a identificar",
       "status": "investigacao",
       "incompleto": true,
-      "corpo": "Tabela departamental utilizada em rotinas do Atacado cujo conteúdo e origem ainda não foram identificados. Entrou no catálogo para forçar o mapeamento: é candidata típica a dado órfão, sem owner nem centro de custo conhecidos."
+      "corpo": "Tabela departamental utilizada em rotinas do Atacado cujo dono, conteúdo e domínio ainda não foram identificados. Entrou no catálogo para forçar o mapeamento: é candidata típica a dado órfão, sem owner nem centro de custo conhecidos e sem produto secundário associado."
     },
     {
-      "id": "porte-observado-bureau",
-      "nome": "Porte observado (bureau)",
+      "id": "porte-observado",
+      "nome": "Porte observado",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Cadastro",
       "debito": "nao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "porte e faturamento por fontes de mercado",
-      "sistema": "bureaus / agências (integração em avaliação)",
+      "sistema": "bureaus / agências (integração)",
       "origem": "fornecedores externos",
       "status": "transicao",
       "incompleto": true,
-      "corpo": "Porte e faturamento observados de fontes externas de mercado (bureaus e agências de informação). Complementa a visão declarada pelo RM com uma referência independente do porte real do cliente. A integração com os fornecedores ainda está em avaliação, por isso o dado está em transição até a rota definitiva de ingestão ser contratada."
+      "corpo": "Porte e faturamento observados de fontes externas de mercado (bureaus e agências de informação). Complementa a visão declarada pelo RM com uma referência independente do porte real do cliente. A integração com os fornecedores está em validação nas frentes de segurança e governança, por isso o dado permanece em transição até a rota definitiva ser aprovada."
+    },
+    {
+      "id": "posicoes-por-produto",
+      "nome": "posições por produto",
+      "tipo": "insumo",
+      "nivel": "primario",
+      "dominio": "A definir",
+      "debito": "avaliar",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "saldos e posições dos sistemas de produto",
+      "sistema": "a identificar",
+      "origem": "sistemas de produto (a mapear)",
+      "status": "investigacao",
+      "incompleto": true,
+      "corpo": "Saldos e posições vindos dos sistemas de produto que compõem o estoque (carteira) do Atacado. É um gap de mapeamento conhecido: cash, captação e tesouraria ainda precisam ser mapeados, com sistema e rota a identificar, por isso o item está em investigação."
     },
     {
       "id": "psdc",
       "nome": "PSDC",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Cadastro",
       "debito": "nao",
       "owner": null,
@@ -394,27 +563,29 @@
       "origem": "cadastro corporativo",
       "status": "producao",
       "incompleto": true,
-      "corpo": "O PSDC é a fonte oficial de identificação dos clientes pessoa jurídica: CNPJ, composição de grupos econômicos e centro de custo. É um produto de dados curado no Databricks, mantido pelo cadastro corporativo, e serve de âncora cadastral para praticamente todas as classificações comerciais do Atacado. Por ser a referência de identidade do cliente, é o ponto de partida de derivados como a Setorização e a Localização."
+      "corpo": "O PSDC é a fonte oficial de identificação dos clientes pessoa jurídica: CNPJ, composição de grupos econômicos e centro de custo. É um produto de dados curado no Databricks, mantido pelo cadastro corporativo, e serve de base para a conta (Account) do cliente no Salesforce."
     },
     {
       "id": "rar-12m",
       "nome": "RAR 12M",
       "tipo": "produto",
+      "nivel": "secundario",
       "dominio": "Resultado",
-      "debito": "nao",
+      "debito": "sim",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "retorno ajustado ao risco 12 meses",
-      "sistema": "engine própria → Databricks",
-      "origem": "Atacado — cálculo",
+      "sistema": null,
+      "origem": null,
       "status": "producao",
       "incompleto": true,
-      "corpo": "Retorno ajustado ao risco consolidado em 12 meses, principal indicador de rentabilidade do Atacado. É calculado por engine própria e publicado no Databricks, combinando resultado realizado, componentes de risco e base de capital.\n\nConsome [[GDAD]], [[ESTATAG]], [[Capital Regulatório]] e [[Custo de Capital (KE)]]."
+      "corpo": "Retorno ajustado ao risco consolidado em 12 meses, principal indicador de rentabilidade do Atacado. Combina resultado realizado, componentes de risco e base de capital. O débito \"sim\" é herdado da cadeia do Custo de Capital (KE), obtido por rota provisória do banco de dados do crédito; o Capital Regulatório contribui com débito ainda \"a avaliar\".\n\nConsome [[GDAD]], [[ESTATAG]], [[Capital Regulatório]] e [[Custo de Capital (KE)]]."
     },
     {
       "id": "rating",
       "nome": "Rating",
-      "tipo": "insumo",
+      "tipo": "produto",
+      "nivel": "ambos",
       "dominio": "Risco",
       "debito": "nao",
       "owner": null,
@@ -424,12 +595,13 @@
       "origem": "área de risco",
       "status": "producao",
       "incompleto": true,
-      "corpo": "Classificação de risco de crédito do cliente, produzida pela área de risco e publicada como produto de dados no Databricks. O Atacado consome o rating para qualificar carteira, priorizar atuação comercial e contextualizar indicadores de retorno."
+      "corpo": "Classificação de risco de crédito do cliente, produzida pela área de risco e publicada como produto de dados no Databricks. O dado curado é consumido diretamente pelo Atacado — é ao mesmo tempo o produto primário e o secundário, sem transformação intermediária. Serving via API está no roadmap."
     },
     {
       "id": "recta-fedrl",
       "nome": "RECTA_FEDRL",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "A definir",
       "debito": "avaliar",
       "owner": null,
@@ -439,12 +611,13 @@
       "origem": "a identificar",
       "status": "investigacao",
       "incompleto": true,
-      "corpo": "Tabela departamental referenciada em processos do Atacado cujo conteúdo, origem e responsável ainda precisam ser mapeados. Está no catálogo justamente para dar visibilidade ao gap: enquanto ninguém reivindica a origem, o dado permanece em investigação."
+      "corpo": "Tabela departamental referenciada em processos do Atacado cujo dono, conteúdo e domínio ainda precisam ser identificados. Está no catálogo justamente para dar visibilidade ao gap: enquanto ninguém reivindica a origem, o dado permanece em investigação, sem produto secundário associado."
     },
     {
       "id": "restritivos-e-tipos",
       "nome": "Restritivos e tipos",
-      "tipo": "insumo",
+      "tipo": "produto",
+      "nivel": "ambos",
       "dominio": "Risco",
       "debito": "nao",
       "owner": null,
@@ -454,12 +627,29 @@
       "origem": "área de risco",
       "status": "producao",
       "incompleto": true,
-      "corpo": "Impedimentos e restrições associados aos clientes (restritivos e seus tipos), mantidos pela área de risco como produto de dados no Databricks. O Atacado usa esse insumo para filtrar a atuação comercial e evitar ofertas a clientes com restrições vigentes."
+      "corpo": "Impedimentos e restrições associados aos clientes (restritivos e seus tipos), mantidos pela área de risco como produto de dados no Databricks, curado e disponível. O dado é consumido diretamente pelo Atacado — primário e secundário ao mesmo tempo, sem transformação intermediária — para filtrar a atuação comercial e evitar ofertas a clientes com restrições vigentes."
+    },
+    {
+      "id": "resultado",
+      "nome": "Resultado",
+      "tipo": "produto",
+      "nivel": "secundario",
+      "dominio": "Resultado",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "resultado de empréstimos e câmbio na visão do Atacado",
+      "sistema": null,
+      "origem": null,
+      "status": "producao",
+      "incompleto": true,
+      "corpo": "Parcela de resultado das operações de empréstimos (DEF) e câmbio consumida na visão de resultado por cliente do Atacado. O débito \"sim\" é herdado da cadeia do DEF_CAMBIO: base SQL on-premise que mistura resultado e saldos na mesma estrutura.\n\nConsome [[DEF_CAMBIO]]."
     },
     {
       "id": "rfb",
       "nome": "RFB",
       "tipo": "insumo",
+      "nivel": "primario",
       "dominio": "Mercado",
       "debito": "nao",
       "owner": null,
@@ -472,19 +662,36 @@
       "corpo": "Dados públicos da Receita Federal do Brasil sobre os CNPJs: situação cadastral, CNAE principal e CNAEs secundários. Disponível como dado curado no Databricks, é o principal insumo externo para a classificação setorial e geográfica dos clientes do Atacado."
     },
     {
+      "id": "segmentacao-e-encarteiramento",
+      "nome": "Segmentação e Encarteiramento",
+      "tipo": "produto",
+      "nivel": "secundario",
+      "dominio": "Mercado",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "segmentos e carteiras da atuação comercial",
+      "sistema": null,
+      "origem": null,
+      "status": "producao",
+      "incompleto": true,
+      "corpo": "Definição dos segmentos de atuação e do encarteiramento dos clientes entre as equipes comerciais do Atacado. Herda débito \"sim\" da cadeia do Mercado Alvo, que ainda vive em banco SQL legado on-premise em migração para a plataforma corporativa.\n\nConsome [[Mercado Alvo]]."
+    },
+    {
       "id": "setorizacao",
       "nome": "Setorização",
       "tipo": "produto",
+      "nivel": "secundario",
       "dominio": "Mercado",
       "debito": "sim",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "setor eleito do grupo (melhor CNAE por risco)",
-      "sistema": "planilha Excel (de-para)",
-      "origem": "Atacado — classificação",
+      "sistema": null,
+      "origem": null,
       "status": "producao",
       "incompleto": true,
-      "corpo": "Setor eleito de cada grupo econômico: entre os CNAEs do grupo, elege-se o melhor sob a ótica de risco. É um produto derivado do Atacado e um ativo de dados legítimo — o débito técnico está na rota, não no dado: hoje o de-para é mantido em planilha Excel, quando deveria ser um processo governado.\n\nA classificação parte da identificação oficial do CNPJ e dos grupos em [[PSDC]] e usa como apoio os CNAEs e a situação cadastral de [[RFB]], além de [[Bacen]] e [[GDP]]."
+      "corpo": "Setor eleito de cada grupo econômico: entre os CNAEs do grupo, elege-se o melhor sob a ótica de risco. O dado é um ativo legítimo do Atacado; o débito \"sim\" é herdado da cadeia da Classificação de setores, cujo de-para vive em planilha Excel sem trilha de auditoria.\n\nConsome [[RFB]], [[Bacen]], [[GDP]] e [[Classificação de setores]]."
     },
     {
       "id": "sys-banco-de-dados-do-credito",
@@ -508,8 +715,8 @@
       "incompleto": false
     },
     {
-      "id": "sys-bureaus-agencias-integracao-em-avaliacao",
-      "nome": "bureaus / agências (integração em avaliação)",
+      "id": "sys-bureaus-agencias-integracao",
+      "nome": "bureaus / agências (integração)",
       "tipo": "sistema",
       "derivado": true,
       "incompleto": false
@@ -524,13 +731,6 @@
     {
       "id": "sys-databricks-produto-de-dados",
       "nome": "Databricks (produto de dados)",
-      "tipo": "sistema",
-      "derivado": true,
-      "incompleto": false
-    },
-    {
-      "id": "sys-engine-propria-databricks",
-      "nome": "engine própria → Databricks",
       "tipo": "sistema",
       "derivado": true,
       "incompleto": false
@@ -571,8 +771,8 @@
       "incompleto": false
     },
     {
-      "id": "sys-transferencia-corporativa-de-arquivos",
-      "nome": "transferência corporativa de arquivos",
+      "id": "sys-transferencia-corporativa",
+      "nome": "transferência corporativa",
       "tipo": "sistema",
       "derivado": true,
       "incompleto": false
@@ -587,13 +787,23 @@
   ],
   "links": [
     {
+      "source": "account",
+      "target": "psdc",
+      "label": "consome"
+    },
+    {
+      "source": "ajustes-dos-analistas",
+      "target": "sys-planilha-processo-manual",
+      "label": "vem de"
+    },
+    {
       "source": "bacen",
       "target": "org-banco-central",
       "label": "origina de"
     },
     {
       "source": "bacen-3040-45-46",
-      "target": "sys-transferencia-corporativa-de-arquivos",
+      "target": "sys-transferencia-corporativa",
       "label": "vem de"
     },
     {
@@ -602,17 +812,22 @@
       "label": "origina de"
     },
     {
+      "source": "classificacao-de-localizacao",
+      "target": "sys-planilha-excel-de-para",
+      "label": "vem de"
+    },
+    {
+      "source": "classificacao-de-setores",
+      "target": "sys-planilha-excel-de-para",
+      "label": "vem de"
+    },
+    {
       "source": "custo-de-capital-ke",
       "target": "sys-banco-de-dados-do-credito",
       "label": "vem de"
     },
     {
-      "source": "de-para-produtos-evol",
-      "target": "evolucao-evol",
-      "label": "consome"
-    },
-    {
-      "source": "de-para-produtos-evol",
+      "source": "de-para-de-produtos",
       "target": "sys-planilha-excel-exploratorio",
       "label": "vem de"
     },
@@ -627,24 +842,59 @@
       "label": "vem de"
     },
     {
+      "source": "endividamento-de-mercado",
+      "target": "bacen-3040-45-46",
+      "label": "consome"
+    },
+    {
+      "source": "endividamento-de-mercado",
+      "target": "debentures",
+      "label": "consome"
+    },
+    {
       "source": "estatag",
       "target": "sys-databricks-produto-de-dados",
       "label": "vem de"
     },
     {
-      "source": "evolucao-evol",
+      "source": "estoque-carteira",
+      "target": "def-cambio",
+      "label": "consome"
+    },
+    {
+      "source": "estoque-carteira",
+      "target": "posicoes-por-produto",
+      "label": "consome"
+    },
+    {
+      "source": "evolucao-do-resultado",
+      "target": "ajustes-dos-analistas",
+      "label": "consome"
+    },
+    {
+      "source": "evolucao-do-resultado",
       "target": "gdad",
       "label": "consome"
     },
     {
-      "source": "evolucao-evol",
+      "source": "evolucao-do-resultado",
       "target": "gorc",
       "label": "consome"
     },
     {
-      "source": "evolucao-evol",
-      "target": "sys-planilha-processo-manual",
-      "label": "vem de"
+      "source": "evolucao-do-resultado-por-produto",
+      "target": "de-para-de-produtos",
+      "label": "consome"
+    },
+    {
+      "source": "faturamento",
+      "target": "faturamento-declarado",
+      "label": "consome"
+    },
+    {
+      "source": "faturamento",
+      "target": "porte-observado",
+      "label": "consome"
     },
     {
       "source": "faturamento-declarado",
@@ -662,8 +912,18 @@
       "label": "origina de"
     },
     {
+      "source": "gorc",
+      "target": "org-resultado-a-detalhar",
+      "label": "origina de"
+    },
+    {
       "source": "localizacao",
       "target": "bacen",
+      "label": "consome"
+    },
+    {
+      "source": "localizacao",
+      "target": "classificacao-de-localizacao",
       "label": "consome"
     },
     {
@@ -673,27 +933,7 @@
     },
     {
       "source": "localizacao",
-      "target": "psdc",
-      "label": "consome"
-    },
-    {
-      "source": "localizacao",
       "target": "rfb",
-      "label": "consome"
-    },
-    {
-      "source": "localizacao",
-      "target": "sys-planilha-excel-de-para",
-      "label": "vem de"
-    },
-    {
-      "source": "mercado-alvo",
-      "target": "localizacao",
-      "label": "consome"
-    },
-    {
-      "source": "mercado-alvo",
-      "target": "setorizacao",
       "label": "consome"
     },
     {
@@ -707,9 +947,14 @@
       "label": "vem de"
     },
     {
-      "source": "porte-observado-bureau",
-      "target": "sys-bureaus-agencias-integracao-em-avaliacao",
+      "source": "porte-observado",
+      "target": "sys-bureaus-agencias-integracao",
       "label": "vem de"
+    },
+    {
+      "source": "posicoes-por-produto",
+      "target": "org-sistemas-de-produto-a-mapear",
+      "label": "origina de"
     },
     {
       "source": "psdc",
@@ -737,11 +982,6 @@
       "label": "consome"
     },
     {
-      "source": "rar-12m",
-      "target": "sys-engine-propria-databricks",
-      "label": "vem de"
-    },
-    {
       "source": "rating",
       "target": "sys-databricks-produto-de-dados",
       "label": "vem de"
@@ -757,13 +997,28 @@
       "label": "vem de"
     },
     {
+      "source": "resultado",
+      "target": "def-cambio",
+      "label": "consome"
+    },
+    {
       "source": "rfb",
       "target": "sys-databricks-dado-curado",
       "label": "vem de"
     },
     {
+      "source": "segmentacao-e-encarteiramento",
+      "target": "mercado-alvo",
+      "label": "consome"
+    },
+    {
       "source": "setorizacao",
       "target": "bacen",
+      "label": "consome"
+    },
+    {
+      "source": "setorizacao",
+      "target": "classificacao-de-setores",
       "label": "consome"
     },
     {
@@ -773,18 +1028,8 @@
     },
     {
       "source": "setorizacao",
-      "target": "psdc",
-      "label": "consome"
-    },
-    {
-      "source": "setorizacao",
       "target": "rfb",
       "label": "consome"
-    },
-    {
-      "source": "setorizacao",
-      "target": "sys-planilha-excel-de-para",
-      "label": "vem de"
     },
     {
       "source": "sys-banco-de-dados-do-credito",
@@ -802,7 +1047,7 @@
       "label": "origina de"
     },
     {
-      "source": "sys-bureaus-agencias-integracao-em-avaliacao",
+      "source": "sys-bureaus-agencias-integracao",
       "target": "org-fornecedores-externos",
       "label": "origina de"
     },
@@ -827,11 +1072,6 @@
       "label": "origina de"
     },
     {
-      "source": "sys-engine-propria-databricks",
-      "target": "org-atacado-calculo",
-      "label": "origina de"
-    },
-    {
       "source": "sys-planilha-excel-de-para",
       "target": "org-atacado-classificacao",
       "label": "origina de"
@@ -852,7 +1092,7 @@
       "label": "origina de"
     },
     {
-      "source": "sys-transferencia-corporativa-de-arquivos",
+      "source": "sys-transferencia-corporativa",
       "target": "org-bacen",
       "label": "origina de"
     },

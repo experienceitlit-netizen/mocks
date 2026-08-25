@@ -407,6 +407,23 @@
   text-transform: capitalize;
 }
 
+/* Nível do produto (modelo executivo): primário neutro-azulado, secundário
+   destacado (é o "produto final" da cadeia), ambos com os dois tons. */
+.chip--nivel-primario {
+  border-color: #4a5a6a;
+  color: #9db4c8;
+}
+
+.chip--nivel-secundario {
+  border-color: #5c7a99;
+  color: #7fb4e8;
+}
+
+.chip--nivel-ambos {
+  border-color: #5c7a99;
+  color: #9db4c8;
+}
+
 .chip--debito-sim {
   border-color: #cc092f;
   color: #ff5a75;
@@ -683,6 +700,18 @@
 .legend__dot--incompleto {
   background: transparent;
   border: 1.5px dashed #ffffff;
+}
+
+/* Produto secundário/final: miolo cheio + anel externo fino (gap da cor
+   de fundo entre eles), como desenhado no canvas. */
+.legend__dot--secundario {
+  width: 0.45rem;
+  height: 0.45rem;
+  background: #8a8a8a;
+  box-shadow:
+    0 0 0 2px #1e1e1e,
+    0 0 0 3px #8a8a8a;
+  margin: 0 0.15rem;
 }
 
 /* ---------- estado vazio ---------- */

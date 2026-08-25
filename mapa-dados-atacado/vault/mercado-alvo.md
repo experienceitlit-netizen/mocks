@@ -1,7 +1,8 @@
 ---
 id: mercado-alvo
 nome: Mercado Alvo
-tipo: produto
+tipo: insumo
+nivel: primario
 dominio: Mercado
 origem: "base comercial legada"
 sistema: "banco SQL legado (on-premise)"
@@ -11,6 +12,4 @@ owner: null
 debito: sim
 status: producao
 ---
-Lista de clientes-alvo que delimita onde o Atacado atua e prioriza a prospecção comercial. Vive em um banco SQL legado on-premise, o que caracteriza o débito técnico: o dado é vivo, mas a plataforma precisa ser modernizada.
-
-O recorte de atuação usa o setor eleito e a praça de cobrança do cliente para definir quem entra na lista, portanto consome [[Setorização]] e [[Localização]] como critérios de elegibilidade.
+Lista de clientes-alvo que delimita onde o Atacado atua e prioriza a prospecção comercial. Vive em um banco SQL legado on-premise, o que caracteriza o débito técnico: o dado é vivo, mas a rota precisa migrar para a plataforma corporativa.

@@ -5,13 +5,16 @@ export interface GraphNode {
   id: string
   nome: string
   tipo: string
+  /** primario | secundario | ambos */
+  nivel: string
   dominio: string
   debito: string
   owner: string | null
   centroDeCusto: string | null
   descricao: string
-  sistema: string
-  origem: string
+  /** null = não se aplica (secundários derivam a rota dos primários que consomem) */
+  sistema: string | null
+  origem: string | null
   status: string
   incompleto: boolean
   fantasma?: boolean
@@ -69,6 +72,7 @@ const CAMPOS_OBRIGATORIOS = [
   'id',
   'nome',
   'tipo',
+  'nivel',
   'dominio',
   'origem',
   'sistema',
@@ -78,6 +82,8 @@ const CAMPOS_OBRIGATORIOS = [
 ] as const
 
 const CAMPOS_ANULAVEIS = ['owner', 'centro_de_custo'] as const
+
+const NIVEL_DEFAULT = 'primario'
 
 /** Extrai [[Alvo]] e [[Alvo|rotulo]] do corpo; rótulo default "consome". */
 export function extractWikilinks(body: string): Wikilink[] {
@@ -123,6 +129,31 @@ export function parseVaultFile(file: VaultFile): ParsedFile {
     return typeof valor === 'string' ? valor : String(valor)
   }
 
+  // sistema/origem: null explícito é válido ("não se aplica" — sem warning,
+  // sem nó derivado); campo ausente ou vazio continua sendo warning.
+  const campoRota = (chave: string): string | null => {
+    if (!(chave in fm)) {
+      warnings.push(`${file.name}: frontmatter sem o campo obrigatório "${chave}" (use null para "não se aplica")`)
+      return null
+    }
+    const valor = fm[chave]
+    if (valor === null) return null
+    if (valor === '') {
+      warnings.push(`${file.name}: frontmatter sem o campo obrigatório "${chave}"`)
+      return null
+    }
+    return typeof valor === 'string' ? valor : String(valor)
+  }
+
+  const campoNivel = (): string => {
+    const valor = fm['nivel']
+    if (valor === undefined || valor === null || valor === '') {
+      warnings.push(`${file.name}: frontmatter sem o campo obrigatório "nivel" — assumindo "${NIVEL_DEFAULT}"`)
+      return NIVEL_DEFAULT
+    }
+    return typeof valor === 'string' ? valor : String(valor)
+  }
+
   for (const chave of CAMPOS_ANULAVEIS) {
     if (!(chave in fm)) {
       warnings.push(`${file.name}: frontmatter sem o campo "${chave}" (use null para "a definir")`)
@@ -136,13 +167,14 @@ export function parseVaultFile(file: VaultFile): ParsedFile {
     id: campo('id'),
     nome: campo('nome'),
     tipo: campo('tipo'),
+    nivel: campoNivel(),
     dominio: campo('dominio'),
     debito: campo('debito'),
     owner,
     centroDeCusto,
     descricao: campo('descricao'),
-    sistema: campo('sistema'),
-    origem: campo('origem'),
+    sistema: campoRota('sistema'),
+    origem: campoRota('origem'),
     status: campo('status'),
     incompleto: owner === null || centroDeCusto === null,
   }
@@ -221,6 +253,7 @@ function nodeFantasma(nomeAlvo: string): GraphNode {
     id: slugify(nomeAlvo) || nomeAlvo.toLowerCase(),
     nome: nomeAlvo,
     tipo: 'desconhecido',
+    nivel: NIVEL_DEFAULT,
     dominio: 'A definir',
     debito: 'avaliar',
     owner: null,

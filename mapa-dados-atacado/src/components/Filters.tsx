@@ -1,6 +1,9 @@
 import type { Debito } from './graph-types'
 import { DEBITO_LABEL, domainColor } from './palette'
 
+/** Lado do filtro de nível ("ambos" casa com os dois). */
+export type NivelFiltro = 'primario' | 'secundario'
+
 export interface Counts {
   total: number
   comDebito: number
@@ -11,6 +14,9 @@ interface FiltersProps {
   dominios: string[]
   selectedDominios: ReadonlySet<string>
   selectedDebitos: ReadonlySet<Debito>
+  /** Grupo "Nível" só aparece quando o grafo já traz `nivel` nos dados. */
+  hasNiveis: boolean
+  selectedNiveis: ReadonlySet<NivelFiltro>
   somenteSemOwner: boolean
   /** Camada de linhagem (sistemas/origens) visível no grafo. */
   layersOn: boolean
@@ -18,6 +24,7 @@ interface FiltersProps {
   hasActiveFilter: boolean
   onToggleDominio(dominio: string): void
   onToggleDebito(debito: Debito): void
+  onToggleNivel(nivel: NivelFiltro): void
   onToggleSemOwner(): void
   onToggleLayers(): void
   onClear(): void
@@ -25,16 +32,24 @@ interface FiltersProps {
 
 const DEBITOS: Debito[] = ['sim', 'nao', 'avaliar']
 
+const NIVEIS: { valor: NivelFiltro; label: string }[] = [
+  { valor: 'primario', label: 'Primário' },
+  { valor: 'secundario', label: 'Secundário' },
+]
+
 export default function Filters({
   dominios,
   selectedDominios,
   selectedDebitos,
+  hasNiveis,
+  selectedNiveis,
   somenteSemOwner,
   layersOn,
   counts,
   hasActiveFilter,
   onToggleDominio,
   onToggleDebito,
+  onToggleNivel,
   onToggleSemOwner,
   onToggleLayers,
   onClear,
@@ -86,6 +101,28 @@ export default function Filters({
           })}
         </div>
       </div>
+
+      {hasNiveis && (
+        <div className="filters__group">
+          <span className="filters__label">Nível</span>
+          <div className="filters__chips">
+            {NIVEIS.map(({ valor, label }) => {
+              const active = selectedNiveis.has(valor)
+              return (
+                <button
+                  key={valor}
+                  type="button"
+                  className={`filter-chip${active ? ' filter-chip--active' : ''}`}
+                  onClick={() => onToggleNivel(valor)}
+                  aria-pressed={active}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <label className="filters__toggle">
         <input type="checkbox" checked={somenteSemOwner} onChange={onToggleSemOwner} />
