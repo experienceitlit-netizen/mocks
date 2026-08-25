@@ -348,7 +348,7 @@ function BalloonContent({
 
       {node.fantasma ? (
         <p className="ghost-note">
-          Nó fantasma: é referenciado por outro dado, mas ainda não tem arquivo no vault.
+          Nó fantasma: é referenciado por outro dado, mas ainda não tem linha no catálogo.
         </p>
       ) : (
         <>

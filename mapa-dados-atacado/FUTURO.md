@@ -4,7 +4,7 @@ Itens registrados para depois da validação do MVP com o negócio. Nenhum deles
 implementado; a ordem abaixo não é prioridade.
 
 - **Ingestão automática de linhagem do Unity Catalog / Databricks** — gerar (ou conciliar)
-  nós e arestas a partir da linhagem real das tabelas, em vez de manutenção manual do vault.
+  nós e arestas a partir da linhagem real das tabelas, em vez de manutenção manual do catalogo.csv.
 - **Modo de edição na UI** — formulário na própria página que grava o `.md` via pull
   request, mantendo o Git como trilha de auditoria.
 - **Autenticação corporativa e deploy interno oficial** — hoje o MVP é estático e sem

@@ -4,31 +4,34 @@ MVP web navegável, estilo grafo do Obsidian, dos produtos e insumos de dados da
 Comercial Atacado: quem produz e quem consome cada dado, com owner, centro de custo e
 status de débito técnico visíveis nó a nó.
 
-O conteúdo vive em arquivos Markdown no diretório `vault/` (um arquivo por dado). Um script
-de build transforma o vault em `src/data/graph.json`, que o front-end (React + Vite +
-`react-force-graph-2d`) renderiza como grafo interativo. Sem backend, sem banco, sem login.
+O conteúdo vive na planilha **`catalogo.csv`** na raiz do projeto (uma linha por dado —
+abra e edite no Excel ou LibreOffice). Um script de build transforma o catálogo em
+`src/data/graph.json`, que o front-end (React + Vite + `react-force-graph-2d`) renderiza
+como grafo interativo. Sem backend, sem banco, sem login. (Evolução futura prevista:
+substituir a edição da planilha por um formulário na própria UI.)
 
 ## Modelo em 4 níveis
 
 O catálogo espelha a tabela executiva em cadeias **origem → fonte (sistema) → produto
 primário → produto secundário**:
 
-- **Primário** (`nivel: primario`): dado bruto/insumo com rota própria — os campos
-  `origem` e `sistema` do frontmatter dizem de onde ele vem. Primários **não** têm
-  wikilinks no corpo.
+- **Primário** (`nivel: primario`): dado bruto/insumo com rota própria — as colunas
+  `origem` e `fonte_sistema` dizem de onde ele vem. Primários deixam a coluna `consome`
+  vazia.
 - **Secundário** (`nivel: secundario`): produto final montado a partir de primários.
-  Declara `origem: null` e `sistema: null` (não se aplica — a rota vem dos primários) e
-  linka com wikilinks **todos** os primários que consome (arestas "consome").
+  Deixa `origem` e `fonte_sistema` vazios (não se aplica — a rota vem dos primários) e
+  lista na coluna `consome` **todos** os primários que consome (arestas "consome").
 - **Ambos** (`nivel: ambos`): produto consumido direto e também insumo de outros
   (ex.: `rating`), sem self-loop.
-- **Raiz** (`nivel: raiz`, `tipo: dominio`): o nó único **"Atacado — Dados"**, portfólio
-  do domínio e ponto de entrada do mapa. Agrega com wikilinks `[[...|agrega]]` todos os
-  produtos finais (secundários e "ambos"). Não é um produto de dado: desenhado como
-  **hexágono azul** de tamanho fixo, fica fora dos contadores, dos filtros e da tabela,
-  e owner/centro de custo não se aplicam (o balão mostra "—", sem ⚠).
-- **Fonte secundária** (derivada pelo build, sem arquivo no vault): quase toda fonte —
+- **Raiz** (criada **automaticamente pelo build**, sem linha no CSV): o nó único
+  **"Atacado — Dados"**, portfólio do domínio e ponto de entrada do mapa. Agrega sozinho
+  todos os produtos finais (todo dado de `nivel` `secundario` ou `ambos`). Não é um
+  produto de dado: desenhado como **hexágono azul** de tamanho fixo, fica fora dos
+  contadores, dos filtros e da tabela, e owner/centro de custo não se aplicam (o balão
+  mostra "—", sem ⚠).
+- **Fonte secundária** (derivada pelo build, sem linha no CSV): quase toda fonte —
   banco SQL, planilha etc. — é ingerida numa tabela Databricks **UCS** antes de virar
-  produto. O campo opcional `fontes_secundarias:` (lista de nomes) no `.md` de um dado
+  produto. A coluna opcional `fontes_secundarias` (nomes separados por ` | `)
   materializa essas tabelas como nós `fsec-*` e reescreve a rota para **origem → fonte →
   fonte secundária → produto primário** (a aresta direta dado→fonte é substituída; com a
   fonte ainda desconhecida, a fonte secundária liga direto na origem). O débito técnico
@@ -36,7 +39,7 @@ primário → produto secundário**:
   cantos bem arredondados teal**, fica com sistemas/origens (toggle "Fontes e origens") e
   fora de contadores, filtros e tabela. O mapeamento é **incremental**: hoje só o Mercado
   Alvo declara as suas; os demais dados seguem com a ligação direta até serem mapeados.
-- **Domínio** (derivado pelo build, sem arquivo no vault): entre a raiz e os produtos
+- **Domínio** (derivado pelo build, sem linha no CSV): entre a raiz e os produtos
   finais o build insere um nó por domínio (`dom-cadastro`, `dom-mercado`, `dom-risco`,
   `dom-resultado`, `dom-regulatorio`), reescrevendo cada aresta raiz→produto como
   raiz→domínio→produto. Navegação: **Atacado — Dados → domínio → produto secundário →
@@ -44,10 +47,11 @@ primário → produto secundário**:
   domínio**, sempre visível no mapa, focável, e — como a raiz — fora de contadores,
   filtros e tabela.
 
-Hoje o vault tem **35 dados** (22 primários, 11 secundários, 2 "ambos") — **36 nós de
-dados contando a raiz** — com **25 cadeias "consome"** primário→secundário e **18
-arestas "agrega"** (raiz → 5 domínios → 13 produtos finais); com os domínios, sistemas,
-fontes secundárias e origens derivados, o `graph.json` fecha em **75 nós e 84 arestas**.
+Hoje o `catalogo.csv` tem **35 dados** (22 primários, 11 secundários, 2 "ambos") —
+**36 nós de dados contando a raiz automática** — com **25 cadeias "consome"**
+primário→secundário e **18 arestas "agrega"** (raiz → 5 domínios → 13 produtos finais);
+com os domínios, sistemas, fontes secundárias e origens derivados, o `graph.json` fecha
+em **74 nós e 84 arestas**.
 
 ## Como rodar
 
@@ -59,7 +63,7 @@ npm run dev      # regenera o graph.json (predev) e abre o app em http://localho
 Outros comandos:
 
 ```bash
-npm run data     # só regenera src/data/graph.json a partir do vault/
+npm run data     # só regenera src/data/graph.json a partir do catalogo.csv
 npm test         # testes do build de dados (vitest)
 npm run build    # gera o site estático em dist/ (prebuild roda o data antes)
 npm run preview  # serve o dist/ localmente
@@ -79,51 +83,55 @@ Dois pacotes ficam em `../entregas/` (fora do git):
   Regenerar na raiz do repo: `git archive --format=zip -o entregas/mapa-dados-atacado-fonte.zip HEAD`
   e acrescente um `COMO-RODAR.txt` (Node 20+, `npm install && npm run dev`).
 
-## Como adicionar um dado novo (menos de 5 minutos)
+## Como editar o catálogo (menos de 5 minutos)
 
-1. Copie o template para um novo arquivo com o slug do dado:
+1. Abra o **`catalogo.csv`** no Excel ou LibreOffice (separador `;`, UTF-8 com BOM —
+   abre certo por duplo clique no Excel pt-BR). Cada linha é um dado; a raiz
+   "Atacado — Dados" **não** tem linha (o build a cria e a liga sozinho).
 
-   ```bash
-   cp vault/_template.md vault/meu-novo-dado.md
+2. Para um dado novo, acrescente uma linha e preencha as colunas (tabela abaixo).
+   Listas (`consome`, `fontes_secundarias`) separam os nomes por ` | ` (barra vertical).
+   Não sabe owner ou centro de custo? Deixe a célula vazia — o nó aparece com borda
+   tracejada, sinalizando o gap de governança. Exemplo de linha (as duas primeiras e as
+   três últimas colunas omitidas):
+
+   ```
+   Meu Novo Painel;secundario;Risco;;;;GDAD | Rating;painel de risco da mesa;nao;producao;;;
    ```
 
-   (Arquivos começando com `_` são ignorados pelo build.)
+3. `observacoes` é texto livre em Markdown (aparece no balão do nó). `[[Wikilinks]]`
+   nele viram links de navegação no balão, mas **não** criam arestas — arestas de
+   consumo vêm **só** da coluna `consome`. Célula com quebra de linha ou `;` deve ficar
+   entre aspas (o Excel faz isso sozinho ao salvar).
 
-2. Preencha o frontmatter (bloco YAML entre `---`). Campos e valores válidos na tabela
-   abaixo. Não sabe owner ou centro de custo? Deixe `null` — o nó aparece com borda
-   tracejada, sinalizando o gap de governança.
+4. Salve mantendo o formato CSV e rode `npm run data` (ou apenas `npm run dev`, que já
+   roda antes). Confira o console: o build avisa sobre coluna faltando, `nivel`
+   inválido, nome duplicado e nome em `consome` que não existe (vira nó "fantasma"
+   tracejado no grafo).
 
-3. No corpo (abaixo do segundo `---`), escreva a descrição livre em Markdown. Se o dado é
-   **secundário**, declare os primários que ele consome com wikilinks — cada
-   `[[Nome do Outro Dado]]` cria uma aresta "este nó consome o alvo" (outro rótulo:
-   `[[Alvo|produz]]`). Se é **primário**, não use wikilinks: a rota dele são os campos
-   `origem`/`sistema` do frontmatter.
+## Colunas do catalogo.csv
 
-4. Rode `npm run data` (ou apenas `npm run dev`, que já roda antes). Confira o console:
-   o build avisa sobre campo faltando, id duplicado e link quebrado (que vira nó
-   "fantasma" tracejado no grafo, como no Obsidian).
+Cabeçalho, nesta ordem: `nome; nivel; dominio; origem; fonte_sistema;
+fontes_secundarias; consome; descricao; debito; status; owner; centro_de_custo;
+observacoes`.
 
-O vault também pode ser aberto como vault do Obsidian desktop — os wikilinks funcionam lá.
-
-## Convenções de frontmatter
-
-| Campo | Obrigatório | Valores válidos / formato | Observações |
+| Coluna | Obrigatória | Valores válidos / formato | Observações |
 |---|---|---|---|
-| `id` | sim | slug único em kebab-case (ex.: `rar-12m`) | usado na URL (`?no=rar-12m`) e na resolução de links |
-| `nome` | sim | texto livre curto | rótulo do nó; wikilinks resolvem por `nome` ou `id`, sem diferenciar caixa |
-| `tipo` | sim | `produto` \| `insumo` \| `sistema` \| `dominio` | |
-| `nivel` | não (default `primario`) | `primario` \| `secundario` \| `ambos` \| `raiz` | nível na cadeia (ver "Modelo em 4 níveis"); chip e filtro "Nível" na UI; `raiz` só no nó "Atacado — Dados" |
-| `dominio` | sim | `Cadastro` \| `Mercado` \| `Risco` \| `Resultado` \| `Regulatorio` \| `A definir` | filtro por domínio na UI |
-| `origem` | sim (aceita `null`) | texto ou `null` | área ou processo de origem; `null` em secundários = não se aplica (UI mostra "—") |
-| `sistema` | sim (aceita `null`) | texto ou `null` | se contiver "legado" ou "on-premise", o nó fica âmbar; `null` em secundários = não se aplica |
-| `fontes_secundarias` | não | lista de nomes (ex.: `["Mercado Alvo Semanal - UCS"]`) | tabelas UCS onde a fonte é ingerida; presença substitui a aresta direta dado→sistema por dado→fonte secundária→sistema (dedup global por nome) |
+| `nome` | sim | texto livre curto | rótulo do nó; o `id` é derivado como slug (ex.: "RAR 12M" → `rar-12m`, usado na URL `?no=rar-12m`); linha sem nome é ignorada com aviso |
+| `nivel` | sim | `primario` \| `secundario` \| `ambos` | nível na cadeia (ver "Modelo em 4 níveis"); deriva o tipo do nó (primário = insumo, o resto = produto); a raiz não tem linha |
+| `dominio` | sim | `Cadastro` \| `Mercado` \| `Risco` \| `Resultado` \| `Regulatorio` \| `A definir` | filtro por domínio na UI; vazio = `A definir` |
+| `origem` | primários | texto ou vazio | área ou processo de origem; vazio em secundários = não se aplica (UI mostra "—") |
+| `fonte_sistema` | primários | texto ou vazio | sistema/plataforma onde o dado vive; se contiver "legado" ou "on-premise", o nó fica âmbar; vazio em secundários = não se aplica |
+| `fontes_secundarias` | não | nomes separados por ` \| ` (ex.: `Mercado Alvo Semanal - UCS \| Mercado Alvo Mensal - UCS`) | tabelas UCS onde a fonte é ingerida; presença substitui a aresta direta dado→sistema por dado→fonte secundária→sistema (dedup global por nome) |
+| `consome` | secundários | nomes (ou ids) separados por ` \| `, sem diferenciar caixa | cria as arestas "consome"; nome inexistente vira nó fantasma + aviso |
 | `descricao` | sim | uma linha | aparece no balão e na busca |
-| `centro_de_custo` | sim (aceita `null`) | texto ou `null` | `null` = a definir → nó com borda tracejada |
-| `owner` | sim (aceita `null`) | texto ou `null` | `null` = a definir → nó com borda tracejada |
 | `debito` | sim | `sim` \| `nao` \| `avaliar` | manda na cor do nó (ver abaixo) |
 | `status` | sim | `producao` \| `transicao` \| `investigacao` | |
+| `owner` | sim (aceita vazio) | texto ou vazio | vazio = a definir → nó com borda tracejada |
+| `centro_de_custo` | sim (aceita vazio) | texto ou vazio | vazio = a definir → nó com borda tracejada |
+| `observacoes` | não | Markdown livre (multilinha, entre aspas) | corpo do balão de detalhe; wikilinks só navegam, não criam arestas |
 
-Campo obrigatório faltando gera **warning** no build (não erro) — o nó entra mesmo assim,
+Problema no catálogo gera **warning** no build (não erro) — o dado entra mesmo assim,
 para o gap ficar visível em vez de escondido.
 
 ## Cores e bordas do grafo
@@ -132,31 +140,33 @@ Cor do nó, por ordem de precedência (definida em `src/components/palette.ts`):
 
 1. `debito: sim` → **vermelho** `#CC092F`
 2. `debito: avaliar` → **cinza** `#8A8A8A`
-3. `sistema` contém "legado"/"on-premise" → **âmbar** `#B8860B`
+3. `fonte_sistema` contém "legado"/"on-premise" → **âmbar** `#B8860B`
 4. default (curado/governado) → **verde** `#3A7D44`
 
 Bordas:
 
-- **Borda branca tracejada** = `owner` ou `centro_de_custo` em `null` (nó incompleto —
+- **Borda branca tracejada** = `owner` ou `centro_de_custo` vazio (nó incompleto —
   é o que a reunião de governança precisa enxergar).
-- **Contorno cinza tracejado sem preenchimento** = nó fantasma: alvo de wikilink que ainda
-  não tem arquivo no vault.
+- **Contorno cinza tracejado sem preenchimento** = nó fantasma: citado na coluna
+  `consome`, mas ainda sem linha no catálogo.
 - **Anel externo fino** na cor do nó = produto **secundário/final** (`nivel: secundario`
   ou `ambos`).
 
 Tamanho do nó é proporcional ao número de conexões (raiz e domínios têm tamanho fixo).
 Formas: **círculo** = dado, **hexágono azul** = raiz, **quadrado arredondado** na cor da
 área = domínio, **quadrado** = sistema, **quadrado de cantos bem arredondados teal**
-(`#178A94`) = fonte secundária (UCS), **losango** = origem.
+(`#178A94`) = fonte secundária (UCS), **losango** = origem. Sistemas cujo nome contém
+"Databricks" e as fontes secundárias (tabelas UCS) levam por cima um **glifo de
+"tijolos"** claros empilhados, alusão ao logo do Databricks — desenhado só quando o nó
+está grande o suficiente na tela para o glifo ser legível.
 
 ## Estrutura do projeto
 
 ```
-vault/                      # conteúdo: um .md por dado (frontmatter + corpo markdown)
-  _template.md              # copie este para criar um dado novo
+catalogo.csv                # conteúdo: a planilha do catálogo (uma linha por dado)
 scripts/
-  build-graph.ts            # CLI: varre vault/ e emite src/data/graph.json
-  graph-lib.ts              # lógica pura do build (parse, wikilinks, montagem do grafo)
+  build-graph.ts            # CLI: lê catalogo.csv e emite src/data/graph.json
+  graph-lib.ts              # lógica pura do build (parser CSV, raiz automática, montagem do grafo)
   graph-lib.test.ts         # testes (npm test)
 src/
   data/graph.json           # GERADO pelo build — não editar à mão (mas é commitado)
@@ -170,7 +180,7 @@ src/
     TableView.tsx           # visão de tabela dos dados (aba "Tabela")
     table-utils.ts          # helpers puros da tabela: filtro, ordenação, agrupamento
     Legend.tsx              # legenda fixa de cores/bordas
-    Markdown.tsx            # renderizador mínimo do corpo dos .md
+    Markdown.tsx            # renderizador mínimo do texto de observações
     palette.ts              # fonte única das cores
     graph-types.ts          # tipos do schema + wrapper tipado da lib de grafo
   App.tsx                   # estado da UI (aba, seleção, hover, filtros, foco, URL ?no= e ?foco=)
@@ -187,16 +197,23 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
   da área) e estes aos produtos finais. A URL só ganha `?foco=` quando o estado difere
   dessa entrada padrão; `?no=` sem `?foco=` continua abrindo o mapa global com o nó
   selecionado.
-- **Clique** num nó abre um **balão de detalhe** ancorado no próprio nó (com seta,
-  mudando de lado para caber na tela) e destaca suas **relações** — nó e vizinhos acesos,
-  o resto esmaecido — enquanto o balão estiver aberto; `Esc` ou clique fora fecha. Clicar
-  em outro nó move o balão para ele. Para um dado, o balão traz a seção **"Linhagem"**:
-  a árvore indentada de tudo de que ele depende (origem / fonte / produto por nível,
-  recursiva), com itens clicáveis.
+- **Clique com o botão direito** num nó abre um **balão de detalhe** ancorado no próprio
+  nó (com seta, mudando de lado para caber na tela) e destaca suas **relações** — nó e
+  vizinhos acesos, o resto esmaecido — enquanto o balão estiver aberto; `Esc` ou clique
+  no fundo fecha. O balão também abre ao clicar num produto na aba Tabela, nos links de
+  relações dentro do próprio balão e via `?no=` na URL. Para um dado, o balão traz a
+  seção **"Linhagem"**: a árvore indentada de tudo de que ele depende (origem / fonte /
+  produto por nível, recursiva), com itens clicáveis.
+- **Clique (botão esquerdo)** num nó **fixa o destaque** do hover: o nó e seus vizinhos
+  (na vista Níveis, a cadeia inteira) ficam acesos e o resto esmaece, persistindo até
+  `Esc`, clique no fundo ou clique em outro nó (que re-fixa nele; clicar de novo no
+  mesmo nó desfixa). Não abre balão nem muda a URL. O hover momentâneo continua
+  funcionando e sobrepõe o destaque fixado enquanto durar.
 - **Duplo clique** num nó (ou o botão **"⌖ Focar neste nó"** do balão) entra no **modo
   foco** (ou re-foca, empilhando no **breadcrumb** do caminho navegado), com botão
-  "Ver mapa completo" para sair (`Esc` sai em dois estágios: primeiro fecha o balão,
-  depois o foco). O clique simples, também no foco, só abre o balão.
+  "Ver mapa completo" para sair (`Esc` sai em estágios: fecha o balão, depois desfixa o
+  destaque, depois sai do foco). O clique esquerdo simples, também no foco, só fixa o
+  destaque — os detalhes ficam no botão direito.
   O foco tem duas vistas, no switch da barra:
   - **Níveis** (padrão): a linhagem montante **completa** do nó focado, lida da
     **esquerda para a direita** — o focado na extrema esquerda e a cadeia se abrindo à
@@ -208,7 +225,7 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
   - **Força**: a vizinhança em grafo de força, com slider de **profundidade** (1–3).
 - O toggle **"Fontes e origens"** liga a camada de linhagem: além dos dados (**círculos**),
   aparecem os **sistemas** (quadrados) e as **origens** (losangos) derivados do
-  frontmatter. Fica desligado no mapa global e liga automaticamente ao entrar em foco.
+  catálogo. Fica desligado no mapa global e liga automaticamente ao entrar em foco.
   Contadores e filtros de governança continuam contando só os dados.
 - O seletor **Mapa | Tabela** no topo alterna entre o grafo e a **visão de tabela**:
   espelho da tabela executiva em cadeias, **uma linha por cadeia primário→secundário**

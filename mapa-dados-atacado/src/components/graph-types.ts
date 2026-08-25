@@ -37,7 +37,7 @@ export interface GraphNodeData {
    *  os nós fsec-* correspondentes vêm das arestas "vem de" dado→fsec. */
   fontesSecundarias?: string[]
   incompleto?: boolean
-  /** Nó fantasma: alvo de wikilink sem arquivo no vault. */
+  /** Nó fantasma: citado em "consome" sem linha no catálogo. */
   fantasma?: boolean
   /** Nó derivado pelo build (camada de linhagem): sistema ou origem. */
   derivado?: boolean
@@ -56,13 +56,13 @@ export function nodeKind(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): NodeKi
   if (node.tipo === 'sistema') return 'sistema'
   if (node.tipo === 'origem') return 'origem'
   if (node.tipo === 'fonte-secundaria') return 'fonte-secundaria'
-  // A raiz também tem tipo "dominio", mas é nó de dado (arquivo no vault);
+  // A raiz também tem tipo "dominio", mas é nó de dado (criado pelo build);
   // só o nó de domínio derivado pelo build ganha a forma própria.
   if (node.tipo === 'dominio' && node.derivado === true) return 'dominio'
   return 'dado'
 }
 
-/** Nó derivado pelo build (domínio, sistema ou origem — sem arquivo no vault). */
+/** Nó derivado pelo build (domínio, sistema ou origem — sem linha no catálogo). */
 export function isDerivado(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): boolean {
   return node.derivado === true || nodeKind(node) !== 'dado'
 }

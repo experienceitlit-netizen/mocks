@@ -1,5 +1,5 @@
 // Renderizador de markdown mínimo, próprio, sem dependências (decisão: não
-// instalar lib de markdown). Cobre o que o corpo dos .md do vault usa:
+// instalar lib de markdown). Cobre o que as observações do catálogo usam:
 // parágrafos, listas com "-", títulos "#", **negrito**, `código` e wikilinks
 // [[Alvo]] / [[Alvo|rotulo-da-aresta]] como spans clicáveis que navegam o
 // grafo. O resto é exibido como texto puro.
@@ -37,7 +37,7 @@ function renderInline(
             {target}
           </button>
         ) : (
-          <span key={key} className="wikilink wikilink--broken" title="Nó não encontrado no vault">
+          <span key={key} className="wikilink wikilink--broken" title="Nó não encontrado no catálogo">
             {target}
           </span>
         ),

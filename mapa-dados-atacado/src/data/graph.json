@@ -74,7 +74,7 @@
       "owner": null,
       "centroDeCusto": null,
       "descricao": "operações de crédito reguladas",
-      "sistema": "transferência corporativa",
+      "sistema": "Databricks (governado)",
       "origem": "BACEN",
       "status": "producao",
       "incompleto": true,
@@ -253,7 +253,7 @@
       "owner": null,
       "centroDeCusto": null,
       "descricao": "componente de risco do RAR",
-      "sistema": "Databricks (produto de dados)",
+      "sistema": "Databricks (governado)",
       "origem": "área de risco",
       "status": "producao",
       "incompleto": true,
@@ -628,7 +628,7 @@
       "owner": null,
       "centroDeCusto": "PSDC",
       "descricao": "identificação oficial: CNPJ, grupos, centro de custo",
-      "sistema": "Databricks (produto de dados)",
+      "sistema": "Databricks (governado)",
       "origem": "cadastro corporativo",
       "status": "producao",
       "incompleto": true,
@@ -660,7 +660,7 @@
       "owner": null,
       "centroDeCusto": null,
       "descricao": "classificação de risco do cliente",
-      "sistema": "Databricks (produto de dados)",
+      "sistema": "Databricks (governado)",
       "origem": "área de risco",
       "status": "producao",
       "incompleto": true,
@@ -692,7 +692,7 @@
       "owner": null,
       "centroDeCusto": null,
       "descricao": "impedimentos e restrições",
-      "sistema": "Databricks (produto de dados)",
+      "sistema": "Databricks (governado)",
       "origem": "área de risco",
       "status": "producao",
       "incompleto": true,
@@ -798,8 +798,8 @@
       "incompleto": false
     },
     {
-      "id": "sys-databricks-produto-de-dados",
-      "nome": "Databricks (produto de dados)",
+      "id": "sys-databricks-governado",
+      "nome": "Databricks (governado)",
       "tipo": "sistema",
       "derivado": true,
       "incompleto": false
@@ -835,13 +835,6 @@
     {
       "id": "sys-tabela-departamental",
       "nome": "tabela departamental",
-      "tipo": "sistema",
-      "derivado": true,
-      "incompleto": false
-    },
-    {
-      "id": "sys-transferencia-corporativa",
-      "nome": "transferência corporativa",
       "tipo": "sistema",
       "derivado": true,
       "incompleto": false
@@ -897,7 +890,7 @@
     },
     {
       "source": "bacen-3040-45-46",
-      "target": "sys-transferencia-corporativa",
+      "target": "sys-databricks-governado",
       "label": "vem de"
     },
     {
@@ -1012,7 +1005,7 @@
     },
     {
       "source": "estatag",
-      "target": "sys-databricks-produto-de-dados",
+      "target": "sys-databricks-governado",
       "label": "vem de"
     },
     {
@@ -1132,7 +1125,7 @@
     },
     {
       "source": "psdc",
-      "target": "sys-databricks-produto-de-dados",
+      "target": "sys-databricks-governado",
       "label": "vem de"
     },
     {
@@ -1157,7 +1150,7 @@
     },
     {
       "source": "rating",
-      "target": "sys-databricks-produto-de-dados",
+      "target": "sys-databricks-governado",
       "label": "vem de"
     },
     {
@@ -1167,7 +1160,7 @@
     },
     {
       "source": "restritivos-e-tipos",
-      "target": "sys-databricks-produto-de-dados",
+      "target": "sys-databricks-governado",
       "label": "vem de"
     },
     {
@@ -1236,12 +1229,17 @@
       "label": "origina de"
     },
     {
-      "source": "sys-databricks-produto-de-dados",
+      "source": "sys-databricks-governado",
       "target": "org-area-de-risco",
       "label": "origina de"
     },
     {
-      "source": "sys-databricks-produto-de-dados",
+      "source": "sys-databricks-governado",
+      "target": "org-bacen",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-databricks-governado",
       "target": "org-cadastro-corporativo",
       "label": "origina de"
     },
@@ -1263,11 +1261,6 @@
     {
       "source": "sys-salesforce-account",
       "target": "org-rm-relacionamento",
-      "label": "origina de"
-    },
-    {
-      "source": "sys-transferencia-corporativa",
-      "target": "org-bacen",
       "label": "origina de"
     },
     {

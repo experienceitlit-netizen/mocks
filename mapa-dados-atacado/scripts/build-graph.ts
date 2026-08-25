@@ -1,26 +1,14 @@
-// Build do grafo: varre vault/**/*.md, parseia frontmatter + wikilinks e
-// emite src/data/graph.json. Lógica pura em ./graph-lib.ts.
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+// Build do grafo: lê catalogo.csv (uma linha por dado), monta os nós/arestas
+// e emite src/data/graph.json. Lógica pura em ./graph-lib.ts.
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
-import { buildGraph, type VaultFile } from './graph-lib.ts'
+import { buildGraph } from './graph-lib.ts'
 
 const raiz = resolve(import.meta.dirname, '..')
-const vaultDir = join(raiz, 'vault')
+const entrada = join(raiz, 'catalogo.csv')
 const saida = join(raiz, 'src', 'data', 'graph.json')
 
-function coletarArquivos(dir: string): VaultFile[] {
-  const arquivos: VaultFile[] = []
-  for (const entrada of readdirSync(dir, { withFileTypes: true, recursive: true })) {
-    if (!entrada.isFile() || !entrada.name.endsWith('.md')) continue
-    if (entrada.name.startsWith('_')) continue // _template.md e afins
-    const caminho = join(entrada.parentPath, entrada.name)
-    arquivos.push({ name: relative(dir, caminho), raw: readFileSync(caminho, 'utf8') })
-  }
-  return arquivos
-}
-
-const arquivos = coletarArquivos(vaultDir)
-const { graph, warnings } = buildGraph(arquivos)
+const { graph, warnings } = buildGraph(readFileSync(entrada, 'utf8'))
 
 for (const w of warnings) {
   console.warn(`[build-graph] AVISO: ${w}`)

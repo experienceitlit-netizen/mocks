@@ -1,5 +1,5 @@
 // Funções puras do build do grafo — separadas do CLI para serem testáveis.
-import matter from 'gray-matter'
+// Fonte única: catalogo.csv (separador ";", uma linha por dado).
 
 export interface GraphNode {
   id: string
@@ -22,12 +22,14 @@ export interface GraphNode {
   /** Tabelas UCS onde a fonte é ingerida antes de virar produto (opcional):
    *  presença substitui a aresta direta dado→sistema por dado→fsec→sistema. */
   fontesSecundarias?: string[]
-  /** Corpo markdown do arquivo (sem o frontmatter); ausente se vazio. */
+  /** Coluna "observacoes" do CSV: texto livre em markdown; ausente se vazia.
+   *  [[Wikilinks]] no texto viram links de navegação no balão, mas NÃO geram
+   *  arestas — arestas de consumo vêm só da coluna "consome". */
   corpo?: string
 }
 
-/** Nó materializado pelo build: `sistema`/`origem`/`fontes_secundarias` do
- *  frontmatter dos dados ou o domínio dos produtos finais agregados pela raiz. */
+/** Nó materializado pelo build: `fonte_sistema`/`origem`/`fontes_secundarias`
+ *  dos dados ou o domínio dos produtos finais agregados pela raiz. */
 export interface DerivedNode {
   id: string
   nome: string
@@ -50,21 +52,15 @@ export interface Graph {
   links: GraphLink[]
 }
 
-export interface Wikilink {
-  target: string
-  label: string
-}
-
-export interface ParsedFile {
+export interface ParsedRow {
   node: GraphNode
-  links: Wikilink[]
-  warnings: string[]
+  /** nomes (ou ids) da coluna "consome", ainda não resolvidos */
+  consome: string[]
 }
 
-export interface VaultFile {
-  /** nome do arquivo, usado só nas mensagens de warning */
-  name: string
-  raw: string
+export interface CatalogoParseResult {
+  rows: ParsedRow[]
+  warnings: string[]
 }
 
 export interface BuildResult {
@@ -72,37 +68,29 @@ export interface BuildResult {
   warnings: string[]
 }
 
-const CAMPOS_OBRIGATORIOS = [
-  'id',
+/** Colunas do catalogo.csv, na ordem canônica do cabeçalho. */
+export const COLUNAS = [
   'nome',
-  'tipo',
   'nivel',
   'dominio',
   'origem',
-  'sistema',
+  'fonte_sistema',
+  'fontes_secundarias',
+  'consome',
   'descricao',
   'debito',
   'status',
+  'owner',
+  'centro_de_custo',
+  'observacoes',
 ] as const
 
-const CAMPOS_ANULAVEIS = ['owner', 'centro_de_custo'] as const
+type Coluna = (typeof COLUNAS)[number]
 
+const NIVEIS_VALIDOS = new Set(['primario', 'secundario', 'ambos'])
 const NIVEL_DEFAULT = 'primario'
 
-/** Extrai [[Alvo]] e [[Alvo|rotulo]] do corpo; rótulo default "consome". */
-export function extractWikilinks(body: string): Wikilink[] {
-  const links: Wikilink[] = []
-  const re = /\[\[([^[\]|]+?)(?:\|([^[\]]+?))?\]\]/g
-  for (const m of body.matchAll(re)) {
-    const target = (m[1] ?? '').trim()
-    if (target === '') continue
-    const label = (m[2] ?? '').trim() || 'consome'
-    links.push({ target, label })
-  }
-  return links
-}
-
-/** Slug kebab-case sem acentos, usado para id de nós fantasma. */
+/** Slug kebab-case sem acentos, usado como id dos nós (id = slug do nome). */
 export function slugify(nome: string): string {
   return nome
     .normalize('NFD')
@@ -112,95 +100,150 @@ export function slugify(nome: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-function asStringOuNull(valor: unknown): string | null {
-  if (valor === null || valor === undefined) return null
-  if (typeof valor === 'string') return valor
-  return String(valor)
+/**
+ * Parser CSV mínimo (RFC 4180 com separador ";"): células entre aspas podem
+ * conter ";", quebras de linha e aspas escapadas (""); aceita BOM UTF-8 e
+ * fim de linha \r\n ou \n. Linhas totalmente vazias são descartadas.
+ */
+export function parseCsv(texto: string): string[][] {
+  const t = texto.charCodeAt(0) === 0xfeff ? texto.slice(1) : texto
+  const registros: string[][] = []
+  let registro: string[] = []
+  let celula = ''
+  let emAspas = false
+
+  const fimCelula = (): void => {
+    registro.push(celula)
+    celula = ''
+  }
+  const fimRegistro = (): void => {
+    fimCelula()
+    registros.push(registro)
+    registro = []
+  }
+
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i]
+    if (emAspas) {
+      if (c === '"') {
+        if (t[i + 1] === '"') {
+          celula += '"'
+          i++
+        } else {
+          emAspas = false
+        }
+      } else {
+        celula += c
+      }
+    } else if (c === '"' && celula === '') {
+      emAspas = true
+    } else if (c === ';') {
+      fimCelula()
+    } else if (c === '\n') {
+      fimRegistro()
+    } else if (c === '\r') {
+      if (t[i + 1] === '\n') i++
+      fimRegistro()
+    } else {
+      celula += c
+    }
+  }
+  if (celula !== '' || registro.length > 0) fimRegistro()
+
+  return registros.filter((r) => r.some((c) => c.trim() !== ''))
 }
 
-/** Parseia um .md do vault: frontmatter (gray-matter) + wikilinks do corpo. */
-export function parseVaultFile(file: VaultFile): ParsedFile {
+/** Divide uma célula-lista ("A | B") em nomes; vazio = lista vazia. */
+function splitLista(celula: string): string[] {
+  return celula
+    .split('|')
+    .map((s) => s.trim())
+    .filter((s) => s !== '')
+}
+
+/**
+ * Parseia o catalogo.csv: cabeçalho por nome de coluna (ordem livre) + uma
+ * linha por dado. Warnings legíveis para coluna faltando/desconhecida, linha
+ * sem nome e nivel inválido; "linha N" conta o cabeçalho como linha 1.
+ */
+export function parseCatalogo(texto: string): CatalogoParseResult {
   const warnings: string[] = []
-  const { data, content } = matter(file.raw)
-  const fm: Record<string, unknown> = data
-
-  const campo = (chave: string): string => {
-    const valor = fm[chave]
-    if (valor === undefined || valor === null || valor === '') {
-      warnings.push(`${file.name}: frontmatter sem o campo obrigatório "${chave}"`)
-      return ''
-    }
-    return typeof valor === 'string' ? valor : String(valor)
+  const registros = parseCsv(texto)
+  if (registros.length === 0) {
+    warnings.push('catalogo.csv: arquivo vazio — nenhum dado no catálogo')
+    return { rows: [], warnings }
   }
 
-  // sistema/origem: null explícito é válido ("não se aplica" — sem warning,
-  // sem nó derivado); campo ausente ou vazio continua sendo warning.
-  const campoRota = (chave: string): string | null => {
-    if (!(chave in fm)) {
-      warnings.push(`${file.name}: frontmatter sem o campo obrigatório "${chave}" (use null para "não se aplica")`)
-      return null
-    }
-    const valor = fm[chave]
-    if (valor === null) return null
-    if (valor === '') {
-      warnings.push(`${file.name}: frontmatter sem o campo obrigatório "${chave}"`)
-      return null
-    }
-    return typeof valor === 'string' ? valor : String(valor)
+  const cabecalho = registros[0].map((c) => c.trim())
+  const indice = new Map<string, number>(cabecalho.map((c, i) => [c, i]))
+  for (const col of COLUNAS) {
+    if (!indice.has(col)) warnings.push(`catalogo.csv: coluna obrigatória "${col}" ausente do cabeçalho`)
   }
-
-  const campoNivel = (): string => {
-    const valor = fm['nivel']
-    if (valor === undefined || valor === null || valor === '') {
-      warnings.push(`${file.name}: frontmatter sem o campo obrigatório "nivel" — assumindo "${NIVEL_DEFAULT}"`)
-      return NIVEL_DEFAULT
-    }
-    return typeof valor === 'string' ? valor : String(valor)
-  }
-
-  for (const chave of CAMPOS_ANULAVEIS) {
-    if (!(chave in fm)) {
-      warnings.push(`${file.name}: frontmatter sem o campo "${chave}" (use null para "a definir")`)
+  for (const col of cabecalho) {
+    if (!(COLUNAS as readonly string[]).includes(col)) {
+      warnings.push(`catalogo.csv: coluna desconhecida "${col}" ignorada`)
     }
   }
 
-  const owner = asStringOuNull(fm['owner'])
-  const centroDeCusto = asStringOuNull(fm['centro_de_custo'])
+  const rows: ParsedRow[] = []
+  for (let r = 1; r < registros.length; r++) {
+    const registro = registros[r]
+    const linha = r + 1
 
-  const node: GraphNode = {
-    id: campo('id'),
-    nome: campo('nome'),
-    tipo: campo('tipo'),
-    nivel: campoNivel(),
-    dominio: campo('dominio'),
-    debito: campo('debito'),
-    owner,
-    centroDeCusto,
-    descricao: campo('descricao'),
-    sistema: campoRota('sistema'),
-    origem: campoRota('origem'),
-    status: campo('status'),
-    incompleto: owner === null || centroDeCusto === null,
-  }
-
-  // nivel "raiz" é um agregador: owner/centro de custo não se aplicam.
-  if (node.nivel === 'raiz') node.incompleto = false
-
-  // fontes_secundarias é opcional: lista de tabelas UCS de ingestão.
-  const fsecs = fm['fontes_secundarias']
-  if (fsecs !== undefined && fsecs !== null) {
-    if (Array.isArray(fsecs)) {
-      const nomes = fsecs.map((v) => String(v).trim()).filter((v) => v !== '')
-      if (nomes.length > 0) node.fontesSecundarias = nomes
-    } else {
-      warnings.push(`${file.name}: "fontes_secundarias" deve ser uma lista de nomes — campo ignorado`)
+    const celula = (col: Coluna): string => {
+      const i = indice.get(col)
+      return i === undefined ? '' : (registro[i] ?? '').trim()
     }
+    const textoOuNull = (col: Coluna): string | null => {
+      const v = celula(col)
+      return v === '' ? null : v
+    }
+
+    const nome = celula('nome')
+    if (nome === '') {
+      warnings.push(`catalogo.csv linha ${linha}: célula "nome" vazia — linha ignorada`)
+      continue
+    }
+
+    let nivel = celula('nivel')
+    if (!NIVEIS_VALIDOS.has(nivel)) {
+      warnings.push(
+        `catalogo.csv linha ${linha} ("${nome}"): nivel "${nivel}" inválido` +
+          ` (use primario, secundario ou ambos) — assumindo "${NIVEL_DEFAULT}"`,
+      )
+      nivel = NIVEL_DEFAULT
+    }
+
+    const owner = textoOuNull('owner')
+    const centroDeCusto = textoOuNull('centro_de_custo')
+
+    const node: GraphNode = {
+      id: slugify(nome),
+      nome,
+      // tipo é derivado do nivel: primário = insumo, o resto = produto final.
+      tipo: nivel === 'primario' ? 'insumo' : 'produto',
+      nivel,
+      dominio: celula('dominio') || 'A definir',
+      debito: celula('debito'),
+      owner,
+      centroDeCusto,
+      descricao: celula('descricao'),
+      sistema: textoOuNull('fonte_sistema'),
+      origem: textoOuNull('origem'),
+      status: celula('status'),
+      incompleto: owner === null || centroDeCusto === null,
+    }
+
+    const fsecs = splitLista(celula('fontes_secundarias'))
+    if (fsecs.length > 0) node.fontesSecundarias = fsecs
+
+    const corpo = celula('observacoes')
+    if (corpo !== '') node.corpo = corpo
+
+    rows.push({ node, consome: splitLista(celula('consome')) })
   }
 
-  const corpo = content.trim()
-  if (corpo !== '') node.corpo = corpo
-
-  return { node, links: extractWikilinks(content), warnings }
+  return { rows, warnings }
 }
 
 /** Valores de sistema/origem que significam "ainda não sabemos" — não viram nó. */
@@ -213,8 +256,8 @@ function valorConhecido(valor: string | null | undefined): string | null {
 }
 
 /**
- * Materializa `sistema`, `origem` e `fontes_secundarias` dos dados como nós
- * derivados, criando a linhagem dado → [fonte secundária →] sistema → origem:
+ * Materializa `fonte_sistema`, `origem` e `fontes_secundarias` dos dados como
+ * nós derivados, criando a linhagem dado → [fonte secundária →] sistema → origem:
  * - dedup por chave normalizada (trim + lowercase) do texto original;
  * - valores desconhecidos ("a confirmar" etc.) não geram nó nem aresta;
  * - sistema desconhecido com origem conhecida liga dado → origem direto;
@@ -277,7 +320,7 @@ export function derivarSistemasOrigens(dados: GraphNode[]): { nodes: DerivedNode
   return { nodes: [...sistemas.values(), ...fontesSecundarias.values(), ...origens.values()], links }
 }
 
-/** O frontmatter guarda domínios sem acento; o nó derivado exibe com. */
+/** O catálogo guarda domínios sem acento; o nó derivado exibe com. */
 const DOMINIO_DISPLAY: Record<string, string> = {
   Regulatorio: 'Regulatório',
 }
@@ -298,7 +341,7 @@ export function derivarDominios(
   const arestasVistas = new Set<string>()
 
   const addAgrega = (source: string, target: string): void => {
-    const chave = `${source} ${target}`
+    const chave = `${source} ${target}`
     if (arestasVistas.has(chave)) return
     arestasVistas.add(chave)
     saida.push({ source, target, label: 'agrega' })
@@ -337,7 +380,7 @@ function nodeFantasma(nomeAlvo: string): GraphNode {
     debito: 'avaliar',
     owner: null,
     centroDeCusto: null,
-    descricao: 'Nó fantasma: referenciado por wikilink, mas sem arquivo no vault.',
+    descricao: 'Nó fantasma: referenciado na coluna "consome", mas sem linha no catálogo.',
     sistema: 'desconhecido',
     origem: 'desconhecida',
     status: 'investigacao',
@@ -347,53 +390,96 @@ function nodeFantasma(nomeAlvo: string): GraphNode {
 }
 
 /**
- * Monta o grafo a partir dos arquivos do vault.
- * - resolve wikilinks por `nome` OU `id`, case-insensitive;
- * - link para alvo inexistente vira warning + nó fantasma;
+ * Nó-raiz do portfólio, criado automaticamente pelo build (não tem linha no
+ * catalogo.csv). Agrega todos os dados de nivel secundario/ambos; owner e
+ * centro de custo não se aplicam (nunca renderiza incompleto).
+ */
+export function criarRaiz(): GraphNode {
+  return {
+    id: 'atacado-dados',
+    nome: 'Atacado — Dados',
+    tipo: 'dominio',
+    nivel: 'raiz',
+    dominio: 'Atacado',
+    debito: 'nao',
+    owner: null,
+    centroDeCusto: null,
+    descricao: 'Portfólio de dados da Diretoria Comercial Atacado — ponto de entrada do mapa',
+    sistema: null,
+    origem: null,
+    status: 'producao',
+    incompleto: false,
+    corpo:
+      'Portfólio de dados da Diretoria Comercial Atacado — ponto de entrada do mapa. ' +
+      'Agrega todos os produtos finais do catálogo, as visões consumidas diretamente pelas ' +
+      'equipes comerciais e de gestão. Não é um dado em si: é o nó-raiz que organiza a ' +
+      'navegação do portfólio.\n\n' +
+      'Agrega [[Account|agrega]], [[Faturamento|agrega]], [[Segmentação e Encarteiramento|agrega]], ' +
+      '[[Setorização|agrega]], [[Localização|agrega]], [[Evolução do Resultado|agrega]], ' +
+      '[[Evolução do Resultado por produto|agrega]], [[RAR 12M|agrega]], [[Estoque (carteira)|agrega]], ' +
+      '[[Resultado|agrega]], [[Endividamento de mercado|agrega]], [[Rating|agrega]] e ' +
+      '[[Restritivos e tipos|agrega]].',
+  }
+}
+
+/**
+ * Monta o grafo a partir do texto do catalogo.csv.
+ * - id = slug(nome); nome duplicado (mesmo slug) vira warning e é ignorado;
+ * - a raiz "Atacado — Dados" é criada automaticamente e agrega todos os
+ *   dados de nivel secundario/ambos;
+ * - a coluna "consome" resolve por nome OU id, case-insensitive; alvo
+ *   inexistente vira warning + nó fantasma;
  * - saída determinística (nodes por id, links por source/target/label).
  */
-export function buildGraph(files: VaultFile[]): BuildResult {
-  const warnings: string[] = []
-  const parsed: ParsedFile[] = [...files]
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-    .map(parseVaultFile)
+export function buildGraph(csv: string): BuildResult {
+  const { rows, warnings } = parseCatalogo(csv)
 
-  const nodes: GraphNode[] = []
-  const porId = new Map<string, GraphNode>()
-  const porNome = new Map<string, GraphNode>()
+  const raiz = criarRaiz()
+  const nodes: GraphNode[] = [raiz]
+  const porId = new Map<string, GraphNode>([[raiz.id, raiz]])
+  const porNome = new Map<string, GraphNode>([[raiz.nome.toLowerCase(), raiz]])
+  const aceitas: ParsedRow[] = []
 
-  for (const p of parsed) {
-    warnings.push(...p.warnings)
-    const chaveId = p.node.id.toLowerCase()
-    if (porId.has(chaveId)) {
-      warnings.push(`id duplicado "${p.node.id}" — o arquivo repetido foi ignorado`)
+  // Ordena por id (estável: entre duplicatas, a primeira linha do arquivo
+  // vence) para que a saída não dependa da ordem das linhas no CSV.
+  const ordenadas = [...rows].sort((a, b) => (a.node.id < b.node.id ? -1 : a.node.id > b.node.id ? 1 : 0))
+
+  for (const p of ordenadas) {
+    if (porId.has(p.node.id)) {
+      warnings.push(`nome duplicado "${p.node.nome}" (id "${p.node.id}") — a linha repetida foi ignorada`)
       continue
     }
     nodes.push(p.node)
-    porId.set(chaveId, p.node)
+    porId.set(p.node.id, p.node)
     porNome.set(p.node.nome.toLowerCase(), p.node)
+    aceitas.push(p)
   }
 
   const links: GraphLink[] = []
   const fantasmas = new Map<string, GraphNode>()
 
-  for (const p of parsed) {
-    const origem = porId.get(p.node.id.toLowerCase())
-    if (origem !== p.node) continue // arquivo descartado por id duplicado
-    for (const link of p.links) {
-      const chave = link.target.toLowerCase()
+  for (const p of aceitas) {
+    for (const nomeAlvo of p.consome) {
+      const chave = nomeAlvo.toLowerCase()
       let alvo = porId.get(chave) ?? porNome.get(chave)
       if (alvo === undefined) {
         alvo = fantasmas.get(chave)
         if (alvo === undefined) {
-          alvo = nodeFantasma(link.target)
+          alvo = nodeFantasma(nomeAlvo)
           fantasmas.set(chave, alvo)
           warnings.push(
-            `link quebrado: [[${link.target}]] em "${p.node.nome}" não corresponde a nenhum nó — criado nó fantasma "${alvo.id}"`,
+            `consome quebrado: "${nomeAlvo}" em "${p.node.nome}" não corresponde a nenhuma linha do catálogo — criado nó fantasma "${alvo.id}"`,
           )
         }
       }
-      links.push({ source: origem.id, target: alvo.id, label: link.label })
+      links.push({ source: p.node.id, target: alvo.id, label: 'consome' })
+    }
+  }
+
+  // A raiz agrega automaticamente todos os produtos finais do catálogo.
+  for (const n of nodes) {
+    if (n.nivel === 'secundario' || n.nivel === 'ambos') {
+      links.push({ source: raiz.id, target: n.id, label: 'agrega' })
     }
   }
 
@@ -416,5 +502,3 @@ export function buildGraph(files: VaultFile[]): BuildResult {
 
   return { graph: { nodes: todosNodes, links: todosLinks }, warnings }
 }
-
-export { CAMPOS_OBRIGATORIOS }
