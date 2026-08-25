@@ -25,7 +25,7 @@ primário → produto secundário**:
   do domínio e ponto de entrada do mapa. Agrega com wikilinks `[[...|agrega]]` todos os
   produtos finais (secundários e "ambos"). Não é um produto de dado: desenhado como
   **hexágono azul** de tamanho fixo, fica fora dos contadores, dos filtros e da tabela,
-  e owner/centro de custo não se aplicam (o painel mostra "—", sem ⚠).
+  e owner/centro de custo não se aplicam (o balão mostra "—", sem ⚠).
 - **Domínio** (derivado pelo build, sem arquivo no vault): entre a raiz e os produtos
   finais o build insere um nó por domínio (`dom-cadastro`, `dom-mercado`, `dom-risco`,
   `dom-resultado`, `dom-regulatorio`), reescrevendo cada aresta raiz→produto como
@@ -94,7 +94,7 @@ O vault também pode ser aberto como vault do Obsidian desktop — os wikilinks 
 | `dominio` | sim | `Cadastro` \| `Mercado` \| `Risco` \| `Resultado` \| `Regulatorio` \| `A definir` | filtro por domínio na UI |
 | `origem` | sim (aceita `null`) | texto ou `null` | área ou processo de origem; `null` em secundários = não se aplica (UI mostra "—") |
 | `sistema` | sim (aceita `null`) | texto ou `null` | se contiver "legado" ou "on-premise", o nó fica âmbar; `null` em secundários = não se aplica |
-| `descricao` | sim | uma linha | aparece no painel e na busca |
+| `descricao` | sim | uma linha | aparece no balão e na busca |
 | `centro_de_custo` | sim (aceita `null`) | texto ou `null` | `null` = a definir → nó com borda tracejada |
 | `owner` | sim (aceita `null`) | texto ou `null` | `null` = a definir → nó com borda tracejada |
 | `debito` | sim | `sim` \| `nao` \| `avaliar` | manda na cor do nó (ver abaixo) |
@@ -138,7 +138,7 @@ src/
   data/graph.json           # GERADO pelo build — não editar à mão (mas é commitado)
   components/
     Graph.tsx               # canvas do grafo (react-force-graph-2d)
-    DetailPanel.tsx         # drawer de detalhe do nó selecionado
+    NodeBalloon.tsx         # balão de detalhe ancorado no nó selecionado
     Filters.tsx             # domínio, débito, nível, "somente sem owner", camada de linhagem, contadores
     FocusBar.tsx            # barra do modo foco: breadcrumb, vista (níveis/força), sair
     lineage.ts              # vista de linhagem em níveis: cadeia montante + layout em colunas
@@ -156,20 +156,24 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
 ## Navegação
 
 - **Entrada padrão**: sem parâmetros na URL, o app abre já em **modo foco no nó-raiz
-  "Atacado — Dados"**, vista Níveis, painel fechado — as colunas, lidas da esquerda para
+  "Atacado — Dados"**, vista Níveis, balão fechado — as colunas, lidas da esquerda para
   a direita, mostram raiz → domínios → secundários → primários → fontes → origens, o
   portfólio inteiro numa tela. "Ver mapa completo" (ou `Esc`) leva ao mapa global, onde
   a raiz aparece como hexágono azul ligado aos domínios (quadrados arredondados na cor
   da área) e estes aos produtos finais. A URL só ganha `?foco=` quando o estado difere
   dessa entrada padrão; `?no=` sem `?foco=` continua abrindo o mapa global com o nó
   selecionado.
-- **Clique** num nó abre o painel de detalhe; `Esc` ou clique fora fecha. Para um dado,
-  o painel traz a seção **"Linhagem"**: a árvore indentada de tudo de que ele depende
-  (origem / fonte / produto por nível, recursiva), com itens clicáveis.
-- **Duplo clique** num nó (ou o botão **"⌖ Focar neste nó"** do painel) entra no **modo
-  foco**, com **breadcrumb** do caminho navegado, botão "Ver mapa completo" para sair
-  (`Esc` sai em dois estágios: primeiro fecha o painel, depois o foco) e clique em outro
-  nó para re-focar nele. O foco tem duas vistas, no switch da barra:
+- **Clique** num nó abre um **balão de detalhe** ancorado no próprio nó (com seta,
+  mudando de lado para caber na tela) e destaca suas **relações** — nó e vizinhos acesos,
+  o resto esmaecido — enquanto o balão estiver aberto; `Esc` ou clique fora fecha. Clicar
+  em outro nó move o balão para ele. Para um dado, o balão traz a seção **"Linhagem"**:
+  a árvore indentada de tudo de que ele depende (origem / fonte / produto por nível,
+  recursiva), com itens clicáveis.
+- **Duplo clique** num nó (ou o botão **"⌖ Focar neste nó"** do balão) entra no **modo
+  foco** (ou re-foca, empilhando no **breadcrumb** do caminho navegado), com botão
+  "Ver mapa completo" para sair (`Esc` sai em dois estágios: primeiro fecha o balão,
+  depois o foco). O clique simples, também no foco, só abre o balão.
+  O foco tem duas vistas, no switch da barra:
   - **Níveis** (padrão): a linhagem montante **completa** do nó focado, lida da
     **esquerda para a direita** — o focado na extrema esquerda e a cadeia se abrindo à
     direita: produto → insumos → fontes → origens (focar Setorização a põe à esquerda,
@@ -187,7 +191,7 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
   (Domínio | Origem | Fonte | Produto primário | Produto secundário | Débito | Status —
   origem, fonte, débito e status vêm do primário; primário sem produto final mostra "—"
   na coluna do secundário), agrupada por domínio, com filtro rápido e ordenação próprios.
-  Clicar no nome de um produto volta ao mapa com o nó selecionado e centralizado; o estado
+  Clicar no nome de um produto volta ao mapa com o nó centralizado e o balão aberto; o estado
   do mapa (foco, filtros, zoom) sobrevive à ida e volta. `Esc` na tabela retorna ao mapa.
 - A URL reflete o estado e pode ser compartilhada: `?no=rar-12m` seleciona um nó,
   `?foco=rar-12m` abre o foco na vista de níveis, `?foco=rar-12m&vista=forca&prof=2`

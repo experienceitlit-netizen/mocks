@@ -1,4 +1,4 @@
-// Paleta central (seção 2 do plano). Graph, DetailPanel e a futura legenda
+// Paleta central (seção 2 do plano). Graph, NodeBalloon e a futura legenda
 // (Fase 5) devem importar daqui para não divergirem.
 import type { Debito, GraphNodeData, Nivel } from './graph-types'
 import { isRaiz, nodeKind } from './graph-types'
@@ -72,7 +72,7 @@ export const DEBITO_LABEL: Record<Debito, string> = {
   avaliar: 'A avaliar',
 }
 
-/** Rótulos executivos do nível (chips do DetailPanel e da tabela). */
+/** Rótulos executivos do nível (chips do NodeBalloon e da tabela). */
 export const NIVEL_LABEL: Record<Nivel, string> = {
   primario: 'Produto primário',
   secundario: 'Produto secundário',

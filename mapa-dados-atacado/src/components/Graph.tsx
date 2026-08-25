@@ -6,8 +6,11 @@ import { isRaiz, linkEndId, nodeKind } from './graph-types'
 import { BACKGROUND, PLACEHOLDER_FILL, PLACEHOLDER_STROKE, nodeColor } from './palette'
 
 export interface GraphHandle {
-  /** Centraliza e dá zoom no nó (usado por painel, busca e ?no= da URL). */
+  /** Centraliza e dá zoom no nó (usado por balão, busca e ?no= da URL). */
   focusNode(id: string): void
+  /** Posição do nó em coordenadas de tela + raio visual em px (âncora do
+   *  balão de detalhe); null se o nó não está no grafo atual. */
+  nodeScreenPosition(id: string): { x: number; y: number; r: number } | null
 }
 
 interface GraphProps {
@@ -107,7 +110,26 @@ export default function Graph({
     [data],
   )
 
-  useImperativeHandle(ref, () => ({ focusNode }), [focusNode])
+  const nodeScreenPosition = useCallback(
+    (id: string) => {
+      const fg = fgRef.current
+      const node = data.nodes.find((n) => n.id === id)
+      if (!fg || !node || node.x === undefined || node.y === undefined) return null
+      const { x, y } = fg.graph2ScreenCoords(node.x, node.y)
+      const extent = isRaiz(node)
+        ? RAIZ_RADIUS * HEX_SCALE
+        : nodeKind(node) === 'dominio'
+          ? DOMINIO_RADIUS
+          : radiusOf(degreeById.get(node.id) ?? (node.placeholder ? 2 : 0))
+      return { x, y, r: extent * fg.zoom() }
+    },
+    [data, degreeById],
+  )
+
+  useImperativeHandle(ref, () => ({ focusNode, nodeScreenPosition }), [
+    focusNode,
+    nodeScreenPosition,
+  ])
 
   const handleEngineStop = useCallback(() => {
     if (!settledRef.current) {

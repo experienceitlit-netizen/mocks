@@ -345,40 +345,93 @@
   color: #d0d0d0;
 }
 
-/* ---------- painel de detalhe (drawer à direita) ---------- */
+/* ---------- balão de detalhe (ancorado no nó selecionado) ---------- */
 
-.detail-panel {
+/* Posicionado via JS (NodeBalloon segue o nó a cada frame); invisível até o
+   primeiro posicionamento para não piscar no canto. */
+.node-balloon {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 360px;
+  width: 340px;
   max-width: 92vw;
-  padding: 1.25rem 1.25rem 2rem;
-  overflow-y: auto;
-  background: #242424;
-  border-left: 1px solid #3a3a3a;
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.45);
-  z-index: 20;
+  visibility: hidden;
+  z-index: 9; /* acima do canvas, abaixo do topbar (10) */
 }
 
-.detail-panel__close {
+.node-balloon__body {
+  position: relative;
+  max-height: min(62vh, calc(100vh - 5.5rem));
+  overflow-y: auto;
+  padding: 1.1rem 1.1rem 1.25rem;
+  border-radius: 10px;
+  border: 1px solid #3a3a3a;
+  background: #242424;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* Seta/rabinho: losango na cor do balão, apontando para o nó. O lado ativo
+   vem de data-side (flip automático para caber na viewport). */
+.node-balloon__arrow {
   position: absolute;
-  top: 0.6rem;
-  right: 0.75rem;
+  width: 12px;
+  height: 12px;
+  background: #242424;
+  border: 1px solid #3a3a3a;
+  transform: rotate(45deg);
+  z-index: 1;
+}
+
+.node-balloon[data-side='right'] > .node-balloon__arrow {
+  left: -6px;
+  margin-top: -6px;
+  border-top: none;
+  border-right: none;
+}
+
+.node-balloon[data-side='left'] > .node-balloon__arrow {
+  right: -6px;
+  margin-top: -6px;
+  border-bottom: none;
+  border-left: none;
+}
+
+.node-balloon[data-side='below'] > .node-balloon__arrow {
+  top: -6px;
+  margin-left: -6px;
+  border-bottom: none;
+  border-right: none;
+}
+
+.node-balloon[data-side='above'] > .node-balloon__arrow {
+  bottom: -6px;
+  margin-left: -6px;
+  border-top: none;
+  border-left: none;
+}
+
+/* Nó fora do grafo atual: cartão fixo à direita, sem seta. */
+.node-balloon[data-side='free'] > .node-balloon__arrow {
+  display: none;
+}
+
+.node-balloon__close {
+  position: sticky;
+  top: -0.5rem;
+  float: right;
+  margin: -0.5rem -0.45rem 0 0;
   border: none;
   background: none;
   color: #8a8a8a;
   font-size: 1.4rem;
   line-height: 1;
   cursor: pointer;
+  z-index: 2;
 }
 
-.detail-panel__close:hover {
+.node-balloon__close:hover {
   color: #f0f0f0;
 }
 
-.detail-panel__header h2 {
+.node-balloon__header h2 {
   font-size: 1.15rem;
   font-weight: 650;
   color: #f5f5f5;
@@ -439,7 +492,7 @@
   color: #b0b0b0;
 }
 
-.detail-panel__focus {
+.node-balloon__focus {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
@@ -453,12 +506,12 @@
   cursor: pointer;
 }
 
-.detail-panel__focus:hover {
+.node-balloon__focus:hover {
   border-color: #7fb4e8;
   background: rgba(127, 180, 232, 0.15);
 }
 
-.detail-panel__descricao {
+.node-balloon__descricao {
   font-size: 0.85rem;
   line-height: 1.5;
   color: #d8d8d8;

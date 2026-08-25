@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import graphJson from './data/graph.json'
 import Graph from './components/Graph'
 import type { GraphHandle } from './components/Graph'
-import DetailPanel from './components/DetailPanel'
-import type { Connection } from './components/DetailPanel'
+import NodeBalloon from './components/NodeBalloon'
+import type { BalloonAnchor, Connection } from './components/NodeBalloon'
 import SearchBox from './components/SearchBox'
 import Filters from './components/Filters'
 import type { NivelFiltro } from './components/Filters'
@@ -296,10 +296,13 @@ function App() {
   const dimmedIds = useMemo(() => {
     // Hover tem prioridade: acende o nó + vizinhos (na vista em níveis, a
     // cadeia inteira de ancestrais/descendentes) e esmaece todo o resto.
-    if (hoverId) {
+    // Com o balão aberto (seleção), o mesmo destaque persiste no selecionado;
+    // um hover momentâneo em outro nó sobrepõe e, ao sair, a seleção volta.
+    const highlightId = hoverId ?? (selectedId && shownIds.has(selectedId) ? selectedId : null)
+    if (highlightId) {
       const lit = lineage
-        ? lineage.chainOf(hoverId)
-        : new Set([hoverId, ...(neighborsById.get(hoverId) ?? [])])
+        ? lineage.chainOf(highlightId)
+        : new Set([highlightId, ...(neighborsById.get(highlightId) ?? [])])
       return new Set([...shownIds].filter((id) => !lit.has(id)))
     }
     if (!hasActiveFilter) return new Set<string>()
@@ -332,6 +335,7 @@ function App() {
     shownIds,
     nodesById,
     hoverId,
+    selectedId,
     neighborsById,
     lineage,
     hasActiveFilter,
@@ -395,16 +399,12 @@ function App() {
       const now = performance.now()
       const isDouble = lastClickRef.current.id === id && now - lastClickRef.current.t < DBLCLICK_MS
       lastClickRef.current = { id, t: now }
+      // Clique simples só abre o balão de detalhe (nunca foca/re-foca);
+      // duplo clique entra em foco (ou re-foca, empilhando no breadcrumb).
       select(id)
-      // No foco: clicar num vizinho re-foca nele (empilha no breadcrumb).
-      // No mapa global: duplo clique entra em foco.
-      if (focusId) {
-        if (id !== focusId) pushFocus(id)
-      } else if (isDouble) {
-        enterFocus(id)
-      }
+      if (isDouble) focusOn(id)
     },
-    [select, focusId, pushFocus, enterFocus, lineage],
+    [select, focusOn, lineage],
   )
 
   // URL reflete aba (?aba=tabela), seleção (?no=) e foco (?foco=&vista=, com
@@ -520,6 +520,14 @@ function App() {
       .filter((n): n is GraphNodeData => n !== undefined)
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
   }, [selectedNode, links, nodesById])
+
+  // Âncora do balão: posição do nó selecionado em coordenadas de tela, lida
+  // a cada frame pelo próprio balão (segue pan/zoom/física sem re-render).
+  const getBalloonAnchor = useCallback(
+    (): BalloonAnchor | null =>
+      selectedId ? (graphRef.current?.nodeScreenPosition(selectedId) ?? null) : null,
+    [selectedId],
+  )
 
   const resolveWikiLink = useCallback(
     (target: string) => idByName.get(norm(target)) ?? null,
@@ -641,7 +649,7 @@ function App() {
       )}
 
       {aba === 'mapa' && selectedNode && (
-        <DetailPanel
+        <NodeBalloon
           node={selectedNode}
           outgoing={outgoing}
           incoming={incoming}
@@ -652,6 +660,7 @@ function App() {
           onNavigate={(id) => select(id, true)}
           onFocus={focusOn}
           onClose={() => setSelectedId(null)}
+          getAnchor={getBalloonAnchor}
         />
       )}
 

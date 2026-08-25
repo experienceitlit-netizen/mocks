@@ -1,3 +1,8 @@
+// Balão de detalhe ancorado no nó selecionado. Substitui o antigo DetailPanel
+// (drawer à direita) mantendo o mesmo conteúdo: chips, descrição, campos de
+// governança, corpo markdown, árvore de linhagem e listas de relações.
+// A ancoragem segue o nó a cada frame (pan/zoom/física) via getAnchor().
+import { useCallback, useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import type { GraphNodeData } from './graph-types'
 import { isDerivado, isDominio, isRaiz, nodeKind } from './graph-types'
@@ -10,7 +15,14 @@ export interface Connection {
   label: string
 }
 
-interface DetailPanelProps {
+/** Posição do nó em coordenadas de tela + raio visual em px. */
+export interface BalloonAnchor {
+  x: number
+  y: number
+  r: number
+}
+
+interface NodeBalloonProps {
   node: GraphNodeData
   /** Arestas de saída (este nó consome/produz o alvo). */
   outgoing: Connection[]
@@ -27,6 +39,8 @@ interface DetailPanelProps {
   /** Entra em modo foco neste nó (ou re-foca, se já em foco). */
   onFocus(id: string): void
   onClose(): void
+  /** Âncora em coordenadas de tela; null se o nó não está no grafo atual. */
+  getAnchor(): BalloonAnchor | null
 }
 
 function Missing() {
@@ -132,7 +146,10 @@ function LineageBranch({
   )
 }
 
-export default function DetailPanel({
+type BalloonContentProps = Omit<NodeBalloonProps, 'onClose' | 'getAnchor'>
+
+/** Corpo do balão — o mesmo conteúdo do antigo painel lateral, por tipo de nó. */
+function BalloonContent({
   node,
   outgoing,
   incoming,
@@ -142,21 +159,16 @@ export default function DetailPanel({
   resolveWikiLink,
   onNavigate,
   onFocus,
-  onClose,
-}: DetailPanelProps) {
+}: BalloonContentProps) {
   const debito = node.debito ?? 'avaliar'
   const kind = nodeKind(node)
 
-  // Painel do nó-raiz do domínio: descrição e a lista de produtos que agrega.
+  // Nó-raiz do domínio: descrição e a lista de produtos que agrega.
   // Governança não se aplica (owner/CC = "—", nunca ⚠), sem débito/domínio.
   if (isRaiz(node)) {
     return (
-      <aside className="detail-panel" role="dialog" aria-label={`Detalhes de ${node.nome}`}>
-        <button type="button" className="detail-panel__close" onClick={onClose} aria-label="Fechar">
-          ×
-        </button>
-
-        <header className="detail-panel__header">
+      <>
+        <header className="node-balloon__header">
           <h2>{node.nome}</h2>
           <div className="chips">
             <span className="chip chip--neutral">{NIVEL_LABEL.raiz}</span>
@@ -164,12 +176,12 @@ export default function DetailPanel({
         </header>
 
         {!isFocused && (
-          <button type="button" className="detail-panel__focus" onClick={() => onFocus(node.id)}>
+          <button type="button" className="node-balloon__focus" onClick={() => onFocus(node.id)}>
             ⌖ Focar neste nó
           </button>
         )}
 
-        {node.descricao && <p className="detail-panel__descricao">{node.descricao}</p>}
+        {node.descricao && <p className="node-balloon__descricao">{node.descricao}</p>}
 
         <div className="fields">
           <Field label="Owner">—</Field>
@@ -183,20 +195,16 @@ export default function DetailPanel({
           showLabel={false}
         />
         {outgoing.length === 0 && <p className="ghost-note">Sem produtos mapeados.</p>}
-      </aside>
+      </>
     )
   }
 
-  // Painel do nó de domínio: chip na cor da área e os produtos finais que
-  // agrega (as arestas de saída "agrega"), clicáveis.
+  // Nó de domínio: chip na cor da área e os produtos finais que agrega
+  // (as arestas de saída "agrega"), clicáveis.
   if (isDominio(node)) {
     return (
-      <aside className="detail-panel" role="dialog" aria-label={`Detalhes de ${node.nome}`}>
-        <button type="button" className="detail-panel__close" onClick={onClose} aria-label="Fechar">
-          ×
-        </button>
-
-        <header className="detail-panel__header">
+      <>
+        <header className="node-balloon__header">
           <h2>{node.nome}</h2>
           <div className="chips">
             <span
@@ -209,7 +217,7 @@ export default function DetailPanel({
         </header>
 
         {!isFocused && (
-          <button type="button" className="detail-panel__focus" onClick={() => onFocus(node.id)}>
+          <button type="button" className="node-balloon__focus" onClick={() => onFocus(node.id)}>
             ⌖ Focar neste nó
           </button>
         )}
@@ -221,19 +229,15 @@ export default function DetailPanel({
           showLabel={false}
         />
         {outgoing.length === 0 && <p className="ghost-note">Sem produtos mapeados.</p>}
-      </aside>
+      </>
     )
   }
 
-  // Painel simplificado para sistema/origem: nome, tipo e dados ligados.
+  // Conteúdo simplificado para sistema/origem: nome, tipo e dados ligados.
   if (isDerivado(node)) {
     return (
-      <aside className="detail-panel" role="dialog" aria-label={`Detalhes de ${node.nome}`}>
-        <button type="button" className="detail-panel__close" onClick={onClose} aria-label="Fechar">
-          ×
-        </button>
-
-        <header className="detail-panel__header">
+      <>
+        <header className="node-balloon__header">
           <h2>{node.nome}</h2>
           <div className="chips">
             <span className="chip chip--neutral">{kind}</span>
@@ -241,7 +245,7 @@ export default function DetailPanel({
         </header>
 
         {!isFocused && (
-          <button type="button" className="detail-panel__focus" onClick={() => onFocus(node.id)}>
+          <button type="button" className="node-balloon__focus" onClick={() => onFocus(node.id)}>
             ⌖ Focar neste nó
           </button>
         )}
@@ -262,17 +266,13 @@ export default function DetailPanel({
             <p className="ghost-note">Nenhum dado mapeado.</p>
           )}
         </section>
-      </aside>
+      </>
     )
   }
 
   return (
-    <aside className="detail-panel" role="dialog" aria-label={`Detalhes de ${node.nome}`}>
-      <button type="button" className="detail-panel__close" onClick={onClose} aria-label="Fechar">
-        ×
-      </button>
-
-      <header className="detail-panel__header">
+    <>
+      <header className="node-balloon__header">
         <h2>{node.nome}</h2>
         <div className="chips">
           {node.dominio && (
@@ -292,7 +292,7 @@ export default function DetailPanel({
       </header>
 
       {!isFocused && (
-        <button type="button" className="detail-panel__focus" onClick={() => onFocus(node.id)}>
+        <button type="button" className="node-balloon__focus" onClick={() => onFocus(node.id)}>
           ⌖ Focar neste nó
         </button>
       )}
@@ -303,7 +303,7 @@ export default function DetailPanel({
         </p>
       ) : (
         <>
-          {node.descricao && <p className="detail-panel__descricao">{node.descricao}</p>}
+          {node.descricao && <p className="node-balloon__descricao">{node.descricao}</p>}
 
           <div className="fields">
             <Field label="Origem">{node.origem ?? '—'}</Field>
@@ -340,6 +340,105 @@ export default function DetailPanel({
       {outgoing.length === 0 && incoming.length === 0 && (
         <p className="ghost-note">Sem conexões mapeadas.</p>
       )}
+    </>
+  )
+}
+
+/** Distância entre a borda do nó e o balão (comprimento visível da seta). */
+const GAP = 12
+/** Margem mínima até as bordas da viewport. */
+const MARGIN = 10
+/** Limite superior: o balão fica abaixo do topbar. */
+const TOP_MIN = 58
+/** A ponta da seta nunca encosta nos cantos arredondados do balão. */
+const ARROW_INSET = 18
+
+type Side = 'right' | 'left' | 'below' | 'above' | 'free'
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.min(Math.max(v, min), max)
+}
+
+export default function NodeBalloon(props: NodeBalloonProps) {
+  const { onClose, getAnchor, node } = props
+  const boxRef = useRef<HTMLElement>(null)
+  const arrowRef = useRef<HTMLSpanElement>(null)
+
+  // Posiciona o balão colado ao nó, com FLIP de lado para caber na viewport.
+  // Escreve estilos direto no DOM (sem setState) para seguir pan/zoom/física
+  // a cada frame sem re-renderizar o React.
+  const place = useCallback(() => {
+    const el = boxRef.current
+    const arrow = arrowRef.current
+    if (!el || !arrow) return
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    const a = getAnchor()
+    let side: Side
+    let left: number
+    let top: number
+    if (!a) {
+      // Nó fora do grafo atual (ex.: relação clicada na vista de linhagem que
+      // não pertence à cadeia exibida): cartão fixo à direita, sem seta.
+      side = 'free'
+      left = Math.max(MARGIN, vw - w - MARGIN)
+      top = TOP_MIN
+    } else {
+      const fitsRight = a.x + a.r + GAP + w + MARGIN <= vw
+      const fitsLeft = a.x - a.r - GAP - w >= MARGIN
+      const fitsBelow = a.y + a.r + GAP + h + MARGIN <= vh
+      const fitsAbove = a.y - a.r - GAP - h >= TOP_MIN
+      side = fitsRight
+        ? 'right'
+        : fitsLeft
+          ? 'left'
+          : fitsBelow
+            ? 'below'
+            : fitsAbove
+              ? 'above'
+              : 'right'
+      if (side === 'right' || side === 'left') {
+        left = side === 'right' ? a.x + a.r + GAP : a.x - a.r - GAP - w
+        top = clamp(a.y - h / 2, TOP_MIN, Math.max(TOP_MIN, vh - h - MARGIN))
+        arrow.style.top = `${Math.round(clamp(a.y - top, ARROW_INSET, h - ARROW_INSET))}px`
+        arrow.style.left = ''
+      } else {
+        top = side === 'below' ? a.y + a.r + GAP : a.y - a.r - GAP - h
+        left = clamp(a.x - w / 2, MARGIN, Math.max(MARGIN, vw - w - MARGIN))
+        arrow.style.left = `${Math.round(clamp(a.x - left, ARROW_INSET, w - ARROW_INSET))}px`
+        arrow.style.top = ''
+      }
+      // Nenhum lado coube (nó no meio de uma viewport minúscula): garante que
+      // o balão pelo menos não vaze para fora à direita.
+      left = Math.min(left, Math.max(MARGIN, vw - w - MARGIN))
+    }
+    el.style.left = `${Math.round(left)}px`
+    el.style.top = `${Math.round(top)}px`
+    if (el.dataset.side !== side) el.dataset.side = side
+    el.style.visibility = 'visible'
+  }, [getAnchor])
+
+  useEffect(() => {
+    let raf = 0
+    const tick = () => {
+      place()
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [place])
+
+  return (
+    <aside className="node-balloon" ref={boxRef} role="dialog" aria-label={`Detalhes de ${node.nome}`}>
+      <span className="node-balloon__arrow" ref={arrowRef} aria-hidden="true" />
+      <div className="node-balloon__body">
+        <button type="button" className="node-balloon__close" onClick={onClose} aria-label="Fechar">
+          ×
+        </button>
+        <BalloonContent {...props} />
+      </div>
     </aside>
   )
 }
