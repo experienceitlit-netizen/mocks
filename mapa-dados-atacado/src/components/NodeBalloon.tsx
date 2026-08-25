@@ -38,6 +38,12 @@ interface NodeBalloonProps {
   onNavigate(id: string): void
   /** Entra em modo foco neste nó (ou re-foca, se já em foco). */
   onFocus(id: string): void
+  /** Abre o formulário de edição/cadastro do catálogo. Só vem definido no modo
+   *  edição (dev server com /api/catalogo): produtos com linha no CSV e
+   *  componentes derivados (domínio/origem/sistema/fonte secundária — sem
+   *  linha, o form abre como cadastro pré-preenchido). Raiz e fantasmas nunca
+   *  recebem o botão. */
+  onEdit?: () => void
   onClose(): void
   /** Âncora em coordenadas de tela; null se o nó não está no grafo atual. */
   getAnchor(): BalloonAnchor | null
@@ -157,6 +163,56 @@ function LineageBranch({
   )
 }
 
+/** Linha de ações comum a todos os tipos de nó: focar e editar/cadastrar. */
+function Actions({
+  node,
+  isFocused,
+  onFocus,
+  onEdit,
+}: Pick<NodeBalloonProps, 'node' | 'isFocused' | 'onFocus' | 'onEdit'>) {
+  if (isFocused && !onEdit) return null
+  return (
+    <div className="node-balloon__actions">
+      {!isFocused && (
+        <button type="button" className="node-balloon__focus" onClick={() => onFocus(node.id)}>
+          ⌖ Focar neste nó
+        </button>
+      )}
+      {onEdit && (
+        <button type="button" className="node-balloon__edit" onClick={onEdit}>
+          ✎ Editar
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** Descrição, governança e observações (corpo markdown) de um componente
+ *  cadastrado no catálogo (domínio/origem/sistema/fonte secundária com linha
+ *  própria); derivados puros não têm esses campos e não mostram nada. */
+function CadastroInfo({
+  node,
+  resolveWikiLink,
+  onNavigate,
+}: Pick<NodeBalloonProps, 'node' | 'resolveWikiLink' | 'onNavigate'>) {
+  return (
+    <>
+      {node.descricao && <p className="node-balloon__descricao">{node.descricao}</p>}
+      {node.cadastrado === true && (
+        <div className="fields">
+          <Field label="Owner">{node.owner ? node.owner : <Missing />}</Field>
+          <Field label="Centro de custo">
+            {node.centroDeCusto ? node.centroDeCusto : <Missing />}
+          </Field>
+        </div>
+      )}
+      {node.corpo && (
+        <Markdown text={node.corpo} resolveWikiLink={resolveWikiLink} onNavigate={onNavigate} />
+      )}
+    </>
+  )
+}
+
 type BalloonContentProps = Omit<NodeBalloonProps, 'onClose' | 'getAnchor'>
 
 /** Corpo do balão — o mesmo conteúdo do antigo painel lateral, por tipo de nó. */
@@ -170,6 +226,7 @@ function BalloonContent({
   resolveWikiLink,
   onNavigate,
   onFocus,
+  onEdit,
 }: BalloonContentProps) {
   const debito = node.debito ?? 'avaliar'
   const kind = nodeKind(node)
@@ -186,11 +243,7 @@ function BalloonContent({
           </div>
         </header>
 
-        {!isFocused && (
-          <button type="button" className="node-balloon__focus" onClick={() => onFocus(node.id)}>
-            ⌖ Focar neste nó
-          </button>
-        )}
+        <Actions node={node} isFocused={isFocused} onFocus={onFocus} onEdit={onEdit} />
 
         {node.descricao && <p className="node-balloon__descricao">{node.descricao}</p>}
 
@@ -227,11 +280,8 @@ function BalloonContent({
           </div>
         </header>
 
-        {!isFocused && (
-          <button type="button" className="node-balloon__focus" onClick={() => onFocus(node.id)}>
-            ⌖ Focar neste nó
-          </button>
-        )}
+        <Actions node={node} isFocused={isFocused} onFocus={onFocus} onEdit={onEdit} />
+        <CadastroInfo node={node} resolveWikiLink={resolveWikiLink} onNavigate={onNavigate} />
 
         <ConnectionList
           title="Produtos finais deste domínio"
@@ -257,11 +307,8 @@ function BalloonContent({
           </div>
         </header>
 
-        {!isFocused && (
-          <button type="button" className="node-balloon__focus" onClick={() => onFocus(node.id)}>
-            ⌖ Focar neste nó
-          </button>
-        )}
+        <Actions node={node} isFocused={isFocused} onFocus={onFocus} onEdit={onEdit} />
+        <CadastroInfo node={node} resolveWikiLink={resolveWikiLink} onNavigate={onNavigate} />
 
         <ConnectionList
           title="Alimenta →"
@@ -293,11 +340,8 @@ function BalloonContent({
           </div>
         </header>
 
-        {!isFocused && (
-          <button type="button" className="node-balloon__focus" onClick={() => onFocus(node.id)}>
-            ⌖ Focar neste nó
-          </button>
-        )}
+        <Actions node={node} isFocused={isFocused} onFocus={onFocus} onEdit={onEdit} />
+        <CadastroInfo node={node} resolveWikiLink={resolveWikiLink} onNavigate={onNavigate} />
 
         <section className="connections">
           <h3>{kind === 'sistema' ? 'Dados neste sistema' : 'Dados desta origem'}</h3>
@@ -340,11 +384,7 @@ function BalloonContent({
         </div>
       </header>
 
-      {!isFocused && (
-        <button type="button" className="node-balloon__focus" onClick={() => onFocus(node.id)}>
-          ⌖ Focar neste nó
-        </button>
-      )}
+      <Actions node={node} isFocused={isFocused} onFocus={onFocus} onEdit={onEdit} />
 
       {node.fantasma ? (
         <p className="ghost-note">

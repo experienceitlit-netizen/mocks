@@ -15,6 +15,10 @@ import type { Counts } from './components/Filters'
 import type { Debito, GraphJson, GraphNodeData, SimLink, SimNode } from './components/graph-types'
 import { isDerivado, isDominio, isRaiz, linkEndId, nodeKind } from './components/graph-types'
 import { buildLineage, buildLineageTree } from './components/lineage'
+import CatalogForm from './components/CatalogForm'
+import type { FormTarget } from './components/CatalogForm'
+import type { CatalogoRow, NivelRow } from './components/catalog-api'
+import { fetchCatalogo, isProdutoRow } from './components/catalog-api'
 import './App.css'
 
 /** Busca insensível a caixa e acentos. */
@@ -205,6 +209,42 @@ function App() {
   const layersBeforeFocusRef = useRef(false)
 
   const focusId = focusPath.length > 0 ? focusPath[focusPath.length - 1] : null
+
+  // --- modo edição (só no dev server, com a API /api/catalogo ativa) ---
+  // Feature-detect no mount: GET /api/catalogo com sucesso liga os controles
+  // de edição ("+ Novo componente", "✎ Editar" no balão). No build estático ou
+  // standalone o fetch falha e nada de edição aparece.
+  const [catalogRows, setCatalogRows] = useState<CatalogoRow[] | null>(null)
+  // null = fechado; FormTarget = cadastro em branco, edição de linha ou
+  // cadastro pré-preenchido de um componente derivado.
+  const [catalogForm, setCatalogForm] = useState<FormTarget | null>(null)
+  useEffect(() => {
+    let alive = true
+    void fetchCatalogo().then((rows) => {
+      if (alive) setCatalogRows(rows)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  // Save confirmado pelo form: re-busca as rows. Um save NÃO recarrega a
+  // página (o graph.json novo chega por HMR preservando o estado dos hooks);
+  // sem o re-fetch, o próximo cadastro partiria da lista do mount e apagaria
+  // o anterior do CSV.
+  const refreshCatalogo = useCallback(() => {
+    void fetchCatalogo().then((rows) => {
+      if (rows) setCatalogRows(rows)
+    })
+  }, [])
+
+  // Cada abertura ganha uma key nova: o form monta sempre zerado, mesmo que o
+  // alvo troque com o modal já aberto (nada herda do uso anterior).
+  const formSeq = useRef(0)
+  const openCatalogForm = useCallback((t: FormTarget) => {
+    formSeq.current += 1
+    setCatalogForm(t)
+  }, [])
 
   const graphRef = useRef<GraphHandle>(null)
   // Seleção que veio da URL na carga: centralizada quando a física estabiliza.
@@ -464,12 +504,13 @@ function App() {
     window.history.replaceState(null, '', url)
   }, [aba, selectedId, focusId, depth, vista])
 
-  // Esc em estágios: fecha o balão, senão desfixa o destaque, senão sai do
-  // foco. Na aba Tabela, volta ao mapa (o estado do mapa é invisível ali —
+  // Esc em estágios: cancela o formulário de edição, senão fecha o balão,
+  // senão desfixa o destaque, senão sai do foco. Na aba Tabela, volta ao mapa (o estado do mapa é invisível ali —
   // não mexe nele). Handlers globais leem o estado via ref (registro único).
   const escRef = useRef(() => {})
   escRef.current = () => {
-    if (aba === 'tabela') setAba('mapa')
+    if (catalogForm) setCatalogForm(null)
+    else if (aba === 'tabela') setAba('mapa')
     else if (selectedId) setSelectedId(null)
     else if (pinnedId) setPinnedId(null)
     else if (focusId) exitFocus()
@@ -500,6 +541,40 @@ function App() {
   }, [])
 
   const selectedNode = selectedId ? (nodesById.get(selectedId) ?? null) : null
+
+  // Alvo do "✎ Editar" do balão. Produtos com linha no catálogo e componentes
+  // derivados (domínio/origem/sistema/fonte secundária) são editáveis: com
+  // linha no catálogo o form edita; só derivado, abre pré-preenchido
+  // (nome + tipo) como "cadastrar este componente". Raiz, fantasmas e
+  // placeholders ficam sem o botão.
+  const editTarget = useMemo<FormTarget | null>(() => {
+    if (!catalogRows || !selectedNode) return null
+    if (isRaiz(selectedNode) || selectedNode.fantasma || selectedNode.placeholder) return null
+    const kind = nodeKind(selectedNode)
+    if (kind === 'dado') {
+      const row = catalogRows.find(
+        (r) => isProdutoRow(r.nivel) && r.nome === selectedNode.nome,
+      )
+      return row ? { modo: 'editar', nome: row.nome, nivel: row.nivel } : null
+    }
+    // Forma do nó → nível da linha de componente ('sistema' grava como 'fonte').
+    const nivel: NivelRow = kind === 'sistema' ? 'fonte' : kind
+    const row = catalogRows.find((r) => r.nivel === nivel && r.nome === selectedNode.nome)
+    return row
+      ? { modo: 'editar', nome: row.nome, nivel: row.nivel }
+      : { modo: 'cadastrar', nome: selectedNode.nome, nivel }
+  }, [catalogRows, selectedNode])
+
+  // Sugestões de associação do form: origens e fontes que já existem no grafo
+  // (nós org-*/sys-*, derivados ou cadastrados).
+  const origensGrafo = useMemo(
+    () => nodes.filter((n) => nodeKind(n) === 'origem').map((n) => n.nome),
+    [nodes],
+  )
+  const fontesGrafo = useMemo(
+    () => nodes.filter((n) => nodeKind(n) === 'sistema').map((n) => n.nome),
+    [nodes],
+  )
 
   // Árvore de linhagem do painel (só dados reais têm rota própria; a raiz
   // teria a árvore inteira — o painel dela lista só o que agrega).
@@ -629,6 +704,15 @@ function App() {
             Tabela
           </button>
         </nav>
+        {catalogRows !== null && (
+          <button
+            type="button"
+            className="topbar__new"
+            onClick={() => openCatalogForm({ modo: 'novo' })}
+          >
+            + Novo componente
+          </button>
+        )}
         {aba === 'mapa' && (
           <SearchBox
             query={query}
@@ -704,8 +788,21 @@ function App() {
           resolveWikiLink={resolveWikiLink}
           onNavigate={(id) => select(id, true)}
           onFocus={focusOn}
+          onEdit={editTarget ? () => openCatalogForm(editTarget) : undefined}
           onClose={() => setSelectedId(null)}
           getAnchor={getBalloonAnchor}
+        />
+      )}
+
+      {catalogForm && catalogRows !== null && (
+        <CatalogForm
+          key={formSeq.current}
+          rows={catalogRows}
+          target={catalogForm}
+          origensGrafo={origensGrafo}
+          fontesGrafo={fontesGrafo}
+          onSaved={refreshCatalogo}
+          onClose={() => setCatalogForm(null)}
         />
       )}
 

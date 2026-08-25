@@ -2,7 +2,7 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'r
 import ForceGraph2D from 'react-force-graph-2d'
 import type { Ref } from 'react'
 import type { GraphLinkData, GraphMethods, GraphNodeData, SimLink, SimNode } from './graph-types'
-import { isRaiz, linkEndId, nodeKind } from './graph-types'
+import { isRaiz, isSecundario, linkEndId, nodeKind } from './graph-types'
 import type { LineageColumn } from './lineage'
 import { BACKGROUND, PLACEHOLDER_FILL, PLACEHOLDER_STROKE, nodeColor } from './palette'
 
@@ -46,6 +46,19 @@ const MAX_FIT_ZOOM = 4
 
 function radiusOf(degree: number): number {
   return 4 + Math.sqrt(degree) * 2.2
+}
+
+/** Grau de cortesia de nós sem aresta: placeholder e componente cadastrado
+ *  ainda sem associações (recém-registrado pelo formulário) nascem do
+ *  tamanho dos pares — p.ex. as tabelas UCS ligadas na cadeia têm grau 2 —
+ *  em vez de encolhidos no raio mínimo. Ao ganhar arestas, o grau real
+ *  volta a mandar. */
+const SEM_ARESTA_DEGREE = 2
+
+function visualDegree(node: SimNode, degreeById: ReadonlyMap<string, number>): number {
+  const degree = degreeById.get(node.id) ?? 0
+  if (degree > 0) return degree
+  return node.placeholder || node.cadastrado === true ? SEM_ARESTA_DEGREE : 0
 }
 
 /** Nó-raiz: raio fixo de protagonista, independente do grau. */
@@ -168,7 +181,7 @@ export default function Graph({
         ? RAIZ_RADIUS * HEX_SCALE
         : nodeKind(node) === 'dominio'
           ? DOMINIO_RADIUS
-          : radiusOf(degreeById.get(node.id) ?? (node.placeholder ? 2 : 0))
+          : radiusOf(visualDegree(node, degreeById))
       return { x, y, r: extent * fg.zoom() }
     },
     [data, degreeById],
@@ -249,12 +262,11 @@ export default function Graph({
       const y = node.y ?? 0
       const raiz = isRaiz(node)
       const kind = nodeKind(node)
-      // Placeholders não existem no grafo global (sem grau): raio mínimo legível.
       const r = raiz
         ? RAIZ_RADIUS
         : kind === 'dominio'
           ? DOMINIO_RADIUS
-          : radiusOf(degreeById.get(node.id) ?? (node.placeholder ? 2 : 0))
+          : radiusOf(visualDegree(node, degreeById))
       // Extensão visual além do centro: vértice do hexágono da raiz ou o raio.
       const extent = raiz ? r * HEX_SCALE : r
       const dimmed = dimmedIds.has(node.id)
@@ -337,7 +349,7 @@ export default function Graph({
           ctx.stroke()
           ctx.setLineDash([])
         }
-        if (node.nivel === 'secundario' || node.nivel === 'ambos') {
+        if (isSecundario(node)) {
           // Produto final: anel externo fino na cor do nó, por fora da borda
           // tracejada de incompletude (e do halo de seleção/hover).
           ctx.beginPath()
@@ -376,7 +388,7 @@ export default function Graph({
         ? RAIZ_RADIUS * HEX_SCALE
         : nodeKind(node) === 'dominio'
           ? DOMINIO_RADIUS
-          : radiusOf(degreeById.get(node.id) ?? 0)
+          : radiusOf(visualDegree(node, degreeById))
       ctx.fillStyle = color
       ctx.beginPath()
       ctx.arc(node.x ?? 0, node.y ?? 0, r + 3, 0, 2 * Math.PI)

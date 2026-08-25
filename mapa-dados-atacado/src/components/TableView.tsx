@@ -1,7 +1,7 @@
 // Visão de tabela dos dados do Atacado — espelho da tabela executiva em
-// cadeias: uma linha por cadeia primário→secundário (derivada das arestas
+// cadeias: uma linha por cadeia primário→final (derivada das arestas
 // "consome"), com Domínio | Origem | Fonte | Fonte secundária | Produto
-// primário | Produto secundário | Débito | Status vindos do primário. Autocontido: a integração
+// primário | Produto final | Débito | Status vindos do primário. Autocontido: a integração
 // no App só precisa passar nós, arestas e (opcional) onSelectNode.
 import { useMemo, useState } from 'react'
 import type { GraphLinkData, GraphNodeData } from './graph-types'
@@ -34,7 +34,7 @@ interface SortState {
 const SORT_LABEL: Record<SortKey, string> = {
   dominio: 'Domínio',
   primario: 'Produto primário',
-  secundario: 'Produto secundário',
+  secundario: 'Produto final',
   debito: 'Débito',
   status: 'Status',
 }
@@ -202,7 +202,7 @@ export function TableView({ nodes, links, onSelectNode }: TableViewProps) {
                 Produto primário
               </SortHeader>
               <SortHeader colKey="secundario" sort={sort} onSort={handleSort}>
-                Produto secundário
+                Produto final
               </SortHeader>
               <SortHeader colKey="debito" sort={sort} onSort={handleSort}>
                 Débito

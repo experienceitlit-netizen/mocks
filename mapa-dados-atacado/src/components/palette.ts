@@ -77,10 +77,12 @@ export const DEBITO_LABEL: Record<Debito, string> = {
   avaliar: 'A avaliar',
 }
 
-/** Rótulos executivos do nível (chips do NodeBalloon e da tabela). */
+/** Rótulos executivos do nível (chips do NodeBalloon e da tabela).
+ *  'secundario' (legado) exibe o mesmo rótulo de 'final'. */
 export const NIVEL_LABEL: Record<Nivel, string> = {
   primario: 'Produto primário',
-  secundario: 'Produto secundário',
+  secundario: 'Produto final',
+  final: 'Produto final',
   ambos: 'Primário e final',
   raiz: 'Raiz',
 }

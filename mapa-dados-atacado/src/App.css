@@ -74,6 +74,25 @@
   color: #7fb4e8;
 }
 
+/* "+ Novo dado": só aparece no modo edição (dev server com /api/catalogo). */
+.topbar__new {
+  pointer-events: auto;
+  flex-shrink: 0;
+  padding: 0.3rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #3a5a7a;
+  background: rgba(127, 180, 232, 0.08);
+  color: #7fb4e8;
+  font-size: 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.topbar__new:hover {
+  border-color: #7fb4e8;
+  background: rgba(127, 180, 232, 0.15);
+}
+
 .search-box {
   pointer-events: auto;
   margin-left: auto;
@@ -475,14 +494,14 @@
   text-transform: capitalize;
 }
 
-/* Nível do produto (modelo executivo): primário neutro-azulado, secundário
+/* Nível do produto (modelo executivo): primário neutro-azulado, final
    destacado (é o "produto final" da cadeia), ambos com os dois tons. */
 .chip--nivel-primario {
   border-color: #4a5a6a;
   color: #9db4c8;
 }
 
-.chip--nivel-secundario {
+.chip--nivel-final {
   border-color: #5c7a99;
   color: #7fb4e8;
 }
@@ -524,6 +543,35 @@
 .node-balloon__focus:hover {
   border-color: #7fb4e8;
   background: rgba(127, 180, 232, 0.15);
+}
+
+/* Focar + Editar lado a lado (Editar só no modo edição do dev server). */
+.node-balloon__actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.node-balloon__actions .node-balloon__focus {
+  margin-bottom: 0;
+}
+
+.node-balloon__edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid #3a3a3a;
+  background: transparent;
+  color: #b0b0b0;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.node-balloon__edit:hover {
+  border-color: #6a6a6a;
+  color: #f0f0f0;
 }
 
 .node-balloon__descricao {
@@ -816,6 +864,324 @@
     0 0 0 2px #1e1e1e,
     0 0 0 3px #8a8a8a;
   margin: 0 0.15rem;
+}
+
+/* ---------- formulário de edição/cadastro do catálogo (modal) ---------- */
+
+.catalog-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 20; /* acima de topbar (10) e focus-bar (15) */
+}
+
+.catalog-form {
+  display: flex;
+  flex-direction: column;
+  width: min(37rem, 94vw);
+  max-height: 88vh;
+  border-radius: 10px;
+  border: 1px solid #3a3a3a;
+  background: #242424;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+}
+
+.catalog-form__header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 1rem 1.1rem 0.75rem;
+  border-bottom: 1px solid #333;
+}
+
+.catalog-form__header h2 {
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: #f5f5f5;
+}
+
+.catalog-form__sub {
+  font-size: 0.8rem;
+  color: #8a8a8a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-form__close {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: #8a8a8a;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.catalog-form__close:hover {
+  color: #f0f0f0;
+}
+
+.catalog-form__body {
+  overflow-y: auto;
+  padding: 0.9rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cform__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.cform__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.cform__label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8a8a8a;
+}
+
+.cform__field input[type='text'],
+.cform__field select,
+.cform__field textarea {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #3a3a3a;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  font-size: 0.83rem;
+  font-family: inherit;
+  outline: none;
+}
+
+.cform__field textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.cform__field input:focus,
+.cform__field select:focus,
+.cform__field textarea:focus {
+  border-color: #6a6a6a;
+}
+
+.cform__field input::placeholder,
+.cform__field textarea::placeholder {
+  color: #666;
+}
+
+.cform__invalid,
+.cform__field input.cform__invalid {
+  border-color: #cc092f;
+}
+
+.cform__error-inline {
+  font-size: 0.72rem;
+  color: #ff5a75;
+}
+
+.cform__ghost-note {
+  font-size: 0.72rem;
+  color: #ffb020;
+}
+
+/* multi-select por chips (fontes secundárias / consome) */
+
+.chips-input {
+  position: relative;
+}
+
+.chips-input__box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid #3a3a3a;
+  background: #1e1e1e;
+}
+
+.chips-input__box:focus-within {
+  border-color: #6a6a6a;
+}
+
+.chips-input__box input {
+  flex: 1;
+  min-width: 8rem;
+  border: none;
+  background: transparent;
+  color: #e0e0e0;
+  font-size: 0.82rem;
+  padding: 0.15rem 0.2rem;
+  outline: none;
+}
+
+.chips-input__box input::placeholder {
+  color: #666;
+}
+
+.chips-input__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.12rem 0.3rem 0.12rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid #3a5a7a;
+  background: rgba(127, 180, 232, 0.08);
+  color: #9db4c8;
+  font-size: 0.75rem;
+  max-width: 100%;
+}
+
+/* Nome livre fora do catálogo: vai virar nó fantasma. */
+.chips-input__chip--ghost {
+  border-style: dashed;
+  border-color: #8a6a20;
+  background: rgba(255, 176, 32, 0.07);
+  color: #ffb020;
+}
+
+.chips-input__chip button {
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+  padding: 0 0.15rem;
+}
+
+.chips-input__chip button:hover {
+  opacity: 1;
+}
+
+.chips-input__menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 2px);
+  list-style: none;
+  max-height: 11rem;
+  overflow-y: auto;
+  border-radius: 6px;
+  border: 1px solid #3a3a3a;
+  background: #2a2a2a;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  z-index: 2;
+}
+
+.chips-input__menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  color: #d0d0d0;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+}
+
+.chips-input__menu button:hover {
+  background: rgba(127, 180, 232, 0.12);
+  color: #f0f0f0;
+}
+
+/* erros da API (400) e validação local */
+
+.catalog-form__errors {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #cc092f;
+  background: rgba(204, 9, 47, 0.08);
+  color: #ff5a75;
+  font-size: 0.78rem;
+}
+
+/* confirmação pós-salvar (a página vai recarregar via Vite) */
+
+.catalog-form__done {
+  padding: 1.25rem 1.1rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.catalog-form__ok {
+  color: #6fbf7d;
+  font-size: 0.9rem;
+}
+
+.catalog-form__warnings {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: #ffb020;
+  font-size: 0.78rem;
+}
+
+.catalog-form__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.1rem 1rem;
+  border-top: 1px solid #333;
+}
+
+.catalog-form__cancel {
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid #3a3a3a;
+  background: transparent;
+  color: #b0b0b0;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.catalog-form__cancel:hover {
+  border-color: #6a6a6a;
+  color: #f0f0f0;
+}
+
+.catalog-form__save {
+  padding: 0.35rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid #3a5a7a;
+  background: rgba(127, 180, 232, 0.12);
+  color: #7fb4e8;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.catalog-form__save:hover:not(:disabled) {
+  border-color: #7fb4e8;
+  background: rgba(127, 180, 232, 0.2);
+}
+
+.catalog-form__save:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 /* ---------- estado vazio ---------- */

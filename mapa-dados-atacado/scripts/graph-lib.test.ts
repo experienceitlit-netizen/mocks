@@ -77,29 +77,35 @@ describe('parseCsv', () => {
 
 describe('parseCatalogo', () => {
   it('parseia linha completa sem warnings; id = slug(nome); tipo derivado do nivel', () => {
-    const { rows, warnings } = parseCatalogo(csv(completo({ nome: 'RAR 12M', nivel: 'secundario' })))
+    const { rows, warnings } = parseCatalogo(csv(completo({ nome: 'RAR 12M', nivel: 'final' })))
     expect(warnings).toEqual([])
     expect(rows).toHaveLength(1)
     expect(rows[0].node).toMatchObject({
       id: 'rar-12m',
       nome: 'RAR 12M',
       tipo: 'produto',
-      nivel: 'secundario',
+      nivel: 'final',
       owner: null,
       centroDeCusto: null,
       incompleto: true,
     })
   })
 
-  it('nivel primario deriva tipo "insumo"; secundario/ambos derivam "produto"', () => {
+  it('nivel primario deriva tipo "insumo"; final/ambos derivam "produto"', () => {
     const { rows } = parseCatalogo(
       csv(
         completo({ nome: 'A', nivel: 'primario' }),
-        completo({ nome: 'B', nivel: 'secundario' }),
+        completo({ nome: 'B', nivel: 'final' }),
         completo({ nome: 'C', nivel: 'ambos' }),
       ),
     )
     expect(rows.map((r) => r.node.tipo)).toEqual(['insumo', 'produto', 'produto'])
+  })
+
+  it('"secundario" é apelido de "final": canonizado sem warning', () => {
+    const { rows, warnings } = parseCatalogo(csv(completo({ nome: 'A', nivel: 'secundario' })))
+    expect(warnings).toEqual([])
+    expect(rows[0].node).toMatchObject({ nivel: 'final', tipo: 'produto' })
   })
 
   it('incompleto = false quando owner e centro_de_custo preenchidos', () => {
@@ -132,7 +138,7 @@ describe('parseCatalogo', () => {
   })
 
   it('origem/fonte_sistema vazios viram null (não se aplica) sem warning', () => {
-    const { rows, warnings } = parseCatalogo(csv(completo({ nivel: 'secundario', origem: '', fonte_sistema: '' })))
+    const { rows, warnings } = parseCatalogo(csv(completo({ nivel: 'final', origem: '', fonte_sistema: '' })))
     expect(warnings).toEqual([])
     expect(rows[0].node.sistema).toBeNull()
     expect(rows[0].node.origem).toBeNull()
@@ -153,9 +159,27 @@ describe('parseCatalogo', () => {
   it('nivel inválido gera warning com a linha e o nome, assumindo "primario"', () => {
     const { rows, warnings } = parseCatalogo(csv(completo({ nome: 'Alfa', nivel: 'raiz' })))
     expect(warnings).toEqual([
-      'catalogo.csv linha 2 ("Alfa"): nivel "raiz" inválido (use primario, secundario ou ambos) — assumindo "primario"',
+      'catalogo.csv linha 2 ("Alfa"): nivel "raiz" inválido' +
+        ' (use dominio, origem, fonte, fonte-secundaria, primario, final ou ambos) — assumindo "primario"',
     ])
     expect(rows[0].node.nivel).toBe('primario')
+  })
+
+  it('linha de componente sai em "componentes", não em "rows"; associações por nível', () => {
+    const { rows, componentes, warnings } = parseCatalogo(
+      csv(
+        completo({ nome: 'Risco', nivel: 'dominio', debito: '', origem: '', fonte_sistema: '', descricao: 'domínio de risco', owner: 'Fulano' }),
+        completo({ nome: 'Databricks', nivel: 'fonte', debito: '', origem: 'área de risco | cadastro', fonte_sistema: '', observacoes: 'Corpo.' }),
+        completo({ nome: 'Tabela X - UCS', nivel: 'fonte-secundaria', debito: '', origem: '', fonte_sistema: 'Databricks' }),
+      ),
+    )
+    expect(warnings).toEqual([])
+    expect(rows).toEqual([])
+    expect(componentes).toEqual([
+      { nivel: 'dominio', nome: 'Risco', descricao: 'domínio de risco', owner: 'Fulano', centroDeCusto: null, associacoes: [] },
+      { nivel: 'fonte', nome: 'Databricks', descricao: 'd', owner: null, centroDeCusto: null, corpo: 'Corpo.', associacoes: ['área de risco', 'cadastro'] },
+      { nivel: 'fonte-secundaria', nome: 'Tabela X - UCS', descricao: 'd', owner: null, centroDeCusto: null, associacoes: ['Databricks'] },
+    ])
   })
 
   it('linha sem nome gera warning e é ignorada', () => {
@@ -167,7 +191,7 @@ describe('parseCatalogo', () => {
 
 describe('buildGraph', () => {
   const catalogo = csv(
-    completo({ nome: 'Alfa', nivel: 'secundario', origem: '', fonte_sistema: '', consome: 'Beta' }),
+    completo({ nome: 'Alfa', nivel: 'final', origem: '', fonte_sistema: '', consome: 'Beta' }),
     completo({ nome: 'Beta' }),
   )
 
@@ -203,9 +227,9 @@ describe('buildGraph', () => {
     expect(dados[0].descricao).toBe('primeira')
   })
 
-  it('raiz automática: criada sem linha no CSV, agrega todos os secundario/ambos', () => {
+  it('raiz automática: criada sem linha no CSV, agrega todos os final/ambos', () => {
     const { graph, warnings } = buildGraph(csv(
-      completo({ nome: 'Alfa', nivel: 'secundario', origem: '', fonte_sistema: '' }),
+      completo({ nome: 'Alfa', nivel: 'final', origem: '', fonte_sistema: '' }),
       completo({ nome: 'Beta', nivel: 'ambos' }),
       completo({ nome: 'Gama', nivel: 'primario' }),
     ))
@@ -229,7 +253,7 @@ describe('buildGraph', () => {
   it('saída é determinística independentemente da ordem das linhas', () => {
     const invertido = csv(
       completo({ nome: 'Beta' }),
-      completo({ nome: 'Alfa', nivel: 'secundario', origem: '', fonte_sistema: '', consome: 'Beta' }),
+      completo({ nome: 'Alfa', nivel: 'final', origem: '', fonte_sistema: '', consome: 'Beta' }),
     )
     expect(buildGraph(invertido).graph).toEqual(buildGraph(catalogo).graph)
   })
@@ -237,9 +261,9 @@ describe('buildGraph', () => {
 
 describe('derivarDominios', () => {
   const catalogo = csv(
-    completo({ nome: 'Alfa', nivel: 'secundario', dominio: 'Risco', origem: '', fonte_sistema: '' }),
-    completo({ nome: 'Beta', nivel: 'secundario', dominio: 'Risco', origem: '', fonte_sistema: '' }),
-    completo({ nome: 'Gama', nivel: 'secundario', dominio: 'Regulatorio', origem: '', fonte_sistema: '' }),
+    completo({ nome: 'Alfa', nivel: 'final', dominio: 'Risco', origem: '', fonte_sistema: '' }),
+    completo({ nome: 'Beta', nivel: 'final', dominio: 'Risco', origem: '', fonte_sistema: '' }),
+    completo({ nome: 'Gama', nivel: 'final', dominio: 'Regulatorio', origem: '', fonte_sistema: '' }),
   )
 
   it('substitui raiz→produto por raiz→domínio→produto, deduplicando raiz→domínio', () => {
@@ -275,9 +299,9 @@ describe('derivarDominios', () => {
 
   it('determinismo: mesma saída independentemente da ordem das linhas', () => {
     const invertido = csv(
-      completo({ nome: 'Gama', nivel: 'secundario', dominio: 'Regulatorio', origem: '', fonte_sistema: '' }),
-      completo({ nome: 'Beta', nivel: 'secundario', dominio: 'Risco', origem: '', fonte_sistema: '' }),
-      completo({ nome: 'Alfa', nivel: 'secundario', dominio: 'Risco', origem: '', fonte_sistema: '' }),
+      completo({ nome: 'Gama', nivel: 'final', dominio: 'Regulatorio', origem: '', fonte_sistema: '' }),
+      completo({ nome: 'Beta', nivel: 'final', dominio: 'Risco', origem: '', fonte_sistema: '' }),
+      completo({ nome: 'Alfa', nivel: 'final', dominio: 'Risco', origem: '', fonte_sistema: '' }),
     )
     expect(buildGraph(invertido).graph).toEqual(buildGraph(catalogo).graph)
   })
@@ -309,7 +333,7 @@ describe('derivarSistemasOrigens', () => {
     expect(graph.links).toEqual([])
   })
 
-  it('células vazias (secundários) não geram nó derivado nem aresta', () => {
+  it('células vazias (produtos finais) não geram nó derivado nem aresta', () => {
     const { graph, warnings } = buildGraph(csv(
       completo({ nome: 'Alfa', nivel: 'primario', fonte_sistema: '', origem: '' }),
     ))
@@ -425,6 +449,138 @@ describe('fontes secundárias (UCS)', () => {
   })
 })
 
+describe('componentes cadastrados (linhas dominio/origem/fonte/fonte-secundaria)', () => {
+  it('fusão: componente com o mesmo slug de um nó derivado vira UM nó com cadastrado: true', () => {
+    const { graph, warnings } = buildGraph(csv(
+      completo({ nome: 'Alfa', fonte_sistema: 'Databricks (governado)', origem: 'área de risco' }),
+      completo({
+        nome: 'databricks (GOVERNADO)',
+        nivel: 'fonte',
+        debito: '',
+        origem: 'área de risco',
+        fonte_sistema: '',
+        descricao: 'plataforma corporativa',
+        owner: 'Plataforma',
+        centro_de_custo: 'CC-9',
+        observacoes: 'Corpo do componente.',
+      }),
+    ))
+    expect(warnings).toEqual([])
+    const sistemas = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'sistema')
+    expect(sistemas).toEqual([
+      {
+        id: 'sys-databricks-governado',
+        nome: 'Databricks (governado)', // nome do nó derivado é mantido
+        tipo: 'sistema',
+        derivado: true,
+        incompleto: false,
+        cadastrado: true,
+        descricao: 'plataforma corporativa',
+        owner: 'Plataforma',
+        centroDeCusto: 'CC-9',
+        corpo: 'Corpo do componente.',
+      },
+    ])
+    // a associação repete a rota já derivada do produto: aresta deduplicada
+    expect(graph.links.filter((l) => l.source === 'sys-databricks-governado')).toEqual([
+      { source: 'sys-databricks-governado', target: 'org-area-de-risco', label: 'origina de' },
+    ])
+  })
+
+  it('linha fonte com 2 origens gera 2 arestas "origina de", criando as origens que faltarem', () => {
+    const { graph, warnings } = buildGraph(csv(
+      completo({ nome: 'SF', nivel: 'fonte', debito: '', origem: 'RM (relacionamento) | cadastro corporativo', fonte_sistema: '' }),
+    ))
+    expect(warnings).toEqual([])
+    expect(graph.links.filter((l) => l.label === 'origina de')).toEqual([
+      { source: 'sys-sf', target: 'org-cadastro-corporativo', label: 'origina de' },
+      { source: 'sys-sf', target: 'org-rm-relacionamento', label: 'origina de' },
+    ])
+    const origens = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'origem')
+    expect(origens.map((n) => ({ id: n.id, cadastrado: n.cadastrado }))).toEqual([
+      { id: 'org-cadastro-corporativo', cadastrado: undefined },
+      { id: 'org-rm-relacionamento', cadastrado: undefined },
+    ])
+  })
+
+  it('linha fonte-secundaria com fontes gera arestas fsec→sys "vem de"', () => {
+    const { graph } = buildGraph(csv(
+      completo({ nome: 'Tabela X - UCS', nivel: 'fonte-secundaria', debito: '', origem: '', fonte_sistema: 'SQL Legado | Mainframe' }),
+    ))
+    expect(graph.links).toEqual([
+      { source: 'fsec-tabela-x-ucs', target: 'sys-mainframe', label: 'vem de' },
+      { source: 'fsec-tabela-x-ucs', target: 'sys-sql-legado', label: 'vem de' },
+    ])
+  })
+
+  it('componente sem produto que o referencie vira nó isolado', () => {
+    const { graph, warnings } = buildGraph(csv(
+      completo({ nome: 'Compliance', nivel: 'dominio', debito: '', origem: '', fonte_sistema: '', descricao: 'domínio novo' }),
+    ))
+    expect(warnings).toEqual([])
+    expect(graph.nodes.filter((n) => n.derivado === true)).toEqual([
+      {
+        id: 'dom-compliance',
+        nome: 'Compliance',
+        tipo: 'dominio',
+        derivado: true,
+        incompleto: false,
+        cadastrado: true,
+        descricao: 'domínio novo',
+        owner: null,
+        centroDeCusto: null,
+      },
+    ])
+    expect(graph.links).toEqual([])
+  })
+
+  it('componente dominio funde com o domínio derivado dos produtos finais', () => {
+    const { graph } = buildGraph(csv(
+      completo({ nome: 'Alfa', nivel: 'final', origem: '', fonte_sistema: '', dominio: 'Regulatorio' }),
+      completo({ nome: 'Regulatorio', nivel: 'dominio', debito: '', origem: '', fonte_sistema: '', owner: 'Fulano' }),
+    ))
+    const dom = graph.nodes.find((n) => n.id === 'dom-regulatorio')
+    expect(dom).toMatchObject({ nome: 'Regulatório', cadastrado: true, owner: 'Fulano' })
+    expect(graph.links).toEqual([
+      { source: 'atacado-dados', target: 'dom-regulatorio', label: 'agrega' },
+      { source: 'dom-regulatorio', target: 'alfa', label: 'agrega' },
+    ])
+  })
+
+  it('componente duplicado (mesmo slug no mesmo nível) gera warning e é ignorado', () => {
+    const { graph, warnings } = buildGraph(csv(
+      completo({ nome: 'Área de Risco', nivel: 'origem', debito: '', origem: '', fonte_sistema: '', descricao: 'primeira' }),
+      completo({ nome: 'area de risco', nivel: 'origem', debito: '', origem: '', fonte_sistema: '', descricao: 'repetida' }),
+    ))
+    expect(warnings).toEqual([
+      'componente duplicado "area de risco" (id "org-area-de-risco") — a linha repetida foi ignorada',
+    ])
+    const org = graph.nodes.find((n) => n.id === 'org-area-de-risco')
+    expect(org).toMatchObject({ descricao: 'primeira', cadastrado: true })
+  })
+
+  it('mesmo nome em níveis diferentes convive: produto, fonte e fonte-secundaria', () => {
+    const { graph, warnings } = buildGraph(csv(
+      completo({ nome: 'Databricks' }),
+      completo({ nome: 'Databricks', nivel: 'fonte', debito: '', origem: '', fonte_sistema: '' }),
+      completo({ nome: 'Databricks', nivel: 'fonte-secundaria', debito: '', origem: '', fonte_sistema: '' }),
+    ))
+    expect(warnings).toEqual([])
+    expect(graph.nodes.filter((n) => n.nome === 'Databricks').map((n) => n.id).sort()).toEqual([
+      'databricks',
+      'fsec-databricks',
+      'sys-databricks',
+    ])
+  })
+
+  it('determinismo: mesma saída independentemente da ordem das linhas', () => {
+    const produto = completo({ nome: 'Alfa', fonte_sistema: 'SF', origem: 'RM' })
+    const fonte = completo({ nome: 'SF', nivel: 'fonte', debito: '', origem: 'RM | Outra', fonte_sistema: '' })
+    const origem = completo({ nome: 'Outra', nivel: 'origem', debito: '', origem: '', fonte_sistema: '', owner: 'Beltrano' })
+    expect(buildGraph(csv(origem, fonte, produto)).graph).toEqual(buildGraph(csv(produto, origem, fonte)).graph)
+  })
+})
+
 describe('slugify', () => {
   it('gera kebab-case sem acentos', () => {
     expect(slugify('Capital Regulatório')).toBe('capital-regulatorio')
@@ -443,17 +599,17 @@ describe('catalogo.csv real (catálogo em 4 níveis)', () => {
     expect(graph.nodes.filter((n) => n.fantasma === true)).toEqual([])
   })
 
-  it('35 linhas no CSV + raiz automática = 36 nós de dados', () => {
+  it('35 linhas no CSV (só produtos) + raiz automática = 36 nós de dados', () => {
     const registros = parseCsv(readFileSync(caminho, 'utf8'))
-    expect(registros).toHaveLength(36) // cabeçalho + 35 dados
+    expect(registros).toHaveLength(36) // cabeçalho + 35 produtos
     expect(registros[0]).toEqual([...COLUNAS])
     expect(dados).toHaveLength(36)
   })
 
-  it('36 nós de dados: 1 raiz, 22 primários, 11 secundários e 2 "ambos"', () => {
+  it('36 nós de dados: 1 raiz, 22 primários, 11 finais e 2 "ambos"', () => {
     expect(dados.filter((n) => n.nivel === 'raiz').map((n) => n.id)).toEqual(['atacado-dados'])
     expect(dados.filter((n) => n.nivel === 'primario')).toHaveLength(22)
-    expect(dados.filter((n) => n.nivel === 'secundario')).toHaveLength(11)
+    expect(dados.filter((n) => n.nivel === 'final')).toHaveLength(11)
     expect(dados.filter((n) => n.nivel === 'ambos').map((n) => n.id).sort()).toEqual([
       'rating',
       'restritivos-e-tipos',
@@ -570,7 +726,7 @@ describe('catalogo.csv real (catálogo em 4 níveis)', () => {
     expect(alvosDe('restritivos-e-tipos')).toEqual([])
   })
 
-  it('secundários com as cadeias esperadas', () => {
+  it('produtos finais com as cadeias esperadas', () => {
     const alvos = (id: string) =>
       consome
         .filter((l) => l.source === id)
@@ -580,8 +736,8 @@ describe('catalogo.csv real (catálogo em 4 níveis)', () => {
     expect(alvos('rar-12m')).toEqual(['capital-regulatorio', 'custo-de-capital-ke', 'estatag', 'gdad'])
   })
 
-  it('secundários não derivam sistema/origem (células vazias)', () => {
-    for (const n of dados.filter((d) => d.nivel === 'secundario')) {
+  it('produtos finais não derivam sistema/origem (células vazias)', () => {
+    for (const n of dados.filter((d) => d.nivel === 'final')) {
       expect(n.sistema).toBeNull()
       expect(n.origem).toBeNull()
       expect(graph.links.filter((l) => l.source === n.id && l.label !== 'consome')).toEqual([])

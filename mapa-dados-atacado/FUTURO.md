@@ -5,8 +5,11 @@ implementado; a ordem abaixo não é prioridade.
 
 - **Ingestão automática de linhagem do Unity Catalog / Databricks** — gerar (ou conciliar)
   nós e arestas a partir da linhagem real das tabelas, em vez de manutenção manual do catalogo.csv.
-- **Modo de edição na UI** — formulário na própria página que grava o `.md` via pull
-  request, mantendo o Git como trilha de auditoria.
+- **Modo de edição na UI** — formulário na própria página que grava o catálogo via pull
+  request, mantendo o Git como trilha de auditoria. *Atendido na versão dev server: o
+  formulário multi-nível ("+ Novo componente" / "✎ Editar" no balão) cadastra e edita
+  produtos e componentes, gravando o `catalogo.csv` e regenerando o `graph.json` pela
+  API local (`/api/catalogo`); falta a variante com PR e trilha de auditoria no Git.*
 - **Autenticação corporativa e deploy interno oficial** — hoje o MVP é estático e sem
   login; a versão oficial precisa de SSO e hosting interno padrão.
 - **Visão por sistema e visão por owner** — agrupar/clusterizar o grafo por fonte

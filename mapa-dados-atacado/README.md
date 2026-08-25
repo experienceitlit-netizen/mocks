@@ -13,19 +13,20 @@ substituir a edição da planilha por um formulário na própria UI.)
 ## Modelo em 4 níveis
 
 O catálogo espelha a tabela executiva em cadeias **origem → fonte (sistema) → produto
-primário → produto secundário**:
+primário → produto final**:
 
 - **Primário** (`nivel: primario`): dado bruto/insumo com rota própria — as colunas
   `origem` e `fonte_sistema` dizem de onde ele vem. Primários deixam a coluna `consome`
   vazia.
-- **Secundário** (`nivel: secundario`): produto final montado a partir de primários.
-  Deixa `origem` e `fonte_sistema` vazios (não se aplica — a rota vem dos primários) e
-  lista na coluna `consome` **todos** os primários que consome (arestas "consome").
+- **Final** (`nivel: final`; `secundario` é o nome legado, ainda aceito): produto final
+  montado a partir de primários. Deixa `origem` e `fonte_sistema` vazios (não se aplica —
+  a rota vem dos primários) e lista na coluna `consome` **todos** os primários que
+  consome (arestas "consome").
 - **Ambos** (`nivel: ambos`): produto consumido direto e também insumo de outros
   (ex.: `rating`), sem self-loop.
 - **Raiz** (criada **automaticamente pelo build**, sem linha no CSV): o nó único
   **"Atacado — Dados"**, portfólio do domínio e ponto de entrada do mapa. Agrega sozinho
-  todos os produtos finais (todo dado de `nivel` `secundario` ou `ambos`). Não é um
+  todos os produtos finais (todo dado de `nivel` `final` ou `ambos`). Não é um
   produto de dado: desenhado como **hexágono azul** de tamanho fixo, fica fora dos
   contadores, dos filtros e da tabela, e owner/centro de custo não se aplicam (o balão
   mostra "—", sem ⚠).
@@ -42,14 +43,14 @@ primário → produto secundário**:
 - **Domínio** (derivado pelo build, sem linha no CSV): entre a raiz e os produtos
   finais o build insere um nó por domínio (`dom-cadastro`, `dom-mercado`, `dom-risco`,
   `dom-resultado`, `dom-regulatorio`), reescrevendo cada aresta raiz→produto como
-  raiz→domínio→produto. Navegação: **Atacado — Dados → domínio → produto secundário →
+  raiz→domínio→produto. Navegação: **Atacado — Dados → domínio → produto final →
   produto primário → fonte → origem**. Desenhado como **quadrado arredondado na cor do
   domínio**, sempre visível no mapa, focável, e — como a raiz — fora de contadores,
   filtros e tabela.
 
-Hoje o `catalogo.csv` tem **35 dados** (22 primários, 11 secundários, 2 "ambos") —
+Hoje o `catalogo.csv` tem **35 dados** (22 primários, 11 finais, 2 "ambos") —
 **36 nós de dados contando a raiz automática** — com **25 cadeias "consome"**
-primário→secundário e **18 arestas "agrega"** (raiz → 5 domínios → 13 produtos finais);
+primário→final e **18 arestas "agrega"** (raiz → 5 domínios → 13 produtos finais);
 com os domínios, sistemas, fontes secundárias e origens derivados, o `graph.json` fecha
 em **74 nós e 84 arestas**.
 
@@ -96,7 +97,7 @@ Dois pacotes ficam em `../entregas/` (fora do git):
    três últimas colunas omitidas):
 
    ```
-   Meu Novo Painel;secundario;Risco;;;;GDAD | Rating;painel de risco da mesa;nao;producao;;;
+   Meu Novo Painel;final;Risco;;;;GDAD | Rating;painel de risco da mesa;nao;producao;;;
    ```
 
 3. `observacoes` é texto livre em Markdown (aparece no balão do nó). `[[Wikilinks]]`
@@ -118,12 +119,12 @@ observacoes`.
 | Coluna | Obrigatória | Valores válidos / formato | Observações |
 |---|---|---|---|
 | `nome` | sim | texto livre curto | rótulo do nó; o `id` é derivado como slug (ex.: "RAR 12M" → `rar-12m`, usado na URL `?no=rar-12m`); linha sem nome é ignorada com aviso |
-| `nivel` | sim | `primario` \| `secundario` \| `ambos` | nível na cadeia (ver "Modelo em 4 níveis"); deriva o tipo do nó (primário = insumo, o resto = produto); a raiz não tem linha |
+| `nivel` | sim | `primario` \| `final` (legado: `secundario`) \| `ambos` | nível na cadeia (ver "Modelo em 4 níveis"); deriva o tipo do nó (primário = insumo, o resto = produto); a raiz não tem linha |
 | `dominio` | sim | `Cadastro` \| `Mercado` \| `Risco` \| `Resultado` \| `Regulatorio` \| `A definir` | filtro por domínio na UI; vazio = `A definir` |
-| `origem` | primários | texto ou vazio | área ou processo de origem; vazio em secundários = não se aplica (UI mostra "—") |
-| `fonte_sistema` | primários | texto ou vazio | sistema/plataforma onde o dado vive; se contiver "legado" ou "on-premise", o nó fica âmbar; vazio em secundários = não se aplica |
+| `origem` | primários | texto ou vazio | área ou processo de origem; vazio em produtos finais = não se aplica (UI mostra "—") |
+| `fonte_sistema` | primários | texto ou vazio | sistema/plataforma onde o dado vive; se contiver "legado" ou "on-premise", o nó fica âmbar; vazio em produtos finais = não se aplica |
 | `fontes_secundarias` | não | nomes separados por ` \| ` (ex.: `Mercado Alvo Semanal - UCS \| Mercado Alvo Mensal - UCS`) | tabelas UCS onde a fonte é ingerida; presença substitui a aresta direta dado→sistema por dado→fonte secundária→sistema (dedup global por nome) |
-| `consome` | secundários | nomes (ou ids) separados por ` \| `, sem diferenciar caixa | cria as arestas "consome"; nome inexistente vira nó fantasma + aviso |
+| `consome` | produtos finais | nomes (ou ids) separados por ` \| `, sem diferenciar caixa | cria as arestas "consome"; nome inexistente vira nó fantasma + aviso |
 | `descricao` | sim | uma linha | aparece no balão e na busca |
 | `debito` | sim | `sim` \| `nao` \| `avaliar` | manda na cor do nó (ver abaixo) |
 | `status` | sim | `producao` \| `transicao` \| `investigacao` | |
@@ -149,8 +150,8 @@ Bordas:
   é o que a reunião de governança precisa enxergar).
 - **Contorno cinza tracejado sem preenchimento** = nó fantasma: citado na coluna
   `consome`, mas ainda sem linha no catálogo.
-- **Anel externo fino** na cor do nó = produto **secundário/final** (`nivel: secundario`
-  ou `ambos`).
+- **Anel externo fino** na cor do nó = produto **final** (`nivel: final` — legado
+  `secundario` — ou `ambos`).
 
 Tamanho do nó é proporcional ao número de conexões (raiz e domínios têm tamanho fixo).
 Formas: **círculo** = dado, **hexágono azul** = raiz, **quadrado arredondado** na cor da
@@ -191,7 +192,7 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
 
 - **Entrada padrão**: sem parâmetros na URL, o app abre já em **modo foco no nó-raiz
   "Atacado — Dados"**, vista Níveis, balão fechado — as colunas, lidas da esquerda para
-  a direita, mostram raiz → domínios → secundários → primários → fontes → origens, o
+  a direita, mostram raiz → domínios → produtos finais → primários → fontes → origens, o
   portfólio inteiro numa tela. "Ver mapa completo" (ou `Esc`) leva ao mapa global, onde
   a raiz aparece como hexágono azul ligado aos domínios (quadrados arredondados na cor
   da área) e estes aos produtos finais. A URL só ganha `?foco=` quando o estado difere
@@ -228,10 +229,10 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
   catálogo. Fica desligado no mapa global e liga automaticamente ao entrar em foco.
   Contadores e filtros de governança continuam contando só os dados.
 - O seletor **Mapa | Tabela** no topo alterna entre o grafo e a **visão de tabela**:
-  espelho da tabela executiva em cadeias, **uma linha por cadeia primário→secundário**
-  (Domínio | Origem | Fonte | Produto primário | Produto secundário | Débito | Status —
+  espelho da tabela executiva em cadeias, **uma linha por cadeia primário→final**
+  (Domínio | Origem | Fonte | Produto primário | Produto final | Débito | Status —
   origem, fonte, débito e status vêm do primário; primário sem produto final mostra "—"
-  na coluna do secundário), agrupada por domínio, com filtro rápido e ordenação próprios.
+  na coluna do produto final), agrupada por domínio, com filtro rápido e ordenação próprios.
   Clicar no nome de um produto volta ao mapa com o nó centralizado e o balão aberto; o estado
   do mapa (foco, filtros, zoom) sobrevive à ida e volta. `Esc` na tabela retorna ao mapa.
 - A URL reflete o estado e pode ser compartilhada: `?no=rar-12m` seleciona um nó,

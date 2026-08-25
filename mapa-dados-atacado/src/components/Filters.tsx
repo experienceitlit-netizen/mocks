@@ -2,7 +2,7 @@ import type { Debito } from './graph-types'
 import { DEBITO_LABEL, domainColor } from './palette'
 
 /** Lado do filtro de nível ("ambos" casa com os dois). */
-export type NivelFiltro = 'primario' | 'secundario'
+export type NivelFiltro = 'primario' | 'final'
 
 export interface Counts {
   total: number
@@ -33,8 +33,8 @@ interface FiltersProps {
 const DEBITOS: Debito[] = ['sim', 'nao', 'avaliar']
 
 const NIVEIS: { valor: NivelFiltro; label: string }[] = [
-  { valor: 'primario', label: 'Primário' },
-  { valor: 'secundario', label: 'Secundário' },
+  { valor: 'primario', label: 'Produto primário' },
+  { valor: 'final', label: 'Produto final' },
 ]
 
 export default function Filters({

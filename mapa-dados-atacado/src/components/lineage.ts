@@ -9,7 +9,7 @@
 // placeholder só na UI, um por dado, para a cadeia sempre mostrar o nível
 // origem → fonte → produto.
 import type { GraphLinkData, GraphNodeData, SimLink, SimNode } from './graph-types'
-import { isRaiz, nodeKind } from './graph-types'
+import { isRaiz, nodeKind, normalizeNivel } from './graph-types'
 
 /** Sistema/origem/fonte secundária não entram na árvore de dados (têm coluna
  *  própria no fim); nós de domínio derivados entram — são um nível entre a
@@ -30,7 +30,7 @@ export const NIVEIS_ROW_Y = 70
 const NIVEL_LABELS = [
   '', // raiz: rotulada com o nome do próprio nó ("Atacado — Dados")
   'Domínio',
-  'Produto secundário',
+  'Produto final',
   'Produto primário',
   'Fonte secundária',
   'Fonte (sistema)',
@@ -180,7 +180,7 @@ export function buildLineageTree(
 
 /** Linhagem completa com layout em colunas semânticas, lidas da esquerda para
  *  a direita: nó focado à esquerda (x=0) e uma coluna por nível da cadeia
- *  presente na sub-árvore (raiz → domínio → secundário → primário → fonte
+ *  presente na sub-árvore (raiz → domínio → final → primário → fonte
  *  secundária → fonte → origem). Uma aresta pode atravessar colunas: dado sem
  *  fonte secundária liga direto na coluna de fontes, cruzando a de fsec. */
 export function buildLineage(
@@ -242,9 +242,20 @@ export function buildLineage(
   }
   walk(root)
 
+  // Foco na raiz é o inventário completo: componentes cadastrados no catálogo
+  // (domínio/origem/fonte/fonte secundária) que nenhuma cadeia alcançou —
+  // ex.: tabela UCS recém-cadastrada, ainda sem associações — entram na
+  // coluna do seu nível, ao fim da pilha. Foco em outro nó mantém só a
+  // sub-árvore dele.
+  if (isRaiz(root.data)) {
+    for (const n of nodes) {
+      if (n.cadastrado === true && !nodeById.has(n.id)) addNode(n)
+    }
+  }
+
   // Nível semântico de cada nó (índice em NIVEL_LABELS). "Ambos" conta no
   // nível em que aparece na cadeia: insumo de outro dado → produto primário;
-  // só agregado por raiz/domínio (ou o próprio focado) → produto secundário.
+  // só agregado por raiz/domínio (ou o próprio focado) → produto final.
   const consumidoPorDado = new Set<string>()
   for (const l of graphLinks) {
     const fonte = nodeById.get(l.source)
@@ -261,10 +272,12 @@ export function buildLineage(
         return 5
       case 'origem': // inclui placeholders ph-origem-*
         return 6
-      default:
-        if (n.nivel === 'secundario') return 2
-        if (n.nivel === 'ambos') return consumidoPorDado.has(n.id) ? 3 : 2
+      default: {
+        const nivel = normalizeNivel(n.nivel)
+        if (nivel === 'final') return 2
+        if (nivel === 'ambos') return consumidoPorDado.has(n.id) ? 3 : 2
         return 3 // primário (e dado sem nivel declarado)
+      }
     }
   }
 

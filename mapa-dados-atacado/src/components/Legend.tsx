@@ -81,8 +81,7 @@ export default function Legend({
         </li>
         {hasNiveis && (
           <li>
-            <span className="legend__dot legend__dot--secundario" /> anel = produto secundário /
-            final
+            <span className="legend__dot legend__dot--secundario" /> anel = produto final
           </li>
         )}
         {layersVisible && (

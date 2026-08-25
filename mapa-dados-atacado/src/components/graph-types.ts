@@ -10,11 +10,20 @@ import type {
 export type Debito = 'sim' | 'nao' | 'avaliar'
 
 /** Nível do produto de dado no modelo executivo em 4 camadas:
- *  primário (tem origem/sistema próprios, não consome nada), secundário
+ *  primário (tem origem/sistema próprios, não consome nada), final
  *  (derivado de primários via "consome"; sistema/origem null = não se aplica),
  *  ambos (primário que também é produto final) ou raiz (nó único do domínio
- *  que agrega todos os produtos finais via arestas "agrega"). */
-export type Nivel = 'primario' | 'secundario' | 'ambos' | 'raiz'
+ *  que agrega todos os produtos finais via arestas "agrega").
+ *  'secundario' é o nome legado de 'final' (graph.json antigo). */
+export type Nivel = 'primario' | 'secundario' | 'final' | 'ambos' | 'raiz'
+
+/** Ponto ÚNICO de tratamento do legado: 'secundario' (JSON/CSV antigos) é o
+ *  nível 'final'. Todo código que compara/rotula nível passa por aqui. */
+export function normalizeNivel(nivel: Nivel): Nivel
+export function normalizeNivel(nivel: Nivel | undefined): Nivel | undefined
+export function normalizeNivel(nivel: Nivel | undefined): Nivel | undefined {
+  return nivel === 'secundario' ? 'final' : nivel
+}
 
 /** Nó como emitido pelo build (scripts/build-graph.ts). Campos além de
  *  id/nome são opcionais para tolerar variações do JSON gerado. */
@@ -41,6 +50,9 @@ export interface GraphNodeData {
   fantasma?: boolean
   /** Nó derivado pelo build (camada de linhagem): sistema ou origem. */
   derivado?: boolean
+  /** Componente com linha própria no catálogo (domínio/origem/fonte/fonte
+   *  secundária cadastrados): carrega descricao/owner/centroDeCusto/corpo. */
+  cadastrado?: boolean
   /** Nó sintetizado na UI: fonte/origem desconhecida na vista de linhagem. */
   placeholder?: boolean
   /** Corpo markdown do .md (pode não existir no JSON gerado). */
@@ -77,8 +89,10 @@ export function isPrimario(node: Pick<GraphNodeData, 'nivel'>): boolean {
   return node.nivel === 'primario' || node.nivel === 'ambos'
 }
 
+/** Produto final ('final', legado 'secundario') ou 'ambos'. */
 export function isSecundario(node: Pick<GraphNodeData, 'nivel'>): boolean {
-  return node.nivel === 'secundario' || node.nivel === 'ambos'
+  const nivel = normalizeNivel(node.nivel)
+  return nivel === 'final' || nivel === 'ambos'
 }
 
 /** Nó-raiz do domínio ("Atacado — Dados"): agrega os produtos finais, mas não
