@@ -1,4 +1,427 @@
 {
-  "nodes": [],
-  "links": []
+  "nodes": [
+    {
+      "id": "bacen",
+      "nome": "Bacen",
+      "tipo": "insumo",
+      "dominio": "Mercado",
+      "debito": "avaliar",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "dados de apoio à classificação",
+      "sistema": "a confirmar",
+      "origem": "Banco Central",
+      "status": "investigacao",
+      "incompleto": true
+    },
+    {
+      "id": "bacen-3040-45-46",
+      "nome": "BACEN 3040/45/46",
+      "tipo": "insumo",
+      "dominio": "Regulatorio",
+      "debito": "nao",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "operações de crédito reguladas",
+      "sistema": "transferência corporativa de arquivos",
+      "origem": "BACEN",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "capital-regulatorio",
+      "nome": "Capital Regulatório",
+      "tipo": "insumo",
+      "dominio": "Risco",
+      "debito": "avaliar",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "base de capital do RAR",
+      "sistema": "a confirmar",
+      "origem": "capital / risco",
+      "status": "investigacao",
+      "incompleto": true
+    },
+    {
+      "id": "custo-de-capital-ke",
+      "nome": "Custo de Capital (KE)",
+      "tipo": "insumo",
+      "dominio": "Risco",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "taxa de custo de capital",
+      "sistema": "banco de dados do crédito",
+      "origem": "crédito (provisório)",
+      "status": "transicao",
+      "incompleto": true
+    },
+    {
+      "id": "de-para-produtos-evol",
+      "nome": "De-para produtos EVOL",
+      "tipo": "produto",
+      "dominio": "Mercado",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "clusterização de produtos do Atacado",
+      "sistema": "planilha Excel (exploratório)",
+      "origem": "Atacado — analistas",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "debentures",
+      "nome": "Debêntures",
+      "tipo": "insumo",
+      "dominio": "Regulatorio",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "posições de debêntures do mercado",
+      "sistema": "webscraping (debentures.com.br)",
+      "origem": "ANBIMA / mercado",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "def-cambio",
+      "nome": "DEF_CAMBIO",
+      "tipo": "insumo",
+      "dominio": "Resultado",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "resultado de empréstimos e câmbio",
+      "sistema": "base SQL on-premise",
+      "origem": "DEF e Câmbio",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "estatag",
+      "nome": "ESTATAG",
+      "tipo": "insumo",
+      "dominio": "Risco",
+      "debito": "nao",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "componente de risco do RAR",
+      "sistema": "Databricks (produto de dados)",
+      "origem": "área de risco",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "evolucao-evol",
+      "nome": "Evolução (EVOL)",
+      "tipo": "produto",
+      "dominio": "Resultado",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "resultado ajustado pelos analistas",
+      "sistema": "planilha / processo manual",
+      "origem": "Atacado — ajustes",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "faturamento-declarado",
+      "nome": "Faturamento declarado",
+      "tipo": "produto",
+      "dominio": "Cadastro",
+      "debito": "nao",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "estimativa informada pelo RM na conta",
+      "sistema": "Salesforce (Account)",
+      "origem": "RM (relacionamento)",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "gdad",
+      "nome": "GDAD",
+      "tipo": "insumo",
+      "dominio": "Resultado",
+      "debito": "nao",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "resultado realizado",
+      "sistema": "Databricks (dado curado)",
+      "origem": "resultado gerencial",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "gdp",
+      "nome": "GDP",
+      "tipo": "insumo",
+      "dominio": "Mercado",
+      "debito": "avaliar",
+      "owner": null,
+      "centroDeCusto": "GDP",
+      "descricao": "dados de apoio à classificação",
+      "sistema": "a confirmar",
+      "origem": "GDP (departamento)",
+      "status": "investigacao",
+      "incompleto": true
+    },
+    {
+      "id": "gorc",
+      "nome": "GORC",
+      "tipo": "insumo",
+      "dominio": "Resultado",
+      "debito": "avaliar",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "fonte de resultado complementar",
+      "sistema": "a confirmar",
+      "origem": "a detalhar",
+      "status": "investigacao",
+      "incompleto": true
+    },
+    {
+      "id": "localizacao",
+      "nome": "Localização",
+      "tipo": "produto",
+      "dominio": "Mercado",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "praça de cobrança do cliente",
+      "sistema": "planilha Excel (de-para)",
+      "origem": "Atacado — classificação",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "mercado-alvo",
+      "nome": "Mercado Alvo",
+      "tipo": "produto",
+      "dominio": "Mercado",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "lista de clientes-alvo da atuação",
+      "sistema": "banco SQL legado (on-premise)",
+      "origem": "base comercial legada",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "pcam-57",
+      "nome": "PCAM-57",
+      "tipo": "insumo",
+      "dominio": "A definir",
+      "debito": "avaliar",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "conteúdo a mapear",
+      "sistema": "tabela departamental",
+      "origem": "a identificar",
+      "status": "investigacao",
+      "incompleto": true
+    },
+    {
+      "id": "porte-observado-bureau",
+      "nome": "Porte observado (bureau)",
+      "tipo": "insumo",
+      "dominio": "Cadastro",
+      "debito": "nao",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "porte e faturamento por fontes de mercado",
+      "sistema": "bureaus / agências (integração em avaliação)",
+      "origem": "fornecedores externos",
+      "status": "transicao",
+      "incompleto": true
+    },
+    {
+      "id": "psdc",
+      "nome": "PSDC",
+      "tipo": "insumo",
+      "dominio": "Cadastro",
+      "debito": "nao",
+      "owner": null,
+      "centroDeCusto": "PSDC",
+      "descricao": "identificação oficial: CNPJ, grupos, centro de custo",
+      "sistema": "Databricks (produto de dados)",
+      "origem": "cadastro corporativo",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "rar-12m",
+      "nome": "RAR 12M",
+      "tipo": "produto",
+      "dominio": "Resultado",
+      "debito": "nao",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "retorno ajustado ao risco 12 meses",
+      "sistema": "engine própria → Databricks",
+      "origem": "Atacado — cálculo",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "rating",
+      "nome": "Rating",
+      "tipo": "insumo",
+      "dominio": "Risco",
+      "debito": "nao",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "classificação de risco do cliente",
+      "sistema": "Databricks (produto de dados)",
+      "origem": "área de risco",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "recta-fedrl",
+      "nome": "RECTA_FEDRL",
+      "tipo": "insumo",
+      "dominio": "A definir",
+      "debito": "avaliar",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "conteúdo a mapear",
+      "sistema": "tabela departamental",
+      "origem": "a identificar",
+      "status": "investigacao",
+      "incompleto": true
+    },
+    {
+      "id": "restritivos-e-tipos",
+      "nome": "Restritivos e tipos",
+      "tipo": "insumo",
+      "dominio": "Risco",
+      "debito": "nao",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "impedimentos e restrições",
+      "sistema": "Databricks (produto de dados)",
+      "origem": "área de risco",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "rfb",
+      "nome": "RFB",
+      "tipo": "insumo",
+      "dominio": "Mercado",
+      "debito": "nao",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "situação cadastral e CNAEs do CNPJ",
+      "sistema": "Databricks (dado curado)",
+      "origem": "Receita Federal",
+      "status": "producao",
+      "incompleto": true
+    },
+    {
+      "id": "setorizacao",
+      "nome": "Setorização",
+      "tipo": "produto",
+      "dominio": "Mercado",
+      "debito": "sim",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "setor eleito do grupo (melhor CNAE por risco)",
+      "sistema": "planilha Excel (de-para)",
+      "origem": "Atacado — classificação",
+      "status": "producao",
+      "incompleto": true
+    }
+  ],
+  "links": [
+    {
+      "source": "de-para-produtos-evol",
+      "target": "evolucao-evol",
+      "label": "consome"
+    },
+    {
+      "source": "evolucao-evol",
+      "target": "gdad",
+      "label": "consome"
+    },
+    {
+      "source": "evolucao-evol",
+      "target": "gorc",
+      "label": "consome"
+    },
+    {
+      "source": "localizacao",
+      "target": "bacen",
+      "label": "consome"
+    },
+    {
+      "source": "localizacao",
+      "target": "gdp",
+      "label": "consome"
+    },
+    {
+      "source": "localizacao",
+      "target": "psdc",
+      "label": "consome"
+    },
+    {
+      "source": "localizacao",
+      "target": "rfb",
+      "label": "consome"
+    },
+    {
+      "source": "mercado-alvo",
+      "target": "localizacao",
+      "label": "consome"
+    },
+    {
+      "source": "mercado-alvo",
+      "target": "setorizacao",
+      "label": "consome"
+    },
+    {
+      "source": "rar-12m",
+      "target": "capital-regulatorio",
+      "label": "consome"
+    },
+    {
+      "source": "rar-12m",
+      "target": "custo-de-capital-ke",
+      "label": "consome"
+    },
+    {
+      "source": "rar-12m",
+      "target": "estatag",
+      "label": "consome"
+    },
+    {
+      "source": "rar-12m",
+      "target": "gdad",
+      "label": "consome"
+    },
+    {
+      "source": "setorizacao",
+      "target": "bacen",
+      "label": "consome"
+    },
+    {
+      "source": "setorizacao",
+      "target": "gdp",
+      "label": "consome"
+    },
+    {
+      "source": "setorizacao",
+      "target": "psdc",
+      "label": "consome"
+    },
+    {
+      "source": "setorizacao",
+      "target": "rfb",
+      "label": "consome"
+    }
+  ]
 }
