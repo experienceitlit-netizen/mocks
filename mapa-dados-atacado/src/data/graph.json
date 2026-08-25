@@ -12,7 +12,8 @@
       "sistema": "a confirmar",
       "origem": "Banco Central",
       "status": "investigacao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Dados do Banco Central usados como apoio à classificação de clientes (setorização e localização). A rota técnica de acesso e o sistema onde o dado vive ainda estão sendo confirmados, por isso o item está em investigação e o débito segue como \"a avaliar\"."
     },
     {
       "id": "bacen-3040-45-46",
@@ -26,7 +27,8 @@
       "sistema": "transferência corporativa de arquivos",
       "origem": "BACEN",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Bases regulatórias do BACEN (documentos 3040, 3045 e 3046) com as operações de crédito reguladas do sistema financeiro. Chegam ao banco por transferência corporativa de arquivos e dão ao Atacado visão de endividamento e share dos clientes no mercado de crédito."
     },
     {
       "id": "capital-regulatorio",
@@ -40,7 +42,8 @@
       "sistema": "a confirmar",
       "origem": "capital / risco",
       "status": "investigacao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Base de capital regulatório alocado por cliente/operação, insumo direto do denominador do RAR. A área de capital/risco é a origem, mas o sistema oficial de consumo ainda está sendo confirmado — enquanto isso o item permanece em investigação e o débito como \"a avaliar\"."
     },
     {
       "id": "custo-de-capital-ke",
@@ -54,7 +57,8 @@
       "sistema": "banco de dados do crédito",
       "origem": "crédito (provisório)",
       "status": "transicao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Taxa de custo de capital (KE) aplicada no cálculo do retorno ajustado ao risco. Hoje é obtida de forma provisória a partir do banco de dados do crédito — uma rota de empréstimo que caracteriza o débito técnico e mantém o dado em transição até que uma fonte oficial seja definida."
     },
     {
       "id": "de-para-produtos-evol",
@@ -68,7 +72,8 @@
       "sistema": "planilha Excel (exploratório)",
       "origem": "Atacado — analistas",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Clusterização dos produtos do Atacado construída pelos analistas para dar visão agregada por família de produto. É um de-para exploratório mantido em planilha Excel — útil na análise, mas ainda sem rota governada, o que caracteriza o débito.\n\nA clusterização é aplicada sobre o resultado ajustado de [[Evolução (EVOL)]]."
     },
     {
       "id": "debentures",
@@ -82,7 +87,8 @@
       "sistema": "webscraping (debentures.com.br)",
       "origem": "ANBIMA / mercado",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Posições de debêntures do mercado, com dados públicos da ANBIMA. A captura hoje é feita por webscraping do site debentures.com.br — uma rota frágil e não oficial que caracteriza o débito técnico, embora o dado em si seja valioso para a visão de mercado de capitais dos clientes."
     },
     {
       "id": "def-cambio",
@@ -96,7 +102,8 @@
       "sistema": "base SQL on-premise",
       "origem": "DEF e Câmbio",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Resultado das operações de empréstimos (DEF) e câmbio, consumido pelo Atacado para compor a visão de resultado por cliente. O dado vive em uma base SQL on-premise, fora da plataforma curada, o que caracteriza o débito técnico de rota."
     },
     {
       "id": "estatag",
@@ -110,7 +117,8 @@
       "sistema": "Databricks (produto de dados)",
       "origem": "área de risco",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Componente de risco utilizado no cálculo do RAR, produzido pela área de risco e disponível como produto de dados no Databricks. Entrega a parcela estatística de perda esperada que ajusta o resultado realizado na visão de retorno ao risco."
     },
     {
       "id": "evolucao-evol",
@@ -124,7 +132,8 @@
       "sistema": "planilha / processo manual",
       "origem": "Atacado — ajustes",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Resultado gerencial ajustado pelos analistas do Atacado (EVOL): sobre o realizado, aplicam-se correções e reclassificações que refletem a visão de gestão. O processo hoje é manual, apoiado em planilha, o que concentra o débito técnico na rota de produção do dado.\n\nConsome o resultado realizado de [[GDAD]] e a fonte complementar [[GORC]]."
     },
     {
       "id": "faturamento-declarado",
@@ -138,7 +147,8 @@
       "sistema": "Salesforce (Account)",
       "origem": "RM (relacionamento)",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Estimativa de faturamento informada pelo gerente de relacionamento (RM) diretamente na conta do cliente no Salesforce. É a visão declarada do porte do cliente, usada na segmentação e no planejamento comercial. Depende da disciplina de atualização do time comercial, e por isso convive com o porte observado de bureau como contraponto de mercado."
     },
     {
       "id": "gdad",
@@ -152,7 +162,8 @@
       "sistema": "Databricks (dado curado)",
       "origem": "resultado gerencial",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Resultado gerencial realizado por cliente e produto, disponível como dado curado no Databricks. É a base primária de resultado do Atacado: alimenta tanto os ajustes analíticos da Evolução quanto o cálculo do RAR 12M."
     },
     {
       "id": "gdp",
@@ -166,7 +177,8 @@
       "sistema": "a confirmar",
       "origem": "GDP (departamento)",
       "status": "investigacao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Dados fornecidos pelo departamento GDP como apoio à classificação de clientes do Atacado. O centro de custo é conhecido (o próprio GDP), mas o sistema de origem e a forma de consumo ainda precisam ser confirmados com o departamento, mantendo o item em investigação."
     },
     {
       "id": "gorc",
@@ -180,7 +192,8 @@
       "sistema": "a confirmar",
       "origem": "a detalhar",
       "status": "investigacao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Fonte de resultado complementar ao GDAD, usada nos ajustes de resultado da Evolução. A origem exata e o sistema onde o dado vive ainda precisam ser detalhados com as áreas produtoras, por isso o item está em investigação e o débito segue como \"a avaliar\"."
     },
     {
       "id": "localizacao",
@@ -194,7 +207,8 @@
       "sistema": "planilha Excel (de-para)",
       "origem": "Atacado — classificação",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Praça de cobrança de cada cliente, definindo a alocação geográfica do relacionamento comercial. Assim como a Setorização, é um produto derivado do Atacado e um ativo de dados legítimo — o débito está no processo: o de-para geográfico vive em planilha Excel e precisa migrar para uma rota governada.\n\nA classificação parte da identificação oficial do CNPJ em [[PSDC]] e usa como apoio o endereço cadastral e a situação em [[RFB]], além de [[Bacen]] e [[GDP]]."
     },
     {
       "id": "mercado-alvo",
@@ -208,7 +222,8 @@
       "sistema": "banco SQL legado (on-premise)",
       "origem": "base comercial legada",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Lista de clientes-alvo que delimita onde o Atacado atua e prioriza a prospecção comercial. Vive em um banco SQL legado on-premise, o que caracteriza o débito técnico: o dado é vivo, mas a plataforma precisa ser modernizada.\n\nO recorte de atuação usa o setor eleito e a praça de cobrança do cliente para definir quem entra na lista, portanto consome [[Setorização]] e [[Localização]] como critérios de elegibilidade."
     },
     {
       "id": "pcam-57",
@@ -222,7 +237,8 @@
       "sistema": "tabela departamental",
       "origem": "a identificar",
       "status": "investigacao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Tabela departamental utilizada em rotinas do Atacado cujo conteúdo e origem ainda não foram identificados. Entrou no catálogo para forçar o mapeamento: é candidata típica a dado órfão, sem owner nem centro de custo conhecidos."
     },
     {
       "id": "porte-observado-bureau",
@@ -236,7 +252,8 @@
       "sistema": "bureaus / agências (integração em avaliação)",
       "origem": "fornecedores externos",
       "status": "transicao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Porte e faturamento observados de fontes externas de mercado (bureaus e agências de informação). Complementa a visão declarada pelo RM com uma referência independente do porte real do cliente. A integração com os fornecedores ainda está em avaliação, por isso o dado está em transição até a rota definitiva de ingestão ser contratada."
     },
     {
       "id": "psdc",
@@ -250,7 +267,8 @@
       "sistema": "Databricks (produto de dados)",
       "origem": "cadastro corporativo",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "O PSDC é a fonte oficial de identificação dos clientes pessoa jurídica: CNPJ, composição de grupos econômicos e centro de custo. É um produto de dados curado no Databricks, mantido pelo cadastro corporativo, e serve de âncora cadastral para praticamente todas as classificações comerciais do Atacado. Por ser a referência de identidade do cliente, é o ponto de partida de derivados como a Setorização e a Localização."
     },
     {
       "id": "rar-12m",
@@ -264,7 +282,8 @@
       "sistema": "engine própria → Databricks",
       "origem": "Atacado — cálculo",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Retorno ajustado ao risco consolidado em 12 meses, principal indicador de rentabilidade do Atacado. É calculado por engine própria e publicado no Databricks, combinando resultado realizado, componentes de risco e base de capital.\n\nConsome [[GDAD]], [[ESTATAG]], [[Capital Regulatório]] e [[Custo de Capital (KE)]]."
     },
     {
       "id": "rating",
@@ -278,7 +297,8 @@
       "sistema": "Databricks (produto de dados)",
       "origem": "área de risco",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Classificação de risco de crédito do cliente, produzida pela área de risco e publicada como produto de dados no Databricks. O Atacado consome o rating para qualificar carteira, priorizar atuação comercial e contextualizar indicadores de retorno."
     },
     {
       "id": "recta-fedrl",
@@ -292,7 +312,8 @@
       "sistema": "tabela departamental",
       "origem": "a identificar",
       "status": "investigacao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Tabela departamental referenciada em processos do Atacado cujo conteúdo, origem e responsável ainda precisam ser mapeados. Está no catálogo justamente para dar visibilidade ao gap: enquanto ninguém reivindica a origem, o dado permanece em investigação."
     },
     {
       "id": "restritivos-e-tipos",
@@ -306,7 +327,8 @@
       "sistema": "Databricks (produto de dados)",
       "origem": "área de risco",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Impedimentos e restrições associados aos clientes (restritivos e seus tipos), mantidos pela área de risco como produto de dados no Databricks. O Atacado usa esse insumo para filtrar a atuação comercial e evitar ofertas a clientes com restrições vigentes."
     },
     {
       "id": "rfb",
@@ -320,7 +342,8 @@
       "sistema": "Databricks (dado curado)",
       "origem": "Receita Federal",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Dados públicos da Receita Federal do Brasil sobre os CNPJs: situação cadastral, CNAE principal e CNAEs secundários. Disponível como dado curado no Databricks, é o principal insumo externo para a classificação setorial e geográfica dos clientes do Atacado."
     },
     {
       "id": "setorizacao",
@@ -334,7 +357,8 @@
       "sistema": "planilha Excel (de-para)",
       "origem": "Atacado — classificação",
       "status": "producao",
-      "incompleto": true
+      "incompleto": true,
+      "corpo": "Setor eleito de cada grupo econômico: entre os CNAEs do grupo, elege-se o melhor sob a ótica de risco. É um produto derivado do Atacado e um ativo de dados legítimo — o débito técnico está na rota, não no dado: hoje o de-para é mantido em planilha Excel, quando deveria ser um processo governado.\n\nA classificação parte da identificação oficial do CNPJ e dos grupos em [[PSDC]] e usa como apoio os CNAEs e a situação cadastral de [[RFB]], além de [[Bacen]] e [[GDP]]."
     }
   ],
   "links": [

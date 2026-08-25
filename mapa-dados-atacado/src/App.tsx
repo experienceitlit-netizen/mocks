@@ -6,6 +6,7 @@ import DetailPanel from './components/DetailPanel'
 import type { Connection } from './components/DetailPanel'
 import SearchBox from './components/SearchBox'
 import Filters from './components/Filters'
+import Legend from './components/Legend'
 import type { Counts } from './components/Filters'
 import type { Debito, GraphJson, GraphNodeData, SimLink, SimNode } from './components/graph-types'
 import './App.css'
@@ -264,6 +265,8 @@ function App() {
           setSomenteSemOwner(false)
         }}
       />
+
+      <Legend />
 
       {selectedNode && (
         <DetailPanel

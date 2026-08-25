@@ -65,6 +65,16 @@ describe('parseVaultFile', () => {
     expect(parsed.node.centroDeCusto).toBe('CC-1')
   })
 
+  it('emite o corpo markdown sem o frontmatter; omite quando vazio', () => {
+    const comCorpo = parseVaultFile({
+      name: 'x.md',
+      raw: completo({}, 'Consome [[GDAD]].\n\nDetalhe em **negrito**.'),
+    })
+    expect(comCorpo.node.corpo).toBe('Consome [[GDAD]].\n\nDetalhe em **negrito**.')
+    const semCorpo = parseVaultFile({ name: 'x.md', raw: completo({}, '  \n') })
+    expect(semCorpo.node.corpo).toBeUndefined()
+  })
+
   it('warning para campo obrigatório faltando', () => {
     const raw = fm({ id: 'a', nome: 'A', owner: null, centro_de_custo: null })
     const parsed = parseVaultFile({ name: 'a.md', raw })

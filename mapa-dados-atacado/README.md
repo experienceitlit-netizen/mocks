@@ -1,32 +1,118 @@
-# React + TypeScript + Vite
+# Mapa de Dados do Atacado
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+MVP web navegável, estilo grafo do Obsidian, dos produtos e insumos de dados da Diretoria
+Comercial Atacado: quem produz e quem consome cada dado, com owner, centro de custo e
+status de débito técnico visíveis nó a nó.
 
-Currently, two official plugins are available:
+O conteúdo vive em arquivos Markdown no diretório `vault/` (um arquivo por dado). Um script
+de build transforma o vault em `src/data/graph.json`, que o front-end (React + Vite +
+`react-force-graph-2d`) renderiza como grafo interativo. Sem backend, sem banco, sem login.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Como rodar
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev      # regenera o graph.json (predev) e abre o app em http://localhost:5173
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Outros comandos:
+
+```bash
+npm run data     # só regenera src/data/graph.json a partir do vault/
+npm test         # testes do build de dados (vitest)
+npm run build    # gera o site estático em dist/ (prebuild roda o data antes)
+npm run preview  # serve o dist/ localmente
+```
+
+O `dist/` é estático puro: pode ser aberto em qualquer hosting interno de arquivos.
+
+## Como adicionar um dado novo (menos de 5 minutos)
+
+1. Copie o template para um novo arquivo com o slug do dado:
+
+   ```bash
+   cp vault/_template.md vault/meu-novo-dado.md
+   ```
+
+   (Arquivos começando com `_` são ignorados pelo build.)
+
+2. Preencha o frontmatter (bloco YAML entre `---`). Campos e valores válidos na tabela
+   abaixo. Não sabe owner ou centro de custo? Deixe `null` — o nó aparece com borda
+   tracejada, sinalizando o gap de governança.
+
+3. No corpo (abaixo do segundo `---`), escreva a descrição livre em Markdown e declare as
+   conexões com wikilinks — cada `[[Nome do Outro Dado]]` cria uma aresta "este nó consome
+   o alvo". Para outro rótulo de aresta, use `[[Alvo|produz]]`.
+
+4. Rode `npm run data` (ou apenas `npm run dev`, que já roda antes). Confira o console:
+   o build avisa sobre campo faltando, id duplicado e link quebrado (que vira nó
+   "fantasma" tracejado no grafo, como no Obsidian).
+
+O vault também pode ser aberto como vault do Obsidian desktop — os wikilinks funcionam lá.
+
+## Convenções de frontmatter
+
+| Campo | Obrigatório | Valores válidos / formato | Observações |
+|---|---|---|---|
+| `id` | sim | slug único em kebab-case (ex.: `rar-12m`) | usado na URL (`?no=rar-12m`) e na resolução de links |
+| `nome` | sim | texto livre curto | rótulo do nó; wikilinks resolvem por `nome` ou `id`, sem diferenciar caixa |
+| `tipo` | sim | `produto` \| `insumo` \| `sistema` \| `dominio` | |
+| `dominio` | sim | `Cadastro` \| `Mercado` \| `Risco` \| `Resultado` \| `Regulatorio` \| `A definir` | filtro por domínio na UI |
+| `origem` | sim | texto livre | área ou processo de origem |
+| `sistema` | sim | texto livre | se contiver "legado" ou "on-premise", o nó fica âmbar |
+| `descricao` | sim | uma linha | aparece no painel e na busca |
+| `centro_de_custo` | sim (aceita `null`) | texto ou `null` | `null` = a definir → nó com borda tracejada |
+| `owner` | sim (aceita `null`) | texto ou `null` | `null` = a definir → nó com borda tracejada |
+| `debito` | sim | `sim` \| `nao` \| `avaliar` | manda na cor do nó (ver abaixo) |
+| `status` | sim | `producao` \| `transicao` \| `investigacao` | |
+
+Campo obrigatório faltando gera **warning** no build (não erro) — o nó entra mesmo assim,
+para o gap ficar visível em vez de escondido.
+
+## Cores e bordas do grafo
+
+Cor do nó, por ordem de precedência (definida em `src/components/palette.ts`):
+
+1. `debito: sim` → **vermelho** `#CC092F`
+2. `debito: avaliar` → **cinza** `#8A8A8A`
+3. `sistema` contém "legado"/"on-premise" → **âmbar** `#B8860B`
+4. default (curado/governado) → **verde** `#3A7D44`
+
+Bordas:
+
+- **Borda branca tracejada** = `owner` ou `centro_de_custo` em `null` (nó incompleto —
+  é o que a reunião de governança precisa enxergar).
+- **Contorno cinza tracejado sem preenchimento** = nó fantasma: alvo de wikilink que ainda
+  não tem arquivo no vault.
+
+Tamanho do nó é proporcional ao número de conexões.
+
+## Estrutura do projeto
+
+```
+vault/                      # conteúdo: um .md por dado (frontmatter + corpo markdown)
+  _template.md              # copie este para criar um dado novo
+scripts/
+  build-graph.ts            # CLI: varre vault/ e emite src/data/graph.json
+  graph-lib.ts              # lógica pura do build (parse, wikilinks, montagem do grafo)
+  graph-lib.test.ts         # testes (npm test)
+src/
+  data/graph.json           # GERADO pelo build — não editar à mão (mas é commitado)
+  components/
+    Graph.tsx               # canvas do grafo (react-force-graph-2d)
+    DetailPanel.tsx         # drawer de detalhe do nó selecionado
+    Filters.tsx             # domínio, débito, "somente sem owner", contadores
+    SearchBox.tsx           # busca por nome/descrição
+    Legend.tsx              # legenda fixa de cores/bordas
+    Markdown.tsx            # renderizador mínimo do corpo dos .md
+    palette.ts              # fonte única das cores
+    graph-types.ts          # tipos do schema + wrapper tipado da lib de grafo
+  App.tsx                   # estado da UI (seleção, hover, filtros, URL ?no=)
+FUTURO.md                   # itens fora do MVP (Fase 6)
+```
+
+## Dicas de uso
+
+- Clique num nó abre o painel de detalhe; `Esc` ou clique fora fecha.
+- A URL reflete a seleção (`?no=rar-12m`) — dá para compartilhar link direto de um dado.
+- O toggle **"somente sem owner"** nos filtros acende os nós sem responsável definido.
