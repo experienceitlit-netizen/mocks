@@ -26,6 +26,16 @@ primário → produto secundário**:
   produtos finais (secundários e "ambos"). Não é um produto de dado: desenhado como
   **hexágono azul** de tamanho fixo, fica fora dos contadores, dos filtros e da tabela,
   e owner/centro de custo não se aplicam (o balão mostra "—", sem ⚠).
+- **Fonte secundária** (derivada pelo build, sem arquivo no vault): quase toda fonte —
+  banco SQL, planilha etc. — é ingerida numa tabela Databricks **UCS** antes de virar
+  produto. O campo opcional `fontes_secundarias:` (lista de nomes) no `.md` de um dado
+  materializa essas tabelas como nós `fsec-*` e reescreve a rota para **origem → fonte →
+  fonte secundária → produto primário** (a aresta direta dado→fonte é substituída; com a
+  fonte ainda desconhecida, a fonte secundária liga direto na origem). O débito técnico
+  da rota **permanece no dado** — a ingestão não o resolve. Desenhada como **quadrado de
+  cantos bem arredondados teal**, fica com sistemas/origens (toggle "Fontes e origens") e
+  fora de contadores, filtros e tabela. O mapeamento é **incremental**: hoje só o Mercado
+  Alvo declara as suas; os demais dados seguem com a ligação direta até serem mapeados.
 - **Domínio** (derivado pelo build, sem arquivo no vault): entre a raiz e os produtos
   finais o build insere um nó por domínio (`dom-cadastro`, `dom-mercado`, `dom-risco`,
   `dom-resultado`, `dom-regulatorio`), reescrevendo cada aresta raiz→produto como
@@ -36,8 +46,8 @@ primário → produto secundário**:
 
 Hoje o vault tem **35 dados** (22 primários, 11 secundários, 2 "ambos") — **36 nós de
 dados contando a raiz** — com **25 cadeias "consome"** primário→secundário e **18
-arestas "agrega"** (raiz → 5 domínios → 13 produtos finais); com os domínios, sistemas
-e origens derivados, o `graph.json` fecha em **73 nós e 81 arestas**.
+arestas "agrega"** (raiz → 5 domínios → 13 produtos finais); com os domínios, sistemas,
+fontes secundárias e origens derivados, o `graph.json` fecha em **75 nós e 84 arestas**.
 
 ## Como rodar
 
@@ -106,6 +116,7 @@ O vault também pode ser aberto como vault do Obsidian desktop — os wikilinks 
 | `dominio` | sim | `Cadastro` \| `Mercado` \| `Risco` \| `Resultado` \| `Regulatorio` \| `A definir` | filtro por domínio na UI |
 | `origem` | sim (aceita `null`) | texto ou `null` | área ou processo de origem; `null` em secundários = não se aplica (UI mostra "—") |
 | `sistema` | sim (aceita `null`) | texto ou `null` | se contiver "legado" ou "on-premise", o nó fica âmbar; `null` em secundários = não se aplica |
+| `fontes_secundarias` | não | lista de nomes (ex.: `["Mercado Alvo Semanal - UCS"]`) | tabelas UCS onde a fonte é ingerida; presença substitui a aresta direta dado→sistema por dado→fonte secundária→sistema (dedup global por nome) |
 | `descricao` | sim | uma linha | aparece no balão e na busca |
 | `centro_de_custo` | sim (aceita `null`) | texto ou `null` | `null` = a definir → nó com borda tracejada |
 | `owner` | sim (aceita `null`) | texto ou `null` | `null` = a definir → nó com borda tracejada |
@@ -135,7 +146,8 @@ Bordas:
 
 Tamanho do nó é proporcional ao número de conexões (raiz e domínios têm tamanho fixo).
 Formas: **círculo** = dado, **hexágono azul** = raiz, **quadrado arredondado** na cor da
-área = domínio, **quadrado** = sistema, **losango** = origem.
+área = domínio, **quadrado** = sistema, **quadrado de cantos bem arredondados teal**
+(`#178A94`) = fonte secundária (UCS), **losango** = origem.
 
 ## Estrutura do projeto
 

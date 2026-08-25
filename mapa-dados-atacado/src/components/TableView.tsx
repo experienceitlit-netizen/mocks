@@ -1,7 +1,7 @@
 // Visão de tabela dos dados do Atacado — espelho da tabela executiva em
 // cadeias: uma linha por cadeia primário→secundário (derivada das arestas
-// "consome"), com Domínio | Origem | Fonte | Produto primário | Produto
-// secundário | Débito | Status vindos do primário. Autocontido: a integração
+// "consome"), com Domínio | Origem | Fonte | Fonte secundária | Produto
+// primário | Produto secundário | Débito | Status vindos do primário. Autocontido: a integração
 // no App só precisa passar nós, arestas e (opcional) onSelectNode.
 import { useMemo, useState } from 'react'
 import type { GraphLinkData, GraphNodeData } from './graph-types'
@@ -79,6 +79,39 @@ function ProductCell({
       )}
       {chip !== undefined && (
         <span className="table-view__kind table-view__kind--nivel">{chip}</span>
+      )}
+    </>
+  )
+}
+
+/** Fontes secundárias (tabelas UCS) do primário, empilhadas na mesma célula
+ *  e clicáveis (→ mapa); sem mapeamento = "—". */
+function FsecCell({
+  fontes,
+  onSelectNode,
+}: {
+  fontes: GraphNodeData[]
+  onSelectNode?: (id: string) => void
+}) {
+  if (fontes.length === 0) return <span className="table-view__none">—</span>
+  return (
+    <>
+      {fontes.map((f) =>
+        onSelectNode ? (
+          <button
+            key={f.id}
+            type="button"
+            className="table-view__name-link table-view__fsec"
+            onClick={() => onSelectNode(f.id)}
+            title="Ver no mapa"
+          >
+            {f.nome}
+          </button>
+        ) : (
+          <span key={f.id} className="table-view__name table-view__fsec">
+            {f.nome}
+          </span>
+        ),
       )}
     </>
   )
@@ -164,6 +197,7 @@ export function TableView({ nodes, links, onSelectNode }: TableViewProps) {
               </SortHeader>
               <th scope="col">Origem</th>
               <th scope="col">Fonte (sistema)</th>
+              <th scope="col">Fonte secundária</th>
               <SortHeader colKey="primario" sort={sort} onSort={handleSort}>
                 Produto primário
               </SortHeader>
@@ -213,6 +247,12 @@ export function TableView({ nodes, links, onSelectNode }: TableViewProps) {
                   <td className="table-view__cell--sistema">
                     <ValueCell value={primario.sistema} />
                   </td>
+                  <td className="table-view__cell--fsec">
+                    <FsecCell
+                      fontes={row.fontesSecundarias}
+                      onSelectNode={onSelectNode}
+                    />
+                  </td>
                   <td className="table-view__cell--nome">
                     <ProductCell
                       node={primario}
@@ -248,7 +288,7 @@ export function TableView({ nodes, links, onSelectNode }: TableViewProps) {
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="table-view__empty">
+                <td colSpan={8} className="table-view__empty">
                   Nenhuma cadeia corresponde ao filtro.
                 </td>
               </tr>

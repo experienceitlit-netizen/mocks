@@ -33,6 +33,9 @@ export interface GraphNodeData {
   origem?: string | null
   nivel?: Nivel
   status?: string
+  /** Nomes das fontes secundárias (tabelas UCS), na ordem do frontmatter;
+   *  os nós fsec-* correspondentes vêm das arestas "vem de" dado→fsec. */
+  fontesSecundarias?: string[]
   incompleto?: boolean
   /** Nó fantasma: alvo de wikilink sem arquivo no vault. */
   fantasma?: boolean
@@ -45,12 +48,14 @@ export interface GraphNodeData {
 }
 
 /** Camada visual do nó: dado (círculo), domínio (quadrado arredondado na cor
- *  da área), sistema (quadrado), origem (losango). */
-export type NodeKind = 'dado' | 'dominio' | 'sistema' | 'origem'
+ *  da área), fonte secundária (quadrado de cantos bem arredondados), sistema
+ *  (quadrado), origem (losango). */
+export type NodeKind = 'dado' | 'dominio' | 'fonte-secundaria' | 'sistema' | 'origem'
 
 export function nodeKind(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): NodeKind {
   if (node.tipo === 'sistema') return 'sistema'
   if (node.tipo === 'origem') return 'origem'
+  if (node.tipo === 'fonte-secundaria') return 'fonte-secundaria'
   // A raiz também tem tipo "dominio", mas é nó de dado (arquivo no vault);
   // só o nó de domínio derivado pelo build ganha a forma própria.
   if (node.tipo === 'dominio' && node.derivado === true) return 'dominio'

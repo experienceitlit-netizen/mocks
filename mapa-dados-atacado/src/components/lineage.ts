@@ -3,22 +3,49 @@
 // usa para apontar os produtos finais — (montante, recursivo) e anexa
 // a rota de cada dado alcançado — fonte (campo `sistema`) e origem (campo
 // `origem`) — casando os campos de texto com os nós derivados do build.
+// Dados com fontes secundárias (tabelas UCS, arestas "vem de" dado→fsec)
+// ganham essas colunas intercaladas: dado → fsec → fonte → origem.
 // Quando o campo não tem nó correspondente (ex.: "a confirmar"), sintetiza um
 // placeholder só na UI, um por dado, para a cadeia sempre mostrar o nível
 // origem → fonte → produto.
 import type { GraphLinkData, GraphNodeData, SimLink, SimNode } from './graph-types'
-import { nodeKind } from './graph-types'
+import { isRaiz, nodeKind } from './graph-types'
 
-/** Sistema/origem não entram na árvore de dados (têm coluna própria no fim);
- *  nós de domínio derivados entram — são um nível entre a raiz e os finais. */
+/** Sistema/origem/fonte secundária não entram na árvore de dados (têm coluna
+ *  própria no fim); nós de domínio derivados entram — são um nível entre a
+ *  raiz e os finais. */
 function isSysOrg(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): boolean {
   const kind = nodeKind(node)
-  return kind === 'sistema' || kind === 'origem'
+  return kind === 'sistema' || kind === 'origem' || kind === 'fonte-secundaria'
 }
 
 /** Distância entre colunas (x) e entre linhas de uma coluna (y). */
-export const NIVEIS_COL_X = 220
+export const NIVEIS_COL_X = 250
 export const NIVEIS_ROW_Y = 70
+
+/** Níveis semânticos da cadeia, na ordem fixa esquerda → direita da vista.
+ *  Cada nó cai num nível pelo que ele É (não pela distância em saltos), então
+ *  p.ex. todos os sistemas dividem a mesma coluna mesmo quando só parte dos
+ *  dados passa por fonte secundária. Só níveis com algum nó ganham coluna. */
+const NIVEL_LABELS = [
+  '', // raiz: rotulada com o nome do próprio nó ("Atacado — Dados")
+  'Domínio',
+  'Produto secundário',
+  'Produto primário',
+  'Fonte secundária',
+  'Fonte (sistema)',
+  'Origem',
+] as const
+
+/** Faixa vertical de uma coluna da vista em níveis (coordenadas de grafo,
+ *  yMin/yMax são centros do primeiro e do último nó — o padding visual do
+ *  retângulo fica a cargo de quem desenha). */
+export interface LineageColumn {
+  label: string
+  x: number
+  yMin: number
+  yMax: number
+}
 
 /** Fonte ou origem de um dado: nó real (sys-/org-) ou placeholder da UI. */
 export interface LineageSource {
@@ -29,6 +56,9 @@ export interface LineageSource {
 /** Árvore de linhagem de um dado (repete nós compartilhados por ramo). */
 export interface LineageEntry {
   data: GraphNodeData
+  /** Tabelas UCS de ingestão (arestas "vem de" dado→fsec do build): quando
+   *  presentes, a cadeia visual passa por elas antes da fonte. */
+  fontesSecundarias: GraphNodeData[]
   sistema: LineageSource | null
   origem: LineageSource | null
   insumos: LineageEntry[]
@@ -38,6 +68,8 @@ export interface Lineage {
   root: LineageEntry
   /** Nós (com fx/fy fixos em colunas) e arestas da vista em níveis. */
   graph: { nodes: SimNode[]; links: SimLink[] }
+  /** Colunas presentes, esquerda → direita (retângulos/títulos da vista). */
+  columns: LineageColumn[]
   /** Ids de tudo que a vista exibe (para esmaecimento por filtro/hover). */
   ids: ReadonlySet<string>
   /** Placeholders não são clicáveis nem focáveis. */
@@ -99,6 +131,16 @@ export function buildLineageTree(
     else if (n.tipo === 'origem') orgByName.set(norm(n.nome), n)
   }
 
+  // Fontes secundárias (tabelas UCS) de cada dado: arestas "vem de" dado→fsec.
+  const fsecByDado = new Map<string, GraphNodeData[]>()
+  for (const l of links) {
+    if ((l.label ?? 'consome') !== 'vem de') continue
+    const alvo = byId.get(l.target)
+    if (!alvo || nodeKind(alvo) !== 'fonte-secundaria') continue
+    if (!fsecByDado.has(l.source)) fsecByDado.set(l.source, [])
+    fsecByDado.get(l.source)?.push(alvo)
+  }
+
   // Adjacência "consome"/"agrega" só entre dados (consumidor → insumo; a
   // raiz → produto final tem a mesma direção de dependência).
   const consome = new Map<string, string[]>()
@@ -120,6 +162,7 @@ export function buildLineageTree(
     if (!data || isSysOrg(data)) return null
     const entry: LineageEntry = {
       data,
+      fontesSecundarias: fsecByDado.get(id) ?? [],
       sistema: makeSource(data, 'sistema', sysByName),
       origem: makeSource(data, 'origem', orgByName),
       insumos: [],
@@ -135,9 +178,11 @@ export function buildLineageTree(
   return build(rootId, new Set([rootId]))
 }
 
-/** Linhagem completa com layout em colunas, lida da esquerda para a direita:
- *  nó focado à esquerda (x=0), cada fonte uma coluna à direita do seu produto
- *  e cada origem uma coluna além. */
+/** Linhagem completa com layout em colunas semânticas, lidas da esquerda para
+ *  a direita: nó focado à esquerda (x=0) e uma coluna por nível da cadeia
+ *  presente na sub-árvore (raiz → domínio → secundário → primário → fonte
+ *  secundária → fonte → origem). Uma aresta pode atravessar colunas: dado sem
+ *  fonte secundária liga direto na coluna de fontes, cruzando a de fsec. */
 export function buildLineage(
   rootId: string,
   nodes: readonly GraphNodeData[],
@@ -170,16 +215,24 @@ export function buildLineage(
     if (seen.has(entry.data.id)) return
     seen.add(entry.data.id)
     addNode(entry.data)
+    // Com fontes secundárias (tabelas UCS), a cadeia visual as intercala:
+    // dado → fsec → fonte → origem; sem elas, dado → fonte → origem direto.
+    const fsecs = entry.fontesSecundarias
+    for (const f of fsecs) {
+      addNode(f)
+      addLink(entry.data.id, f.id, 'vem de')
+    }
+    const cabecas = fsecs.length > 0 ? fsecs.map((f) => f.id) : [entry.data.id]
     if (entry.sistema) {
       addNode(entry.sistema.node)
-      addLink(entry.data.id, entry.sistema.node.id, 'vem de')
+      for (const cabeca of cabecas) addLink(cabeca, entry.sistema.node.id, 'vem de')
       if (entry.origem) {
         addNode(entry.origem.node)
         addLink(entry.sistema.node.id, entry.origem.node.id, 'origina de')
       }
     } else if (entry.origem) {
       addNode(entry.origem.node)
-      addLink(entry.data.id, entry.origem.node.id, 'origina de')
+      for (const cabeca of cabecas) addLink(cabeca, entry.origem.node.id, 'origina de')
     }
     for (const filho of entry.insumos) {
       const label = labelByPair.get(`${entry.data.id}→${filho.data.id}`) ?? 'consome'
@@ -189,39 +242,61 @@ export function buildLineage(
   }
   walk(root)
 
-  // Nível = distância máxima em saltos a partir do focado (caminho mais longo
-  // no DAG focado→montante). Relaxamento simples: ≤ V passadas num grafo acíclico.
-  const rank = new Map<string, number>([[root.data.id, 0]])
-  for (let pass = 0, mudou = true; mudou && pass <= nodeById.size; pass++) {
-    mudou = false
-    for (const l of graphLinks) {
-      const rs = rank.get(l.source)
-      if (rs === undefined) continue
-      if (rs + 1 > (rank.get(l.target) ?? -1)) {
-        rank.set(l.target, rs + 1)
-        mudou = true
-      }
+  // Nível semântico de cada nó (índice em NIVEL_LABELS). "Ambos" conta no
+  // nível em que aparece na cadeia: insumo de outro dado → produto primário;
+  // só agregado por raiz/domínio (ou o próprio focado) → produto secundário.
+  const consumidoPorDado = new Set<string>()
+  for (const l of graphLinks) {
+    const fonte = nodeById.get(l.source)
+    if (fonte && nodeKind(fonte) === 'dado' && !isRaiz(fonte)) consumidoPorDado.add(l.target)
+  }
+  const nivelDe = (n: GraphNodeData): number => {
+    if (isRaiz(n)) return 0
+    switch (nodeKind(n)) {
+      case 'dominio':
+        return 1
+      case 'fonte-secundaria':
+        return 4
+      case 'sistema': // inclui placeholders ph-sistema-*
+        return 5
+      case 'origem': // inclui placeholders ph-origem-*
+        return 6
+      default:
+        if (n.nivel === 'secundario') return 2
+        if (n.nivel === 'ambos') return consumidoPorDado.has(n.id) ? 3 : 2
+        return 3 // primário (e dado sem nivel declarado)
     }
   }
 
-  // Colunas da esquerda (focado, x=0) para a direita; espaçamento vertical
-  // uniforme por coluna, centrado, na ordem de visita da árvore.
-  const porColuna = new Map<number, SimNode[]>()
-  for (const [id, n] of nodeById) {
-    const r = rank.get(id) ?? 0
-    if (!porColuna.has(r)) porColuna.set(r, [])
-    porColuna.get(r)?.push(n)
+  // Colunas da esquerda para a direita: só os níveis presentes na sub-árvore
+  // (nível vazio não vira coluna); espaçamento vertical uniforme por coluna,
+  // centrado, na ordem de visita da árvore.
+  const porNivel = new Map<number, SimNode[]>()
+  for (const n of nodeById.values()) {
+    const nv = nivelDe(n)
+    if (!porNivel.has(nv)) porNivel.set(nv, [])
+    porNivel.get(nv)?.push(n)
   }
-  for (const [r, coluna] of porColuna) {
+  const niveisPresentes = [...porNivel.keys()].sort((a, b) => a - b)
+  const columns: LineageColumn[] = []
+  niveisPresentes.forEach((nv, col) => {
+    const coluna = porNivel.get(nv) ?? []
+    const x = col * NIVEIS_COL_X
     coluna.forEach((n, i) => {
-      const x = r * NIVEIS_COL_X
       const y = (i - (coluna.length - 1) / 2) * NIVEIS_ROW_Y
       n.x = x
       n.y = y
       n.fx = x
       n.fy = y
     })
-  }
+    const meiaAltura = ((coluna.length - 1) / 2) * NIVEIS_ROW_Y
+    columns.push({
+      label: nv === 0 ? root.data.nome : NIVEL_LABELS[nv],
+      x,
+      yMin: -meiaAltura,
+      yMax: meiaAltura,
+    })
+  })
 
   // Cadeia do hover: fecho nas duas direções sobre as arestas da vista.
   const up = new Map<string, string[]>()
@@ -256,6 +331,7 @@ export function buildLineage(
   return {
     root,
     graph: { nodes: [...nodeById.values()], links: graphLinks as SimLink[] },
+    columns,
     ids: new Set(nodeById.keys()),
     placeholderIds,
     chainOf,

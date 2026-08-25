@@ -3,7 +3,7 @@
 // de ordenação, agrupamento por domínio e filtro sem acentos — puros, sem
 // React, para facilitar teste.
 import type { Debito, GraphLinkData, GraphNodeData } from './graph-types'
-import { isDerivado, isRaiz } from './graph-types'
+import { isDerivado, isRaiz, nodeKind } from './graph-types'
 
 /** Ordem executiva dos domínios (mesma da tabela que originou o projeto). */
 export const DOMAIN_ORDER: readonly string[] = [
@@ -85,6 +85,35 @@ export interface ChainRow {
   primario: GraphNodeData
   /** null = primário sem produto final ("—" na coluna secundário). */
   secundario: GraphNodeData | null
+  /** Fontes secundárias (tabelas UCS) do primário, via arestas "vem de"
+   *  dado→fsec; vazio = sem mapeamento ("—" na coluna). */
+  fontesSecundarias: GraphNodeData[]
+}
+
+/** Fontes secundárias de cada dado (arestas "vem de" dado→fsec, como na
+ *  linhagem); a ordem segue a declarada no frontmatter quando existir. */
+function fsecPorDado(
+  byId: ReadonlyMap<string, GraphNodeData>,
+  links: readonly GraphLinkData[],
+): Map<string, GraphNodeData[]> {
+  const map = new Map<string, GraphNodeData[]>()
+  for (const l of links) {
+    if ((l.label ?? 'consome') !== 'vem de') continue
+    const alvo = byId.get(l.target)
+    if (!alvo || nodeKind(alvo) !== 'fonte-secundaria') continue
+    if (!map.has(l.source)) map.set(l.source, [])
+    map.get(l.source)?.push(alvo)
+  }
+  for (const [id, fsecs] of map) {
+    const ordem = byId.get(id)?.fontesSecundarias
+    if (!ordem || ordem.length === 0) continue
+    const rank = (f: GraphNodeData) => {
+      const i = ordem.indexOf(f.nome)
+      return i === -1 ? ordem.length : i
+    }
+    fsecs.sort((a, b) => rank(a) - rank(b))
+  }
+  return map
 }
 
 /** Deriva as cadeias das arestas "consome" entre dados (consumidor → insumo):
@@ -96,6 +125,8 @@ export function buildChains(
   links: readonly GraphLinkData[],
 ): ChainRow[] {
   const byId = new Map(nodes.map((n) => [n.id, n]))
+  const fsecs = fsecPorDado(byId, links)
+  const fsecDe = (n: GraphNodeData) => fsecs.get(n.id) ?? []
   const rows: ChainRow[] = []
   const cobertos = new Set<string>()
 
@@ -104,7 +135,12 @@ export function buildChains(
     const consumidor = byId.get(l.source)
     const insumo = byId.get(l.target)
     if (!consumidor || !insumo || !isDataNode(consumidor) || !isDataNode(insumo)) continue
-    rows.push({ key: `${insumo.id}→${consumidor.id}`, primario: insumo, secundario: consumidor })
+    rows.push({
+      key: `${insumo.id}→${consumidor.id}`,
+      primario: insumo,
+      secundario: consumidor,
+      fontesSecundarias: fsecDe(insumo),
+    })
     cobertos.add(insumo.id)
     cobertos.add(consumidor.id)
   }
@@ -112,31 +148,33 @@ export function buildChains(
   for (const n of nodes) {
     if (!isDataNode(n)) continue
     if (n.nivel === 'ambos') {
-      rows.push({ key: `${n.id}→${n.id}`, primario: n, secundario: n })
+      rows.push({ key: `${n.id}→${n.id}`, primario: n, secundario: n, fontesSecundarias: fsecDe(n) })
       cobertos.add(n.id)
     }
   }
 
   for (const n of nodes) {
     if (!isDataNode(n) || cobertos.has(n.id)) continue
-    rows.push({ key: n.id, primario: n, secundario: null })
+    rows.push({ key: n.id, primario: n, secundario: null, fontesSecundarias: fsecDe(n) })
   }
 
   return rows
 }
 
-/** Filtro rápido sobre a cadeia: nome/descrição/origem/sistema do primário e
- *  nome/descrição do secundário, insensível a acentos. */
+/** Filtro rápido sobre a cadeia: nome/descrição/origem/sistema do primário,
+ *  nomes das fontes secundárias e nome/descrição do secundário, insensível a
+ *  acentos. */
 export function matchesFilter(row: ChainRow, query: string): boolean {
   const q = normalizeText(query.trim())
   if (q === '') return true
-  const { primario, secundario } = row
+  const { primario, secundario, fontesSecundarias } = row
   const haystack = normalizeText(
     [
       primario.nome,
       primario.descricao ?? '',
       primario.origem ?? '',
       primario.sistema ?? '',
+      ...fontesSecundarias.map((f) => f.nome),
       secundario?.nome ?? '',
       secundario?.descricao ?? '',
     ].join('\n'),

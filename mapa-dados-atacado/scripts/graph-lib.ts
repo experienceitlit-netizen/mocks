@@ -19,16 +19,19 @@ export interface GraphNode {
   incompleto: boolean
   fantasma?: boolean
   derivado?: undefined
+  /** Tabelas UCS onde a fonte é ingerida antes de virar produto (opcional):
+   *  presença substitui a aresta direta dado→sistema por dado→fsec→sistema. */
+  fontesSecundarias?: string[]
   /** Corpo markdown do arquivo (sem o frontmatter); ausente se vazio. */
   corpo?: string
 }
 
-/** Nó materializado pelo build: `sistema`/`origem` do frontmatter dos dados
- *  ou o domínio dos produtos finais agregados pela raiz. */
+/** Nó materializado pelo build: `sistema`/`origem`/`fontes_secundarias` do
+ *  frontmatter dos dados ou o domínio dos produtos finais agregados pela raiz. */
 export interface DerivedNode {
   id: string
   nome: string
-  tipo: 'sistema' | 'origem' | 'dominio'
+  tipo: 'sistema' | 'origem' | 'dominio' | 'fonte-secundaria'
   derivado: true
   incompleto: false
   fantasma?: undefined
@@ -183,6 +186,17 @@ export function parseVaultFile(file: VaultFile): ParsedFile {
   // nivel "raiz" é um agregador: owner/centro de custo não se aplicam.
   if (node.nivel === 'raiz') node.incompleto = false
 
+  // fontes_secundarias é opcional: lista de tabelas UCS de ingestão.
+  const fsecs = fm['fontes_secundarias']
+  if (fsecs !== undefined && fsecs !== null) {
+    if (Array.isArray(fsecs)) {
+      const nomes = fsecs.map((v) => String(v).trim()).filter((v) => v !== '')
+      if (nomes.length > 0) node.fontesSecundarias = nomes
+    } else {
+      warnings.push(`${file.name}: "fontes_secundarias" deve ser uma lista de nomes — campo ignorado`)
+    }
+  }
+
   const corpo = content.trim()
   if (corpo !== '') node.corpo = corpo
 
@@ -199,22 +213,26 @@ function valorConhecido(valor: string | null | undefined): string | null {
 }
 
 /**
- * Materializa `sistema` e `origem` dos dados como nós derivados, criando a
- * linhagem dado → sistema → origem:
+ * Materializa `sistema`, `origem` e `fontes_secundarias` dos dados como nós
+ * derivados, criando a linhagem dado → [fonte secundária →] sistema → origem:
  * - dedup por chave normalizada (trim + lowercase) do texto original;
  * - valores desconhecidos ("a confirmar" etc.) não geram nó nem aresta;
- * - sistema desconhecido com origem conhecida liga dado → origem direto.
+ * - sistema desconhecido com origem conhecida liga dado → origem direto;
+ * - `fontes_secundarias` (tabelas UCS) SUBSTITUI a aresta direta dado→sistema
+ *   por dado→fsec ("vem de") + fsec→sistema ("vem de"); com sistema
+ *   desconhecido, fsec→origem direto ("origina de").
  */
 export function derivarSistemasOrigens(dados: GraphNode[]): { nodes: DerivedNode[]; links: GraphLink[] } {
   const sistemas = new Map<string, DerivedNode>()
   const origens = new Map<string, DerivedNode>()
+  const fontesSecundarias = new Map<string, DerivedNode>()
   const links: GraphLink[] = []
   const arestasVistas = new Set<string>()
 
   const noDerivado = (
     mapa: Map<string, DerivedNode>,
-    prefixo: 'sys' | 'org',
-    tipo: 'sistema' | 'origem',
+    prefixo: 'sys' | 'org' | 'fsec',
+    tipo: DerivedNode['tipo'],
     texto: string,
   ): DerivedNode => {
     const chave = texto.toLowerCase()
@@ -236,20 +254,27 @@ export function derivarSistemasOrigens(dados: GraphNode[]): { nodes: DerivedNode
   for (const dado of dados) {
     const sistema = valorConhecido(dado.sistema)
     const origem = valorConhecido(dado.origem)
+    const fsecs = (dado.fontesSecundarias ?? []).map((nome) =>
+      noDerivado(fontesSecundarias, 'fsec', 'fonte-secundaria', nome.trim()),
+    )
+    // O dado que declara ingestão via UCS não liga direto na fonte: a rota
+    // passa pelas tabelas UCS (o débito técnico da fonte permanece no dado).
+    const cabecas = fsecs.length > 0 ? fsecs.map((f) => f.id) : [dado.id]
+    for (const f of fsecs) addLink(dado.id, f.id, 'vem de')
     if (sistema !== null) {
       const noSistema = noDerivado(sistemas, 'sys', 'sistema', sistema)
-      addLink(dado.id, noSistema.id, 'vem de')
+      for (const cabeca of cabecas) addLink(cabeca, noSistema.id, 'vem de')
       if (origem !== null) {
         const noOrigem = noDerivado(origens, 'org', 'origem', origem)
         addLink(noSistema.id, noOrigem.id, 'origina de')
       }
     } else if (origem !== null) {
       const noOrigem = noDerivado(origens, 'org', 'origem', origem)
-      addLink(dado.id, noOrigem.id, 'origina de')
+      for (const cabeca of cabecas) addLink(cabeca, noOrigem.id, 'origina de')
     }
   }
 
-  return { nodes: [...sistemas.values(), ...origens.values()], links }
+  return { nodes: [...sistemas.values(), ...fontesSecundarias.values(), ...origens.values()], links }
 }
 
 /** O frontmatter guarda domínios sem acento; o nó derivado exibe com. */

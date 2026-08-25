@@ -229,6 +229,27 @@
   color: #c8c8c8;
 }
 
+/* fontes secundárias (tabelas UCS): empilhadas na célula, acento teal da
+   fonte secundária no grafo (#178A94, clareado para o fundo escuro) */
+.table-view__cell--fsec {
+  min-width: 12rem;
+  white-space: nowrap;
+}
+
+.table-view__fsec {
+  display: block;
+  font-weight: 500;
+  color: #58b5be;
+}
+
+.table-view__fsec + .table-view__fsec {
+  margin-top: 0.15rem;
+}
+
+.table-view__name-link.table-view__fsec:hover {
+  color: #7fd4dc;
+}
+
 /* ---------- estados de valor (mesmo padrão do balão de detalhe) ---------- */
 
 .table-view__missing {

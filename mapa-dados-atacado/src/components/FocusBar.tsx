@@ -16,10 +16,13 @@ interface FocusBarProps {
   vista: Vista
   /** O nó focado é um dado com linhagem; esconde o switch quando não. */
   canNiveis: boolean
+  /** Faixas de nível (retângulos + títulos) visíveis na vista Níveis. */
+  bandsOn: boolean
   /** Clique num item do breadcrumb: volta o foco àquele nó (trunca o caminho). */
   onCrumbClick(index: number): void
   onDepthChange(depth: number): void
   onVistaChange(vista: Vista): void
+  onToggleBands(): void
   onExit(): void
 }
 
@@ -28,9 +31,11 @@ export default function FocusBar({
   depth,
   vista,
   canNiveis,
+  bandsOn,
   onCrumbClick,
   onDepthChange,
   onVistaChange,
+  onToggleBands,
   onExit,
 }: FocusBarProps) {
   const last = path.length - 1
@@ -80,6 +85,16 @@ export default function FocusBar({
             Força
           </button>
         </div>
+      )}
+
+      {vista === 'niveis' && (
+        <label
+          className="focus-bar__bands"
+          title="Mostrar as faixas de nível (retângulos e títulos) atrás do grafo"
+        >
+          <input type="checkbox" checked={bandsOn} onChange={onToggleBands} />
+          Mostrar níveis
+        </label>
       )}
 
       {vista === 'forca' && (

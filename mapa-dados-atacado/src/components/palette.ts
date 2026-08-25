@@ -16,6 +16,10 @@ export const COLOR_FANTASMA = '#5A5A5A'
 export const COLOR_SISTEMA = '#5C7A99'
 export const COLOR_SISTEMA_LEGADO = COLOR_LEGADO
 export const COLOR_ORIGEM = '#41566B'
+/** Fonte secundária (tabela UCS de ingestão): teal/petróleo — deliberadamente
+ *  fora da semântica de débito (vermelho/âmbar/verde) e distinto das cores de
+ *  domínio (o verde de Resultado #2E8B57 puxa para folha; este, para ciano). */
+export const COLOR_FONTE_SECUNDARIA = '#178A94'
 
 /* Placeholders da vista de linhagem (fonte/origem desconhecida). */
 export const PLACEHOLDER_FILL = 'rgba(90, 90, 90, 0.25)'
@@ -29,6 +33,7 @@ export function nodeColor(node: GraphNodeData): string {
   if (isRaiz(node)) return COLOR_RAIZ
   const kind = nodeKind(node)
   if (kind === 'dominio') return domainColor(node.nome)
+  if (kind === 'fonte-secundaria') return COLOR_FONTE_SECUNDARIA
   if (kind === 'sistema') return LEGADO_RE.test(node.nome) ? COLOR_SISTEMA_LEGADO : COLOR_SISTEMA
   if (kind === 'origem') return COLOR_ORIGEM
   if (node.fantasma) return COLOR_FANTASMA

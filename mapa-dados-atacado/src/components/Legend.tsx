@@ -5,6 +5,7 @@ import {
   COLOR_CURADO,
   COLOR_DEBITO,
   COLOR_FANTASMA,
+  COLOR_FONTE_SECUNDARIA,
   COLOR_LEGADO,
   COLOR_ORIGEM,
   COLOR_RAIZ,
@@ -21,6 +22,8 @@ interface LegendProps {
   hasRaiz: boolean
   /** Grafo já tem nós de domínio derivados: explica o quadrado arredondado. */
   hasDominios: boolean
+  /** Grafo já tem fontes secundárias (tabelas UCS) derivadas. */
+  hasFsec: boolean
 }
 
 function Dot({ color }: { color: string }) {
@@ -35,7 +38,13 @@ function Diamond({ color }: { color: string }) {
   return <span className="legend__diamond" style={{ background: color }} />
 }
 
-export default function Legend({ layersVisible, hasNiveis, hasRaiz, hasDominios }: LegendProps) {
+export default function Legend({
+  layersVisible,
+  hasNiveis,
+  hasRaiz,
+  hasDominios,
+  hasFsec,
+}: LegendProps) {
   return (
     <div className="legend" aria-label="Legenda do grafo">
       <ul>
@@ -84,6 +93,12 @@ export default function Legend({ layersVisible, hasNiveis, hasRaiz, hasDominios 
             <li>
               <Square color={COLOR_SISTEMA_LEGADO} /> sistema legado / planilha
             </li>
+            {hasFsec && (
+              <li>
+                <span className="legend__fsec" style={{ background: COLOR_FONTE_SECUNDARIA }} />{' '}
+                fonte secundária (UCS)
+              </li>
+            )}
             <li>
               <Diamond color={COLOR_ORIGEM} /> origem
             </li>

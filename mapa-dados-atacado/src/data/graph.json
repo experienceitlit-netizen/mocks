@@ -340,6 +340,20 @@
       "corpo": "Estimativa de faturamento informada pelo gerente de relacionamento (RM) diretamente na conta do cliente no Salesforce. É a visão declarada do porte do cliente, governada na plataforma, com a proveniência do dado ainda em definição. Convive com o porte observado de bureau como contraponto de mercado."
     },
     {
+      "id": "fsec-mercado-alvo-mensal-ucs",
+      "nome": "Mercado Alvo Mensal - UCS",
+      "tipo": "fonte-secundaria",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "fsec-mercado-alvo-semanal-ucs",
+      "nome": "Mercado Alvo Semanal - UCS",
+      "tipo": "fonte-secundaria",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
       "id": "gdad",
       "nome": "GDAD",
       "tipo": "insumo",
@@ -417,6 +431,10 @@
       "origem": "base comercial legada",
       "status": "producao",
       "incompleto": true,
+      "fontesSecundarias": [
+        "Mercado Alvo Semanal - UCS",
+        "Mercado Alvo Mensal - UCS"
+      ],
       "corpo": "Lista de clientes-alvo que delimita onde o Atacado atua e prioriza a prospecção comercial. Vive em um banco SQL legado on-premise, o que caracteriza o débito técnico: o dado é vivo, mas a rota precisa migrar para a plataforma corporativa."
     },
     {
@@ -1043,6 +1061,16 @@
       "label": "vem de"
     },
     {
+      "source": "fsec-mercado-alvo-mensal-ucs",
+      "target": "sys-banco-sql-legado-on-premise",
+      "label": "vem de"
+    },
+    {
+      "source": "fsec-mercado-alvo-semanal-ucs",
+      "target": "sys-banco-sql-legado-on-premise",
+      "label": "vem de"
+    },
+    {
       "source": "gdad",
       "target": "sys-databricks-dado-curado",
       "label": "vem de"
@@ -1079,7 +1107,12 @@
     },
     {
       "source": "mercado-alvo",
-      "target": "sys-banco-sql-legado-on-premise",
+      "target": "fsec-mercado-alvo-mensal-ucs",
+      "label": "vem de"
+    },
+    {
+      "source": "mercado-alvo",
+      "target": "fsec-mercado-alvo-semanal-ucs",
       "label": "vem de"
     },
     {

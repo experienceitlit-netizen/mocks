@@ -12,12 +12,12 @@ import {
   type VaultFile,
 } from './graph-lib.ts'
 
-const fm = (campos: Record<string, string | null>, corpo = ''): string => {
+const fm = (campos: Record<string, string | null | string[]>, corpo = ''): string => {
   const linhas = Object.entries(campos).map(([k, v]) => `${k}: ${v === null ? 'null' : JSON.stringify(v)}`)
   return `---\n${linhas.join('\n')}\n---\n${corpo}\n`
 }
 
-const completo = (extra: Record<string, string | null>, corpo = ''): string =>
+const completo = (extra: Record<string, string | null | string[]>, corpo = ''): string =>
   fm(
     {
       id: 'x',
@@ -335,6 +335,109 @@ describe('derivarSistemasOrigens', () => {
   })
 })
 
+describe('fontes secundárias (UCS)', () => {
+  it('parseVaultFile: lista vira fontesSecundarias; ausente = undefined', () => {
+    const parsed = parseVaultFile({
+      name: 'x.md',
+      raw: completo({ fontes_secundarias: ['Tabela A - UCS', ' Tabela B - UCS '] }),
+    })
+    expect(parsed.warnings).toEqual([])
+    expect(parsed.node.fontesSecundarias).toEqual(['Tabela A - UCS', 'Tabela B - UCS'])
+    expect(parseVaultFile({ name: 'x.md', raw: completo({}) }).node.fontesSecundarias).toBeUndefined()
+  })
+
+  it('parseVaultFile: valor que não é lista gera warning e é ignorado', () => {
+    const parsed = parseVaultFile({
+      name: 'x.md',
+      raw: completo({ fontes_secundarias: 'Tabela A - UCS' }),
+    })
+    expect(parsed.warnings.some((w) => w.includes('"fontes_secundarias"'))).toBe(true)
+    expect(parsed.node.fontesSecundarias).toBeUndefined()
+  })
+
+  it('substitui a aresta direta dado→sistema por dado→fsec→sistema (sistema→origem mantida)', () => {
+    const { graph, warnings } = buildGraph([
+      {
+        name: 'a.md',
+        raw: completo({
+          id: 'a',
+          nome: 'Alfa',
+          sistema: 'SQL Legado',
+          origem: 'comercial',
+          fontes_secundarias: ['Alfa Diário - UCS', 'Alfa Mensal - UCS'],
+        }),
+      },
+    ])
+    expect(warnings).toEqual([])
+    const fsecs = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'fonte-secundaria')
+    expect(fsecs).toEqual([
+      { id: 'fsec-alfa-diario-ucs', nome: 'Alfa Diário - UCS', tipo: 'fonte-secundaria', derivado: true, incompleto: false },
+      { id: 'fsec-alfa-mensal-ucs', nome: 'Alfa Mensal - UCS', tipo: 'fonte-secundaria', derivado: true, incompleto: false },
+    ])
+    expect(graph.links).toEqual([
+      { source: 'a', target: 'fsec-alfa-diario-ucs', label: 'vem de' },
+      { source: 'a', target: 'fsec-alfa-mensal-ucs', label: 'vem de' },
+      { source: 'fsec-alfa-diario-ucs', target: 'sys-sql-legado', label: 'vem de' },
+      { source: 'fsec-alfa-mensal-ucs', target: 'sys-sql-legado', label: 'vem de' },
+      { source: 'sys-sql-legado', target: 'org-comercial', label: 'origina de' },
+    ])
+  })
+
+  it('dedup global por nome normalizado entre dados diferentes', () => {
+    const { graph } = buildGraph([
+      { name: 'a.md', raw: completo({ id: 'a', nome: 'Alfa', sistema: 'S1', origem: 'o', fontes_secundarias: ['Base Comum - UCS'] }) },
+      { name: 'b.md', raw: completo({ id: 'b', nome: 'Beta', sistema: 'S2', origem: 'o', fontes_secundarias: ['  base comum - ucs '] }) },
+    ])
+    const fsecs = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'fonte-secundaria')
+    expect(fsecs).toEqual([
+      { id: 'fsec-base-comum-ucs', nome: 'Base Comum - UCS', tipo: 'fonte-secundaria', derivado: true, incompleto: false },
+    ])
+    // a fsec compartilhada ingere dos dois sistemas
+    expect(graph.links.filter((l) => l.source === 'fsec-base-comum-ucs').map((l) => l.target).sort()).toEqual([
+      'sys-s1',
+      'sys-s2',
+    ])
+  })
+
+  it('sistema desconhecido: fsec liga direto na origem ("origina de")', () => {
+    const { graph } = buildGraph([
+      {
+        name: 'a.md',
+        raw: completo({
+          id: 'a',
+          nome: 'Alfa',
+          sistema: 'a confirmar',
+          origem: 'Banco Central',
+          fontes_secundarias: ['Alfa - UCS'],
+        }),
+      },
+    ])
+    expect(graph.links).toEqual([
+      { source: 'a', target: 'fsec-alfa-ucs', label: 'vem de' },
+      { source: 'fsec-alfa-ucs', target: 'org-banco-central', label: 'origina de' },
+    ])
+  })
+
+  it('dado sem o campo segue intacto (ligação direta dado→sistema)', () => {
+    const { graph } = buildGraph([
+      { name: 'a.md', raw: completo({ id: 'a', nome: 'Alfa', sistema: 'S1', origem: 'o', fontes_secundarias: ['Alfa - UCS'] }) },
+      { name: 'b.md', raw: completo({ id: 'b', nome: 'Beta', sistema: 'S1', origem: 'o' }) },
+    ])
+    expect(graph.links.filter((l) => l.source === 'b')).toEqual([
+      { source: 'b', target: 'sys-s1', label: 'vem de' },
+    ])
+    expect(graph.links.filter((l) => l.source === 'a' && l.target === 'sys-s1')).toEqual([])
+  })
+
+  it('determinismo: mesma saída independentemente da ordem dos arquivos', () => {
+    const arquivos: VaultFile[] = [
+      { name: 'a.md', raw: completo({ id: 'a', nome: 'Alfa', sistema: 'S1', origem: 'o', fontes_secundarias: ['X - UCS', 'Y - UCS'] }) },
+      { name: 'b.md', raw: completo({ id: 'b', nome: 'Beta', sistema: 'S1', origem: 'o', fontes_secundarias: ['x - ucs'] }) },
+    ]
+    expect(buildGraph([...arquivos].reverse()).graph).toEqual(buildGraph(arquivos).graph)
+  })
+})
+
 describe('slugify', () => {
   it('gera kebab-case sem acentos', () => {
     expect(slugify('Capital Regulatório')).toBe('capital-regulatorio')
@@ -367,14 +470,35 @@ describe('vault real (catálogo em 4 níveis)', () => {
     ])
   })
 
-  it('73 nós e 81 arestas no total: 25 consome + 18 agrega + 19 vem de + 19 origina de', () => {
-    expect(graph.nodes).toHaveLength(73)
-    expect(graph.links).toHaveLength(81)
+  it('75 nós e 84 arestas no total: 25 consome + 18 agrega + 22 vem de + 19 origina de', () => {
+    expect(graph.nodes).toHaveLength(75)
+    expect(graph.links).toHaveLength(84)
     const porLabel = (label: string) => graph.links.filter((l) => l.label === label).length
     expect(porLabel('consome')).toBe(25)
     expect(porLabel('agrega')).toBe(18)
-    expect(porLabel('vem de')).toBe(19)
+    // 18 dado→sistema diretas + 2 dado→fsec + 2 fsec→sistema (mercado-alvo
+    // ingere via UCS: a direta dele foi substituída pelas fontes secundárias)
+    expect(porLabel('vem de')).toBe(22)
     expect(porLabel('origina de')).toBe(19)
+  })
+
+  it('mercado-alvo ingere via UCS: dado → 2 fsec → sistema, sem aresta direta', () => {
+    const fsecs = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'fonte-secundaria')
+    expect(fsecs.map((n) => n.id).sort()).toEqual([
+      'fsec-mercado-alvo-mensal-ucs',
+      'fsec-mercado-alvo-semanal-ucs',
+    ])
+    expect(graph.links.filter((l) => l.source === 'mercado-alvo' && l.label === 'vem de')).toEqual([
+      { source: 'mercado-alvo', target: 'fsec-mercado-alvo-mensal-ucs', label: 'vem de' },
+      { source: 'mercado-alvo', target: 'fsec-mercado-alvo-semanal-ucs', label: 'vem de' },
+    ])
+    for (const f of fsecs) {
+      expect(graph.links.filter((l) => l.source === f.id)).toEqual([
+        { source: f.id, target: 'sys-banco-sql-legado-on-premise', label: 'vem de' },
+      ])
+    }
+    // o débito do dado não muda com a ingestão: Mercado Alvo segue "sim"
+    expect(dados.find((n) => n.id === 'mercado-alvo')?.debito).toBe('sim')
   })
 
   it('raiz atacado-dados: incompleto false e "agrega" só para os 5 nós de domínio', () => {

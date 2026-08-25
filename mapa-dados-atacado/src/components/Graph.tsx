@@ -3,6 +3,7 @@ import ForceGraph2D from 'react-force-graph-2d'
 import type { Ref } from 'react'
 import type { GraphLinkData, GraphMethods, GraphNodeData, SimLink, SimNode } from './graph-types'
 import { isRaiz, linkEndId, nodeKind } from './graph-types'
+import type { LineageColumn } from './lineage'
 import { BACKGROUND, PLACEHOLDER_FILL, PLACEHOLDER_STROKE, nodeColor } from './palette'
 
 export interface GraphHandle {
@@ -25,6 +26,9 @@ interface GraphProps {
   /** Vista em níveis: todos os nós vêm com fx/fy — física desligada,
    *  arestas levemente curvas e enquadramento a cada troca de dados. */
   fixedLayout: boolean
+  /** Faixas das colunas da vista em níveis: um retângulo com cabeçalho por
+   *  nível, desenhado sob nós e arestas; null fora da vista em níveis. */
+  levelColumns: LineageColumn[] | null
   onNodeClick(id: string): void
   onNodeHover(id: string | null): void
   onBackgroundClick(): void
@@ -48,6 +52,19 @@ const HEX_SCALE = 1.1
  *  todas as suas arestas são "agrega"). */
 const DOMINIO_RADIUS = 10
 
+/** Faixas da vista em níveis (coordenadas de grafo — escalam com o zoom).
+ *  Largura menor que NIVEIS_COL_X (250) deixa um corredor entre faixas onde
+ *  as arestas cruzam e o chevron de fluxo aparece. */
+const BAND_W = 190
+/** Folga acima do primeiro nó: extensão do nó (~16) + respiro + cabeçalho. */
+const BAND_PAD_TOP = 46
+/** Folga abaixo do último nó: extensão + rótulo do nó (fonte 10 + margem). */
+const BAND_PAD_BOTTOM = 36
+const BAND_RADIUS = 12
+const BAND_FILL = 'rgba(255,255,255,0.03)'
+const BAND_STROKE = 'rgba(255,255,255,0.10)'
+const BAND_TITLE_COLOR = '#8A8A8A'
+
 export default function Graph({
   data,
   degreeById,
@@ -56,6 +73,7 @@ export default function Graph({
   selectedId,
   initialFocusId,
   fixedLayout,
+  levelColumns,
   onNodeClick,
   onNodeHover,
   onBackgroundClick,
@@ -144,6 +162,57 @@ export default function Graph({
     }
   }, [initialFocusId, focusNode, fitView])
 
+  // Faixas dos níveis, desenhadas sob arestas e nós (onRenderFramePre roda
+  // antes do grafo, já no espaço de coordenadas do grafo): um retângulo com
+  // cabeçalho por coluna e, entre faixas vizinhas, um chevron "‹" apontando
+  // o sentido do fluxo do dado (da Origem, à direita, para os produtos, à
+  // esquerda) — discreto de propósito: as arestas já têm setas, o chevron só
+  // reforça a leitura do conjunto.
+  const drawLevelBands = useCallback(
+    (ctx: CanvasRenderingContext2D, scale: number) => {
+      if (!levelColumns || levelColumns.length === 0) return
+      const tops = levelColumns.map((c) => c.yMin - BAND_PAD_TOP)
+      ctx.save()
+      levelColumns.forEach((col, i) => {
+        const top = tops[i]
+        const height = col.yMax + BAND_PAD_BOTTOM - top
+        ctx.beginPath()
+        ctx.roundRect(col.x - BAND_W / 2, top, BAND_W, height, BAND_RADIUS)
+        ctx.fillStyle = BAND_FILL
+        ctx.fill()
+        ctx.strokeStyle = BAND_STROKE
+        ctx.lineWidth = 1 / scale
+        ctx.stroke()
+
+        // Cabeçalho em caps espaçadas, tamanho fixo em unidades de grafo
+        // (acompanha o zoom junto com o resto da cena).
+        ctx.font = '600 11px system-ui, sans-serif'
+        ctx.letterSpacing = '1.5px'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'top'
+        ctx.fillStyle = BAND_TITLE_COLOR
+        ctx.fillText(col.label.toUpperCase(), col.x, top + 10)
+        ctx.letterSpacing = '0px'
+
+        // Chevron no corredor entre esta faixa e a anterior, no centro
+        // vertical comum (as colunas são centradas em y=0).
+        if (i === 0) return
+        const cx = (levelColumns[i - 1].x + col.x) / 2
+        ctx.beginPath()
+        ctx.moveTo(cx + 4, -6)
+        ctx.lineTo(cx - 4, 0)
+        ctx.lineTo(cx + 4, 6)
+        ctx.strokeStyle = 'rgba(255,255,255,0.22)'
+        ctx.lineWidth = 1.6
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.stroke()
+      })
+      ctx.restore()
+    },
+    [levelColumns],
+  )
+
   const drawNode = useCallback(
     (node: SimNode, ctx: CanvasRenderingContext2D, scale: number) => {
       const x = node.x ?? 0
@@ -176,6 +245,12 @@ export default function Graph({
         // Quadrado arredondado na cor do domínio (nível raiz → domínios).
         const s = r * 0.95
         ctx.roundRect(x - s, y - s, 2 * s, 2 * s, 3)
+      } else if (kind === 'fonte-secundaria') {
+        // Quadrado de cantos bem arredondados: meio-termo entre o quadrado
+        // do sistema e o círculo do dado (a tabela UCS fica entre os dois na
+        // cadeia), na cor teal própria da paleta.
+        const s = r * 0.9
+        ctx.roundRect(x - s, y - s, 2 * s, 2 * s, s * 0.55)
       } else if (kind === 'sistema') {
         // Quadrado com área ~equivalente ao círculo de raio r.
         const s = r * 0.9
@@ -300,6 +375,7 @@ export default function Graph({
       backgroundColor={BACKGROUND}
       cooldownTicks={fixedLayout ? 0 : 150}
       onEngineStop={handleEngineStop}
+      onRenderFramePre={fixedLayout ? drawLevelBands : undefined}
       linkCurvature={fixedLayout ? 0.18 : 0}
       autoPauseRedraw={false}
       nodeLabel={() => ''}

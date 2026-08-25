@@ -200,6 +200,21 @@
   color: #7fb4e8;
 }
 
+.focus-bar__bands {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: #b0b0b0;
+  white-space: nowrap;
+  user-select: none;
+  cursor: pointer;
+}
+
+.focus-bar__bands input[type='checkbox'] {
+  accent-color: #7fb4e8;
+}
+
 .focus-bar__depth {
   display: flex;
   align-items: center;
@@ -737,6 +752,15 @@
   border-radius: 1px;
   flex-shrink: 0;
   margin: 0 0.05rem;
+}
+
+/* Fonte secundária (tabela UCS): quadrado de cantos bem arredondados —
+   meio-termo entre o quadrado do sistema e o círculo do dado. */
+.legend__fsec {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 35%;
+  flex-shrink: 0;
 }
 
 /* Nó de domínio: quadrado arredondado; o gradiente resume as cores das áreas

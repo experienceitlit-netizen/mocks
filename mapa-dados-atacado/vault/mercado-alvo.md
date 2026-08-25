@@ -6,6 +6,7 @@ nivel: primario
 dominio: Mercado
 origem: "base comercial legada"
 sistema: "banco SQL legado (on-premise)"
+fontes_secundarias: ["Mercado Alvo Semanal - UCS", "Mercado Alvo Mensal - UCS"]
 descricao: "lista de clientes-alvo da atuação"
 centro_de_custo: null
 owner: null

@@ -93,7 +93,7 @@ function LineageSourceRow({
   onNavigate,
 }: {
   source: LineageSource
-  papel: 'fonte' | 'origem'
+  papel: 'fonte' | 'fonte secundária' | 'origem'
   onNavigate(id: string): void
 }) {
   return (
@@ -129,8 +129,19 @@ function LineageBranch({
           {entry.data.nome}
         </button>
       )}
-      {(entry.sistema || entry.origem || entry.insumos.length > 0) && (
+      {(entry.fontesSecundarias.length > 0 ||
+        entry.sistema ||
+        entry.origem ||
+        entry.insumos.length > 0) && (
         <ul className="lineage__children">
+          {entry.fontesSecundarias.map((f) => (
+            <LineageSourceRow
+              key={f.id}
+              source={{ node: f, placeholder: false }}
+              papel="fonte secundária"
+              onNavigate={onNavigate}
+            />
+          ))}
           {entry.sistema && (
             <LineageSourceRow source={entry.sistema} papel="fonte" onNavigate={onNavigate} />
           )}
@@ -229,6 +240,44 @@ function BalloonContent({
           showLabel={false}
         />
         {outgoing.length === 0 && <p className="ghost-note">Sem produtos mapeados.</p>}
+      </>
+    )
+  }
+
+  // Fonte secundária (tabela UCS): quem ela alimenta (dados com aresta
+  // "vem de" para cá) e de onde ingere (a fonte/sistema — ou a origem,
+  // quando a fonte ainda é desconhecida), ambos clicáveis.
+  if (kind === 'fonte-secundaria') {
+    return (
+      <>
+        <header className="node-balloon__header">
+          <h2>{node.nome}</h2>
+          <div className="chips">
+            <span className="chip chip--neutral">Fonte secundária</span>
+          </div>
+        </header>
+
+        {!isFocused && (
+          <button type="button" className="node-balloon__focus" onClick={() => onFocus(node.id)}>
+            ⌖ Focar neste nó
+          </button>
+        )}
+
+        <ConnectionList
+          title="Alimenta →"
+          items={incoming}
+          onNavigate={onNavigate}
+          showLabel={false}
+        />
+        <ConnectionList
+          title="Ingere de →"
+          items={outgoing}
+          onNavigate={onNavigate}
+          showLabel={false}
+        />
+        {incoming.length === 0 && outgoing.length === 0 && (
+          <p className="ghost-note">Sem conexões mapeadas.</p>
+        )}
       </>
     )
   }

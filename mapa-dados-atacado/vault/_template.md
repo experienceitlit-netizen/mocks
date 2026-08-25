@@ -6,6 +6,10 @@ nivel: primario             # raiz | primario | secundario | ambos (default: pri
 dominio: A definir          # Cadastro | Mercado | Risco | Resultado | Regulatorio | A definir
 origem: "área ou processo de origem"    # null em secundários = não se aplica (rota vem dos primários)
 sistema: "sistema/plataforma onde o dado vive"  # null em secundários = não se aplica
+# fontes_secundarias: ["Tabela X - UCS"]  # OPCIONAL: tabelas UCS onde a fonte é ingerida
+#   antes de virar produto. Quando presente, a rota vira dado → fonte secundária →
+#   sistema (a ligação direta dado→sistema é substituída); o débito da rota
+#   permanece no dado. Ausente = ligação direta, como sempre.
 descricao: "descrição curta de uma linha"
 centro_de_custo: null       # null = a definir (nó renderiza incompleto)
 owner: null                 # null = a definir (nó renderiza incompleto)

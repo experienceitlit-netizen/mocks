@@ -13,7 +13,7 @@ import Legend from './components/Legend'
 import TableView from './components/TableView'
 import type { Counts } from './components/Filters'
 import type { Debito, GraphJson, GraphNodeData, SimLink, SimNode } from './components/graph-types'
-import { isDerivado, isDominio, isRaiz, linkEndId } from './components/graph-types'
+import { isDerivado, isDominio, isRaiz, linkEndId, nodeKind } from './components/graph-types'
 import { buildLineage, buildLineageTree } from './components/lineage'
 import './App.css'
 
@@ -162,6 +162,12 @@ function App() {
   // Há nós de domínio derivados (nível raiz → domínio → produtos)?
   const hasDominios = useMemo(() => nodes.some((n) => isDominio(n)), [nodes])
 
+  // Há fontes secundárias (tabelas UCS) derivadas? Legenda condicional.
+  const hasFsec = useMemo(
+    () => nodes.some((n) => nodeKind(n) === 'fonte-secundaria'),
+    [nodes],
+  )
+
   const dominios = useMemo(
     () =>
       [
@@ -189,6 +195,8 @@ function App() {
   const [focusPath, setFocusPath] = useState<string[]>(readInitialFocusPath)
   const [depth, setDepth] = useState<number>(readUrlDepth)
   const [vista, setVista] = useState<Vista>(readUrlVista)
+  // Faixas de nível (retângulos + títulos + chevrons) da vista Níveis.
+  const [bandsOn, setBandsOn] = useState(true)
   const [layersOn, setLayersOn] = useState<boolean>(() => readInitialFocusPath().length > 0)
   // Estado da camada antes de entrar em foco, restaurado ao sair.
   const layersBeforeFocusRef = useRef(false)
@@ -236,10 +244,11 @@ function App() {
       }
       frontier = next
     }
-    // Fecho de linhagem: cada nó visível arrasta sua cadeia sys→org sem
-    // consumir profundidade (dado→sys, sys→org, dado→org).
+    // Fecho de linhagem: cada nó visível arrasta sua cadeia derivada sem
+    // consumir profundidade (dado→fsec→sys→org na cadeia mais longa —
+    // três saltos, três passadas).
     if (layersOn) {
-      for (let pass = 0; pass < 2; pass++) {
+      for (let pass = 0; pass < 3; pass++) {
         for (const l of links) {
           if (!reached.has(l.source) || reached.has(l.target)) continue
           const alvo = nodesById.get(l.target)
@@ -496,22 +505,25 @@ function App() {
     return { outgoing: out, incoming: inc }
   }, [selectedId, links, nodesById])
 
-  // Painel simplificado de sistema/origem: dados ligados direto e, para uma
-  // origem, também os dados dos sistemas que apontam para ela.
+  // Painel simplificado de sistema/origem: dados ligados direto e os que
+  // chegam através de outros derivados (fsec → sistema → origem), subindo
+  // recursivamente as arestas de entrada.
   const derivadoDados = useMemo<GraphNodeData[]>(() => {
     if (!selectedNode || !isDerivado(selectedNode)) return []
     const ids = new Set<string>()
-    for (const l of links) {
-      if (l.target !== selectedNode.id) continue
-      const n = nodesById.get(l.source)
-      if (!n) continue
-      if (!isDerivado(n)) {
-        ids.add(n.id)
-      } else {
-        for (const l2 of links) {
-          if (l2.target !== n.id) continue
-          const m = nodesById.get(l2.source)
-          if (m && !isDerivado(m)) ids.add(m.id)
+    const fila = [selectedNode.id]
+    const visitados = new Set(fila)
+    while (fila.length > 0) {
+      const atual = fila.pop()
+      for (const l of links) {
+        if (l.target !== atual) continue
+        const n = nodesById.get(l.source)
+        if (!n) continue
+        if (!isDerivado(n)) {
+          ids.add(n.id)
+        } else if (!visitados.has(n.id)) {
+          visitados.add(n.id)
+          fila.push(n.id)
         }
       }
     }
@@ -555,6 +567,7 @@ function App() {
         selectedId={selectedId}
         initialFocusId={initialFocusId}
         fixedLayout={lineage !== null}
+        levelColumns={lineage && bandsOn ? lineage.columns : null}
         onNodeClick={handleNodeClick}
         onNodeHover={setHoverId}
         onBackgroundClick={() => setSelectedId(null)}
@@ -606,9 +619,11 @@ function App() {
           depth={depth}
           vista={lineage ? 'niveis' : 'forca'}
           canNiveis={canNiveis}
+          bandsOn={bandsOn}
           onCrumbClick={(i) => setFocusPath((path) => path.slice(0, i + 1))}
           onDepthChange={setDepth}
           onVistaChange={setVista}
+          onToggleBands={() => setBandsOn((v) => !v)}
           onExit={exitFocus}
         />
       )}
@@ -645,6 +660,7 @@ function App() {
           hasNiveis={hasNiveis}
           hasRaiz={RAIZ_ID !== null}
           hasDominios={hasDominios}
+          hasFsec={hasFsec}
         />
       )}
 
