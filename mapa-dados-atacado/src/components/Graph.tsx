@@ -2,7 +2,7 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'r
 import ForceGraph2D from 'react-force-graph-2d'
 import type { Ref } from 'react'
 import type { GraphLinkData, GraphMethods, GraphNodeData, SimLink, SimNode } from './graph-types'
-import { linkEndId } from './graph-types'
+import { linkEndId, nodeKind } from './graph-types'
 import { BACKGROUND, nodeColor } from './palette'
 
 export interface GraphHandle {
@@ -27,6 +27,8 @@ interface GraphProps {
 
 const DIM_ALPHA = 0.15
 const FOCUS_ZOOM = 2.5
+/** Teto de zoom após zoomToFit: subgrafos pequenos não viram close extremo. */
+const MAX_FIT_ZOOM = 4
 
 function radiusOf(degree: number): number {
   return 4 + Math.sqrt(degree) * 2.2
@@ -46,7 +48,28 @@ export default function Graph({
 }: GraphProps) {
   const fgRef = useRef<GraphMethods | undefined>(undefined)
   const settledRef = useRef(false)
+  const pendingFitRef = useRef(false)
+  const dataRef = useRef(data)
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight })
+
+  const fitView = useCallback((ms: number) => {
+    const fg = fgRef.current
+    if (!fg) return
+    fg.zoomToFit(ms, 80)
+    window.setTimeout(() => {
+      if (fg.zoom() > MAX_FIT_ZOOM) fg.zoom(MAX_FIT_ZOOM, 200)
+    }, ms + 50)
+  }, [])
+
+  // Mudou o conjunto visível (camadas/foco): re-simulação curta + zoomToFit.
+  useEffect(() => {
+    if (dataRef.current === data) return
+    dataRef.current = data
+    if (!settledRef.current) return
+    pendingFitRef.current = true
+    const t = window.setTimeout(() => fitView(500), 350)
+    return () => window.clearTimeout(t)
+  }, [data, fitView])
 
   useEffect(() => {
     const onResize = () => setSize({ w: window.innerWidth, h: window.innerHeight })
@@ -68,11 +91,17 @@ export default function Graph({
   useImperativeHandle(ref, () => ({ focusNode }), [focusNode])
 
   const handleEngineStop = useCallback(() => {
-    if (settledRef.current) return
-    settledRef.current = true
-    if (initialFocusId) focusNode(initialFocusId)
-    else fgRef.current?.zoomToFit(500, 80)
-  }, [initialFocusId, focusNode])
+    if (!settledRef.current) {
+      settledRef.current = true
+      if (initialFocusId) focusNode(initialFocusId)
+      else fgRef.current?.zoomToFit(500, 80)
+      return
+    }
+    if (pendingFitRef.current) {
+      pendingFitRef.current = false
+      fitView(400)
+    }
+  }, [initialFocusId, focusNode, fitView])
 
   const drawNode = useCallback(
     (node: SimNode, ctx: CanvasRenderingContext2D, scale: number) => {
@@ -80,11 +109,30 @@ export default function Graph({
       const y = node.y ?? 0
       const r = radiusOf(degreeById.get(node.id) ?? 0)
       const dimmed = dimmedIds.has(node.id)
+      const kind = nodeKind(node)
       ctx.globalAlpha = dimmed ? DIM_ALPHA : 1
 
       ctx.beginPath()
-      ctx.arc(x, y, r, 0, 2 * Math.PI)
-      if (node.fantasma) {
+      if (kind === 'sistema') {
+        // Quadrado com área ~equivalente ao círculo de raio r.
+        const s = r * 0.9
+        ctx.rect(x - s, y - s, 2 * s, 2 * s)
+      } else if (kind === 'origem') {
+        // Losango (quadrado rotacionado 45°).
+        const s = r * 1.15
+        ctx.moveTo(x, y - s)
+        ctx.lineTo(x + s, y)
+        ctx.lineTo(x, y + s)
+        ctx.lineTo(x - s, y)
+        ctx.closePath()
+      } else {
+        ctx.arc(x, y, r, 0, 2 * Math.PI)
+      }
+      if (kind !== 'dado') {
+        // Derivados: preenchimento sólido, nunca borda de incompletude.
+        ctx.fillStyle = nodeColor(node)
+        ctx.fill()
+      } else if (node.fantasma) {
         // Fantasma: sem preenchimento sólido, contorno cinza tracejado.
         ctx.fillStyle = 'rgba(90, 90, 90, 0.25)'
         ctx.fill()

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { GraphNodeData } from './graph-types'
+import { isDerivado, nodeKind } from './graph-types'
 import { DEBITO_LABEL, domainColor } from './palette'
 import Markdown from './Markdown'
 
@@ -14,8 +15,14 @@ interface DetailPanelProps {
   outgoing: Connection[]
   /** Arestas de entrada (quem consome este nó). */
   incoming: Connection[]
+  /** Dados ligados a um nó derivado (sistema/origem); vazio para dados. */
+  derivadoDados: GraphNodeData[]
+  /** O nó já é o centro do modo foco (esconde o botão Focar). */
+  isFocused: boolean
   resolveWikiLink(target: string): string | null
   onNavigate(id: string): void
+  /** Entra em modo foco neste nó (ou re-foca, se já em foco). */
+  onFocus(id: string): void
   onClose(): void
 }
 
@@ -66,11 +73,57 @@ export default function DetailPanel({
   node,
   outgoing,
   incoming,
+  derivadoDados,
+  isFocused,
   resolveWikiLink,
   onNavigate,
+  onFocus,
   onClose,
 }: DetailPanelProps) {
   const debito = node.debito ?? 'avaliar'
+  const kind = nodeKind(node)
+
+  // Painel simplificado para sistema/origem: nome, tipo e dados ligados.
+  if (isDerivado(node)) {
+    return (
+      <aside className="detail-panel" role="dialog" aria-label={`Detalhes de ${node.nome}`}>
+        <button type="button" className="detail-panel__close" onClick={onClose} aria-label="Fechar">
+          ×
+        </button>
+
+        <header className="detail-panel__header">
+          <h2>{node.nome}</h2>
+          <div className="chips">
+            <span className="chip chip--neutral">{kind}</span>
+          </div>
+        </header>
+
+        {!isFocused && (
+          <button type="button" className="detail-panel__focus" onClick={() => onFocus(node.id)}>
+            ⌖ Focar neste nó
+          </button>
+        )}
+
+        <section className="connections">
+          <h3>{kind === 'sistema' ? 'Dados neste sistema' : 'Dados desta origem'}</h3>
+          {derivadoDados.length > 0 ? (
+            <ul>
+              {derivadoDados.map((dado) => (
+                <li key={dado.id}>
+                  <button type="button" className="wikilink" onClick={() => onNavigate(dado.id)}>
+                    {dado.nome}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="ghost-note">Nenhum dado mapeado.</p>
+          )}
+        </section>
+      </aside>
+    )
+  }
+
   return (
     <aside className="detail-panel" role="dialog" aria-label={`Detalhes de ${node.nome}`}>
       <button type="button" className="detail-panel__close" onClick={onClose} aria-label="Fechar">
@@ -91,6 +144,12 @@ export default function DetailPanel({
           )}
         </div>
       </header>
+
+      {!isFocused && (
+        <button type="button" className="detail-panel__focus" onClick={() => onFocus(node.id)}>
+          ⌖ Focar neste nó
+        </button>
+      )}
 
       {node.fantasma ? (
         <p className="ghost-note">

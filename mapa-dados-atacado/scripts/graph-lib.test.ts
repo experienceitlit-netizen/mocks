@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { buildGraph, extractWikilinks, parseVaultFile, slugify, type VaultFile } from './graph-lib.ts'
+import {
+  buildGraph,
+  derivarSistemasOrigens,
+  extractWikilinks,
+  parseVaultFile,
+  slugify,
+  type VaultFile,
+} from './graph-lib.ts'
 
 const fm = (campos: Record<string, string | null>, corpo = ''): string => {
   const linhas = Object.entries(campos).map(([k, v]) => `${k}: ${v === null ? 'null' : JSON.stringify(v)}`)
@@ -91,7 +98,9 @@ describe('buildGraph', () => {
   it('resolve link por nome (case-insensitive) e gera aresta', () => {
     const { graph, warnings } = buildGraph(arquivos)
     expect(warnings).toEqual([])
-    expect(graph.links).toEqual([{ source: 'a', target: 'b', label: 'consome' }])
+    expect(graph.links.filter((l) => l.label === 'consome')).toEqual([
+      { source: 'a', target: 'b', label: 'consome' },
+    ])
   })
 
   it('link quebrado gera warning e nó fantasma', () => {
@@ -101,7 +110,9 @@ describe('buildGraph', () => {
     expect(warnings.some((w) => w.includes('link quebrado') && w.includes('[[Não Existe]]'))).toBe(true)
     const fantasma = graph.nodes.find((n) => n.fantasma === true)
     expect(fantasma).toMatchObject({ id: 'nao-existe', nome: 'Não Existe', incompleto: true })
-    expect(graph.links).toEqual([{ source: 'a', target: 'nao-existe', label: 'consome' }])
+    expect(graph.links.filter((l) => l.label === 'consome')).toEqual([
+      { source: 'a', target: 'nao-existe', label: 'consome' },
+    ])
   })
 
   it('id duplicado gera warning e mantém só o primeiro arquivo', () => {
@@ -110,12 +121,83 @@ describe('buildGraph', () => {
       { name: 'c.md', raw: completo({ id: 'a', nome: 'Alfa 2' }) },
     ])
     expect(warnings.some((w) => w.includes('id duplicado'))).toBe(true)
-    expect(graph.nodes).toHaveLength(2)
+    expect(graph.nodes.filter((n) => n.derivado !== true)).toHaveLength(2)
   })
 
   it('saída é determinística independentemente da ordem dos arquivos', () => {
     const invertido = [...arquivos].reverse()
     expect(buildGraph(invertido).graph).toEqual(buildGraph(arquivos).graph)
+  })
+})
+
+describe('derivarSistemasOrigens', () => {
+  it('sistema compartilhado vira UM nó, com aresta sistema→origem deduplicada', () => {
+    const { graph } = buildGraph([
+      { name: 'a.md', raw: completo({ id: 'a', nome: 'Alfa', sistema: 'Databricks', origem: 'área de risco' }) },
+      { name: 'b.md', raw: completo({ id: 'b', nome: 'Beta', sistema: '  databricks ', origem: 'área de risco' }) },
+    ])
+    const sistemas = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'sistema')
+    expect(sistemas).toEqual([
+      { id: 'sys-databricks', nome: 'Databricks', tipo: 'sistema', derivado: true, incompleto: false },
+    ])
+    expect(graph.links).toEqual([
+      { source: 'a', target: 'sys-databricks', label: 'vem de' },
+      { source: 'b', target: 'sys-databricks', label: 'vem de' },
+      { source: 'sys-databricks', target: 'org-area-de-risco', label: 'origina de' },
+    ])
+  })
+
+  it('valores desconhecidos ("a confirmar" etc., case-insensitive) não viram nó nem aresta', () => {
+    const { graph } = buildGraph([
+      { name: 'a.md', raw: completo({ id: 'a', nome: 'Alfa', sistema: 'A Confirmar', origem: 'a detalhar' }) },
+      { name: 'b.md', raw: completo({ id: 'b', nome: 'Beta', sistema: 'a identificar', origem: '' }) },
+    ])
+    expect(graph.nodes.filter((n) => n.derivado === true)).toEqual([])
+    expect(graph.links).toEqual([])
+  })
+
+  it('sistema desconhecido com origem conhecida liga dado → origem direto', () => {
+    const { graph } = buildGraph([
+      { name: 'a.md', raw: completo({ id: 'a', nome: 'Alfa', sistema: 'a confirmar', origem: 'Banco Central' }) },
+    ])
+    expect(graph.nodes.filter((n) => n.derivado === true)).toEqual([
+      { id: 'org-banco-central', nome: 'Banco Central', tipo: 'origem', derivado: true, incompleto: false },
+    ])
+    expect(graph.links).toEqual([{ source: 'a', target: 'org-banco-central', label: 'origina de' }])
+  })
+
+  it('os nós de dados continuam idênticos e os derivados entram na ordenação por id', () => {
+    const arquivos: VaultFile[] = [
+      { name: 'a.md', raw: completo({ id: 'a', nome: 'Alfa', sistema: 'Zeta', origem: 'Ypsilon' }) },
+      { name: 'b.md', raw: completo({ id: 'b', nome: 'Beta', sistema: 'Zeta', origem: 'Ômega' }) },
+    ]
+    const { graph } = buildGraph(arquivos)
+    expect(graph.nodes.map((n) => n.id)).toEqual(['a', 'b', 'org-omega', 'org-ypsilon', 'sys-zeta'])
+    expect(graph.nodes.filter((n) => n.derivado !== true)).toEqual(
+      buildGraph(arquivos.map((a) => ({ ...a }))).graph.nodes.filter((n) => n.derivado !== true),
+    )
+  })
+
+  it('determinismo: mesma saída independentemente da ordem dos arquivos', () => {
+    const arquivos: VaultFile[] = [
+      { name: 'a.md', raw: completo({ id: 'a', nome: 'Alfa', sistema: 'Databricks', origem: 'risco' }) },
+      { name: 'b.md', raw: completo({ id: 'b', nome: 'Beta', sistema: 'databricks', origem: 'a identificar' }) },
+      { name: 'c.md', raw: completo({ id: 'c', nome: 'Gama', sistema: 'a confirmar', origem: 'risco' }) },
+    ]
+    expect(buildGraph([...arquivos].reverse()).graph).toEqual(buildGraph(arquivos).graph)
+  })
+
+  it('função pura: aceita nós de dados e devolve derivados + arestas', () => {
+    const { node } = parseVaultFile({
+      name: 'a.md',
+      raw: completo({ id: 'a', nome: 'Alfa', sistema: 'SF', origem: 'RM' }),
+    })
+    const derivados = derivarSistemasOrigens([node])
+    expect(derivados.nodes.map((n) => n.id)).toEqual(['sys-sf', 'org-rm'])
+    expect(derivados.links).toEqual([
+      { source: 'a', target: 'sys-sf', label: 'vem de' },
+      { source: 'sys-sf', target: 'org-rm', label: 'origina de' },
+    ])
   })
 })
 

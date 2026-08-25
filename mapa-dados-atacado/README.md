@@ -101,18 +101,28 @@ src/
   components/
     Graph.tsx               # canvas do grafo (react-force-graph-2d)
     DetailPanel.tsx         # drawer de detalhe do nó selecionado
-    Filters.tsx             # domínio, débito, "somente sem owner", contadores
+    Filters.tsx             # domínio, débito, "somente sem owner", camada de linhagem, contadores
+    FocusBar.tsx            # barra do modo foco: breadcrumb, profundidade, sair
     SearchBox.tsx           # busca por nome/descrição
     Legend.tsx              # legenda fixa de cores/bordas
     Markdown.tsx            # renderizador mínimo do corpo dos .md
     palette.ts              # fonte única das cores
     graph-types.ts          # tipos do schema + wrapper tipado da lib de grafo
-  App.tsx                   # estado da UI (seleção, hover, filtros, URL ?no=)
+  App.tsx                   # estado da UI (seleção, hover, filtros, foco, URL ?no= e ?foco=)
 FUTURO.md                   # itens fora do MVP (Fase 6)
 ```
 
-## Dicas de uso
+## Navegação
 
-- Clique num nó abre o painel de detalhe; `Esc` ou clique fora fecha.
-- A URL reflete a seleção (`?no=rar-12m`) — dá para compartilhar link direto de um dado.
+- **Clique** num nó abre o painel de detalhe; `Esc` ou clique fora fecha.
+- **Duplo clique** num nó (ou o botão **"⌖ Focar neste nó"** do painel) entra no **modo
+  foco**: só o nó e sua vizinhança ficam visíveis, com slider de **profundidade** (1–3),
+  **breadcrumb** do caminho navegado e botão "Ver mapa completo" para sair (`Esc` sai em
+  dois estágios: primeiro fecha o painel, depois o foco).
+- O toggle **"Fontes e origens"** liga a camada de linhagem: além dos dados (**círculos**),
+  aparecem os **sistemas** (quadrados) e as **origens** (losangos) derivados do
+  frontmatter. Fica desligado no mapa global e liga automaticamente ao entrar em foco.
+  Contadores e filtros de governança continuam contando só os dados.
+- A URL reflete o estado e pode ser compartilhada: `?no=rar-12m` seleciona um nó,
+  `?foco=rar-12m&prof=2` abre direto o modo foco com a profundidade escolhida.
 - O toggle **"somente sem owner"** nos filtros acende os nós sem responsável definido.

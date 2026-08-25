@@ -15,9 +15,22 @@ export interface GraphNode {
   status: string
   incompleto: boolean
   fantasma?: boolean
+  derivado?: undefined
   /** Corpo markdown do arquivo (sem o frontmatter); ausente se vazio. */
   corpo?: string
 }
+
+/** Nó materializado a partir de `sistema`/`origem` do frontmatter dos dados. */
+export interface DerivedNode {
+  id: string
+  nome: string
+  tipo: 'sistema' | 'origem'
+  derivado: true
+  incompleto: false
+  fantasma?: undefined
+}
+
+export type AnyNode = GraphNode | DerivedNode
 
 export interface GraphLink {
   source: string
@@ -26,7 +39,7 @@ export interface GraphLink {
 }
 
 export interface Graph {
-  nodes: GraphNode[]
+  nodes: AnyNode[]
   links: GraphLink[]
 }
 
@@ -140,6 +153,69 @@ export function parseVaultFile(file: VaultFile): ParsedFile {
   return { node, links: extractWikilinks(content), warnings }
 }
 
+/** Valores de sistema/origem que significam "ainda não sabemos" — não viram nó. */
+const VALORES_DESCONHECIDOS = new Set(['', 'a confirmar', 'a identificar', 'a detalhar'])
+
+function valorConhecido(valor: string | null | undefined): string | null {
+  if (valor === null || valor === undefined) return null
+  const texto = valor.trim()
+  return VALORES_DESCONHECIDOS.has(texto.toLowerCase()) ? null : texto
+}
+
+/**
+ * Materializa `sistema` e `origem` dos dados como nós derivados, criando a
+ * linhagem dado → sistema → origem:
+ * - dedup por chave normalizada (trim + lowercase) do texto original;
+ * - valores desconhecidos ("a confirmar" etc.) não geram nó nem aresta;
+ * - sistema desconhecido com origem conhecida liga dado → origem direto.
+ */
+export function derivarSistemasOrigens(dados: GraphNode[]): { nodes: DerivedNode[]; links: GraphLink[] } {
+  const sistemas = new Map<string, DerivedNode>()
+  const origens = new Map<string, DerivedNode>()
+  const links: GraphLink[] = []
+  const arestasVistas = new Set<string>()
+
+  const noDerivado = (
+    mapa: Map<string, DerivedNode>,
+    prefixo: 'sys' | 'org',
+    tipo: 'sistema' | 'origem',
+    texto: string,
+  ): DerivedNode => {
+    const chave = texto.toLowerCase()
+    let no = mapa.get(chave)
+    if (no === undefined) {
+      no = { id: `${prefixo}-${slugify(texto)}`, nome: texto, tipo, derivado: true, incompleto: false }
+      mapa.set(chave, no)
+    }
+    return no
+  }
+
+  const addLink = (source: string, target: string, label: string): void => {
+    const chave = `${source}\u0000${target}\u0000${label}`
+    if (arestasVistas.has(chave)) return
+    arestasVistas.add(chave)
+    links.push({ source, target, label })
+  }
+
+  for (const dado of dados) {
+    const sistema = valorConhecido(dado.sistema)
+    const origem = valorConhecido(dado.origem)
+    if (sistema !== null) {
+      const noSistema = noDerivado(sistemas, 'sys', 'sistema', sistema)
+      addLink(dado.id, noSistema.id, 'vem de')
+      if (origem !== null) {
+        const noOrigem = noDerivado(origens, 'org', 'origem', origem)
+        addLink(noSistema.id, noOrigem.id, 'origina de')
+      }
+    } else if (origem !== null) {
+      const noOrigem = noDerivado(origens, 'org', 'origem', origem)
+      addLink(dado.id, noOrigem.id, 'origina de')
+    }
+  }
+
+  return { nodes: [...sistemas.values(), ...origens.values()], links }
+}
+
 function nodeFantasma(nomeAlvo: string): GraphNode {
   return {
     id: slugify(nomeAlvo) || nomeAlvo.toLowerCase(),
@@ -209,15 +285,18 @@ export function buildGraph(files: VaultFile[]): BuildResult {
     }
   }
 
-  nodes.push(...fantasmas.values())
-  nodes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  const derivados = derivarSistemasOrigens(nodes)
+  const todosNodes: AnyNode[] = [...nodes, ...fantasmas.values(), ...derivados.nodes]
+  links.push(...derivados.links)
+
+  todosNodes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   links.sort((a, b) => {
     const ka = `${a.source}\u0000${a.target}\u0000${a.label}`
     const kb = `${b.source}\u0000${b.target}\u0000${b.label}`
     return ka < kb ? -1 : ka > kb ? 1 : 0
   })
 
-  return { graph: { nodes, links }, warnings }
+  return { graph: { nodes: todosNodes, links }, warnings }
 }
 
 export { CAMPOS_OBRIGATORIOS }

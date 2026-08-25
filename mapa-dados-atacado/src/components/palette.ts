@@ -1,6 +1,7 @@
 // Paleta central (seção 2 do plano). Graph, DetailPanel e a futura legenda
 // (Fase 5) devem importar daqui para não divergirem.
 import type { Debito, GraphNodeData } from './graph-types'
+import { nodeKind } from './graph-types'
 
 export const BACKGROUND = '#1E1E1E'
 export const COLOR_DEBITO = '#CC092F'
@@ -9,8 +10,19 @@ export const COLOR_LEGADO = '#B8860B'
 export const COLOR_CURADO = '#3A7D44'
 export const COLOR_FANTASMA = '#5A5A5A'
 
-/** Cor do nó por precedência: débito sim > avaliar > sistema legado > curado. */
+/* Camada de linhagem (nós derivados pelo build). */
+export const COLOR_SISTEMA = '#5C7A99'
+export const COLOR_SISTEMA_LEGADO = COLOR_LEGADO
+export const COLOR_ORIGEM = '#41566B'
+
+const LEGADO_RE = /legado|on-premise|planilha|excel/i
+
+/** Cor do nó por precedência: débito sim > avaliar > sistema legado > curado.
+ *  Nós derivados (sistema/origem) têm paleta própria da camada de linhagem. */
 export function nodeColor(node: GraphNodeData): string {
+  const kind = nodeKind(node)
+  if (kind === 'sistema') return LEGADO_RE.test(node.nome) ? COLOR_SISTEMA_LEGADO : COLOR_SISTEMA
+  if (kind === 'origem') return COLOR_ORIGEM
   if (node.fantasma) return COLOR_FANTASMA
   if (node.debito === 'sim') return COLOR_DEBITO
   if (node.debito === 'avaliar') return COLOR_AVALIAR

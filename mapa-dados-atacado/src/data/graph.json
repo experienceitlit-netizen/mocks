@@ -226,6 +226,132 @@
       "corpo": "Lista de clientes-alvo que delimita onde o Atacado atua e prioriza a prospecção comercial. Vive em um banco SQL legado on-premise, o que caracteriza o débito técnico: o dado é vivo, mas a plataforma precisa ser modernizada.\n\nO recorte de atuação usa o setor eleito e a praça de cobrança do cliente para definir quem entra na lista, portanto consome [[Setorização]] e [[Localização]] como critérios de elegibilidade."
     },
     {
+      "id": "org-anbima-mercado",
+      "nome": "ANBIMA / mercado",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-area-de-risco",
+      "nome": "área de risco",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-atacado-ajustes",
+      "nome": "Atacado — ajustes",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-atacado-analistas",
+      "nome": "Atacado — analistas",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-atacado-calculo",
+      "nome": "Atacado — cálculo",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-atacado-classificacao",
+      "nome": "Atacado — classificação",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-bacen",
+      "nome": "BACEN",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-banco-central",
+      "nome": "Banco Central",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-base-comercial-legada",
+      "nome": "base comercial legada",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-cadastro-corporativo",
+      "nome": "cadastro corporativo",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-capital-risco",
+      "nome": "capital / risco",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-credito-provisorio",
+      "nome": "crédito (provisório)",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-def-e-cambio",
+      "nome": "DEF e Câmbio",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-fornecedores-externos",
+      "nome": "fornecedores externos",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-gdp-departamento",
+      "nome": "GDP (departamento)",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-receita-federal",
+      "nome": "Receita Federal",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-resultado-gerencial",
+      "nome": "resultado gerencial",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "org-rm-relacionamento",
+      "nome": "RM (relacionamento)",
+      "tipo": "origem",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
       "id": "pcam-57",
       "nome": "PCAM-57",
       "tipo": "insumo",
@@ -359,13 +485,151 @@
       "status": "producao",
       "incompleto": true,
       "corpo": "Setor eleito de cada grupo econômico: entre os CNAEs do grupo, elege-se o melhor sob a ótica de risco. É um produto derivado do Atacado e um ativo de dados legítimo — o débito técnico está na rota, não no dado: hoje o de-para é mantido em planilha Excel, quando deveria ser um processo governado.\n\nA classificação parte da identificação oficial do CNPJ e dos grupos em [[PSDC]] e usa como apoio os CNAEs e a situação cadastral de [[RFB]], além de [[Bacen]] e [[GDP]]."
+    },
+    {
+      "id": "sys-banco-de-dados-do-credito",
+      "nome": "banco de dados do crédito",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "sys-banco-sql-legado-on-premise",
+      "nome": "banco SQL legado (on-premise)",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "sys-base-sql-on-premise",
+      "nome": "base SQL on-premise",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "sys-bureaus-agencias-integracao-em-avaliacao",
+      "nome": "bureaus / agências (integração em avaliação)",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "sys-databricks-dado-curado",
+      "nome": "Databricks (dado curado)",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "sys-databricks-produto-de-dados",
+      "nome": "Databricks (produto de dados)",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "sys-engine-propria-databricks",
+      "nome": "engine própria → Databricks",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "sys-planilha-excel-de-para",
+      "nome": "planilha Excel (de-para)",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "sys-planilha-excel-exploratorio",
+      "nome": "planilha Excel (exploratório)",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "sys-planilha-processo-manual",
+      "nome": "planilha / processo manual",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "sys-salesforce-account",
+      "nome": "Salesforce (Account)",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "sys-tabela-departamental",
+      "nome": "tabela departamental",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "sys-transferencia-corporativa-de-arquivos",
+      "nome": "transferência corporativa de arquivos",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
+    },
+    {
+      "id": "sys-webscraping-debentures-com-br",
+      "nome": "webscraping (debentures.com.br)",
+      "tipo": "sistema",
+      "derivado": true,
+      "incompleto": false
     }
   ],
   "links": [
     {
+      "source": "bacen",
+      "target": "org-banco-central",
+      "label": "origina de"
+    },
+    {
+      "source": "bacen-3040-45-46",
+      "target": "sys-transferencia-corporativa-de-arquivos",
+      "label": "vem de"
+    },
+    {
+      "source": "capital-regulatorio",
+      "target": "org-capital-risco",
+      "label": "origina de"
+    },
+    {
+      "source": "custo-de-capital-ke",
+      "target": "sys-banco-de-dados-do-credito",
+      "label": "vem de"
+    },
+    {
       "source": "de-para-produtos-evol",
       "target": "evolucao-evol",
       "label": "consome"
+    },
+    {
+      "source": "de-para-produtos-evol",
+      "target": "sys-planilha-excel-exploratorio",
+      "label": "vem de"
+    },
+    {
+      "source": "debentures",
+      "target": "sys-webscraping-debentures-com-br",
+      "label": "vem de"
+    },
+    {
+      "source": "def-cambio",
+      "target": "sys-base-sql-on-premise",
+      "label": "vem de"
+    },
+    {
+      "source": "estatag",
+      "target": "sys-databricks-produto-de-dados",
+      "label": "vem de"
     },
     {
       "source": "evolucao-evol",
@@ -376,6 +640,26 @@
       "source": "evolucao-evol",
       "target": "gorc",
       "label": "consome"
+    },
+    {
+      "source": "evolucao-evol",
+      "target": "sys-planilha-processo-manual",
+      "label": "vem de"
+    },
+    {
+      "source": "faturamento-declarado",
+      "target": "sys-salesforce-account",
+      "label": "vem de"
+    },
+    {
+      "source": "gdad",
+      "target": "sys-databricks-dado-curado",
+      "label": "vem de"
+    },
+    {
+      "source": "gdp",
+      "target": "org-gdp-departamento",
+      "label": "origina de"
     },
     {
       "source": "localizacao",
@@ -398,6 +682,11 @@
       "label": "consome"
     },
     {
+      "source": "localizacao",
+      "target": "sys-planilha-excel-de-para",
+      "label": "vem de"
+    },
+    {
       "source": "mercado-alvo",
       "target": "localizacao",
       "label": "consome"
@@ -406,6 +695,26 @@
       "source": "mercado-alvo",
       "target": "setorizacao",
       "label": "consome"
+    },
+    {
+      "source": "mercado-alvo",
+      "target": "sys-banco-sql-legado-on-premise",
+      "label": "vem de"
+    },
+    {
+      "source": "pcam-57",
+      "target": "sys-tabela-departamental",
+      "label": "vem de"
+    },
+    {
+      "source": "porte-observado-bureau",
+      "target": "sys-bureaus-agencias-integracao-em-avaliacao",
+      "label": "vem de"
+    },
+    {
+      "source": "psdc",
+      "target": "sys-databricks-produto-de-dados",
+      "label": "vem de"
     },
     {
       "source": "rar-12m",
@@ -428,6 +737,31 @@
       "label": "consome"
     },
     {
+      "source": "rar-12m",
+      "target": "sys-engine-propria-databricks",
+      "label": "vem de"
+    },
+    {
+      "source": "rating",
+      "target": "sys-databricks-produto-de-dados",
+      "label": "vem de"
+    },
+    {
+      "source": "recta-fedrl",
+      "target": "sys-tabela-departamental",
+      "label": "vem de"
+    },
+    {
+      "source": "restritivos-e-tipos",
+      "target": "sys-databricks-produto-de-dados",
+      "label": "vem de"
+    },
+    {
+      "source": "rfb",
+      "target": "sys-databricks-dado-curado",
+      "label": "vem de"
+    },
+    {
       "source": "setorizacao",
       "target": "bacen",
       "label": "consome"
@@ -446,6 +780,86 @@
       "source": "setorizacao",
       "target": "rfb",
       "label": "consome"
+    },
+    {
+      "source": "setorizacao",
+      "target": "sys-planilha-excel-de-para",
+      "label": "vem de"
+    },
+    {
+      "source": "sys-banco-de-dados-do-credito",
+      "target": "org-credito-provisorio",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-banco-sql-legado-on-premise",
+      "target": "org-base-comercial-legada",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-base-sql-on-premise",
+      "target": "org-def-e-cambio",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-bureaus-agencias-integracao-em-avaliacao",
+      "target": "org-fornecedores-externos",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-databricks-dado-curado",
+      "target": "org-receita-federal",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-databricks-dado-curado",
+      "target": "org-resultado-gerencial",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-databricks-produto-de-dados",
+      "target": "org-area-de-risco",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-databricks-produto-de-dados",
+      "target": "org-cadastro-corporativo",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-engine-propria-databricks",
+      "target": "org-atacado-calculo",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-planilha-excel-de-para",
+      "target": "org-atacado-classificacao",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-planilha-excel-exploratorio",
+      "target": "org-atacado-analistas",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-planilha-processo-manual",
+      "target": "org-atacado-ajustes",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-salesforce-account",
+      "target": "org-rm-relacionamento",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-transferencia-corporativa-de-arquivos",
+      "target": "org-bacen",
+      "label": "origina de"
+    },
+    {
+      "source": "sys-webscraping-debentures-com-br",
+      "target": "org-anbima-mercado",
+      "label": "origina de"
     }
   ]
 }

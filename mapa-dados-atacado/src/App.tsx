@@ -6,9 +6,11 @@ import DetailPanel from './components/DetailPanel'
 import type { Connection } from './components/DetailPanel'
 import SearchBox from './components/SearchBox'
 import Filters from './components/Filters'
+import FocusBar from './components/FocusBar'
 import Legend from './components/Legend'
 import type { Counts } from './components/Filters'
 import type { Debito, GraphJson, GraphNodeData, SimLink, SimNode } from './components/graph-types'
+import { isDerivado, linkEndId } from './components/graph-types'
 import './App.css'
 
 /** Busca insensível a caixa e acentos. */
@@ -24,12 +26,24 @@ function readUrlSelection(): string | null {
   return new URLSearchParams(window.location.search).get('no')
 }
 
+function readUrlFocus(): string | null {
+  return new URLSearchParams(window.location.search).get('foco')
+}
+
+function readUrlDepth(): number {
+  const raw = Number(new URLSearchParams(window.location.search).get('prof'))
+  return Number.isInteger(raw) && raw >= 1 && raw <= 3 ? raw : 1
+}
+
 function toggled<T>(set: ReadonlySet<T>, value: T): Set<T> {
   const next = new Set(set)
   if (next.has(value)) next.delete(value)
   else next.add(value)
   return next
 }
+
+/** Janela entre dois cliques no mesmo nó para contar como duplo clique. */
+const DBLCLICK_MS = 350
 
 function App() {
   // O JSON gerado tipa `debito` como string larga; o schema real é GraphJson.
@@ -60,14 +74,27 @@ function App() {
   }, [nodes])
 
   const degreeById = useMemo(() => {
+    // Dados: grau só entre dados (raio idêntico ao mapa sem linhagem).
+    // Derivados: grau conta tudo (sistemas com muitos dados ficam maiores).
     const map = new Map<string, number>()
     for (const n of nodes) map.set(n.id, 0)
+    const derivado = (id: string) => {
+      const n = nodesById.get(id)
+      return n ? isDerivado(n) : false
+    }
     for (const l of links) {
-      map.set(l.source, (map.get(l.source) ?? 0) + 1)
-      map.set(l.target, (map.get(l.target) ?? 0) + 1)
+      const sDeriv = derivado(l.source)
+      const tDeriv = derivado(l.target)
+      if (!sDeriv && !tDeriv) {
+        map.set(l.source, (map.get(l.source) ?? 0) + 1)
+        map.set(l.target, (map.get(l.target) ?? 0) + 1)
+      } else {
+        if (sDeriv) map.set(l.source, (map.get(l.source) ?? 0) + 1)
+        if (tDeriv) map.set(l.target, (map.get(l.target) ?? 0) + 1)
+      }
     }
     return map
-  }, [nodes, links])
+  }, [nodes, links, nodesById])
 
   const neighborsById = useMemo(() => {
     const map = new Map<string, Set<string>>()
@@ -80,8 +107,9 @@ function App() {
     return map
   }, [links])
 
+  // Contadores e filtros atuam só sobre nós de dados (derivados nunca entram).
   const counts = useMemo<Counts>(() => {
-    const reais = nodes.filter((n) => !n.fantasma)
+    const reais = nodes.filter((n) => !n.fantasma && !isDerivado(n))
     return {
       total: reais.length,
       comDebito: reais.filter((n) => n.debito === 'sim').length,
@@ -105,11 +133,80 @@ function App() {
   const [selDebitos, setSelDebitos] = useState<ReadonlySet<Debito>>(new Set())
   const [somenteSemOwner, setSomenteSemOwner] = useState(false)
 
+  // Camada de linhagem (sistemas/origens): desligada por padrão no mapa global,
+  // ligada automaticamente ao entrar em foco. ?foco= na URL já entra em foco.
+  const [focusPath, setFocusPath] = useState<string[]>(() => {
+    const foco = readUrlFocus()
+    return foco ? [foco] : []
+  })
+  const [depth, setDepth] = useState<number>(readUrlDepth)
+  const [layersOn, setLayersOn] = useState<boolean>(() => readUrlFocus() !== null)
+  // Estado da camada antes de entrar em foco, restaurado ao sair.
+  const layersBeforeFocusRef = useRef(false)
+
+  const focusId = focusPath.length > 0 ? focusPath[focusPath.length - 1] : null
+
   const graphRef = useRef<GraphHandle>(null)
   // Seleção que veio da URL na carga: centralizada quando a física estabiliza.
   const [initialFocusId] = useState(readUrlSelection)
 
   const normQuery = norm(query)
+
+  // --- subgrafo visível (camadas + modo foco) ---
+  const visibleIds = useMemo(() => {
+    // Fora da simulação, não só esmaecidos: derivados saem quando a camada
+    // está desligada. O nó em foco fica sempre visível, mesmo derivado.
+    const allowed = new Set(
+      nodes.filter((n) => layersOn || !isDerivado(n) || n.id === focusId).map((n) => n.id),
+    )
+    if (!focusId || !allowed.has(focusId)) return allowed
+
+    const adj = new Map<string, string[]>()
+    for (const l of links) {
+      if (!allowed.has(l.source) || !allowed.has(l.target)) continue
+      if (!adj.has(l.source)) adj.set(l.source, [])
+      if (!adj.has(l.target)) adj.set(l.target, [])
+      adj.get(l.source)?.push(l.target)
+      adj.get(l.target)?.push(l.source)
+    }
+    // BFS até a profundidade escolhida a partir do nó em foco.
+    const reached = new Set([focusId])
+    let frontier = [focusId]
+    for (let d = 0; d < depth && frontier.length > 0; d++) {
+      const next: string[] = []
+      for (const id of frontier) {
+        for (const viz of adj.get(id) ?? []) {
+          if (!reached.has(viz)) {
+            reached.add(viz)
+            next.push(viz)
+          }
+        }
+      }
+      frontier = next
+    }
+    // Fecho de linhagem: cada nó visível arrasta sua cadeia sys→org sem
+    // consumir profundidade (dado→sys, sys→org, dado→org).
+    if (layersOn) {
+      for (let pass = 0; pass < 2; pass++) {
+        for (const l of links) {
+          if (!reached.has(l.source) || reached.has(l.target)) continue
+          const alvo = nodesById.get(l.target)
+          if (alvo && isDerivado(alvo)) reached.add(l.target)
+        }
+      }
+    }
+    return reached
+  }, [nodes, links, nodesById, layersOn, focusId, depth])
+
+  const visibleData = useMemo<{ nodes: SimNode[]; links: SimLink[] }>(
+    () => ({
+      nodes: simData.nodes.filter((n) => visibleIds.has(n.id)),
+      links: simData.links.filter(
+        (l) => visibleIds.has(linkEndId(l.source)) && visibleIds.has(linkEndId(l.target)),
+      ),
+    }),
+    [simData, visibleIds],
+  )
 
   const searchMatches = useMemo(() => {
     if (!normQuery) return []
@@ -117,13 +214,15 @@ function App() {
     const contains: GraphNodeData[] = []
     const inDesc: GraphNodeData[] = []
     for (const n of nodes) {
+      // Dados sempre; sistemas/origens só quando a camada está visível.
+      if (isDerivado(n) && !layersOn) continue
       const nome = norm(n.nome)
       if (nome.startsWith(normQuery)) starts.push(n)
       else if (nome.includes(normQuery)) contains.push(n)
       else if (norm(n.descricao ?? '').includes(normQuery)) inDesc.push(n)
     }
     return [...starts, ...contains, ...inDesc]
-  }, [nodes, normQuery])
+  }, [nodes, normQuery, layersOn])
 
   const hasActiveFilter =
     selDominios.size > 0 || selDebitos.size > 0 || somenteSemOwner || normQuery.length > 0
@@ -132,23 +231,29 @@ function App() {
     // Hover tem prioridade: acende o nó + vizinhos, esmaece todo o resto.
     if (hoverId) {
       const lit = new Set([hoverId, ...(neighborsById.get(hoverId) ?? [])])
-      return new Set(nodes.filter((n) => !lit.has(n.id)).map((n) => n.id))
+      return new Set([...visibleIds].filter((id) => !lit.has(id)))
     }
     if (!hasActiveFilter) return new Set<string>()
     const matchIds = new Set(searchMatches.map((n) => n.id))
     return new Set(
-      nodes
-        .filter((n) => {
-          if (normQuery && !matchIds.has(n.id)) return true
-          if (selDominios.size > 0 && !selDominios.has(n.dominio ?? '')) return true
-          if (selDebitos.size > 0 && !selDebitos.has(n.debito ?? 'avaliar')) return true
-          if (somenteSemOwner && (n.fantasma || Boolean(n.owner))) return true
-          return false
-        })
-        .map((n) => n.id),
+      [...visibleIds].filter((id) => {
+        const n = nodesById.get(id)
+        if (!n) return false
+        if (isDerivado(n)) {
+          // Derivados só reagem à busca; os demais filtros são de governança
+          // e valem apenas para dados.
+          return normQuery.length > 0 && !matchIds.has(n.id)
+        }
+        if (normQuery && !matchIds.has(n.id)) return true
+        if (selDominios.size > 0 && !selDominios.has(n.dominio ?? '')) return true
+        if (selDebitos.size > 0 && !selDebitos.has(n.debito ?? 'avaliar')) return true
+        if (somenteSemOwner && (n.fantasma || Boolean(n.owner))) return true
+        return false
+      }),
     )
   }, [
-    nodes,
+    visibleIds,
+    nodesById,
     hoverId,
     neighborsById,
     hasActiveFilter,
@@ -159,30 +264,92 @@ function App() {
     somenteSemOwner,
   ])
 
-  const select = useCallback(
-    (id: string | null, focus = false) => {
-      setSelectedId(id)
-      if (id && focus) graphRef.current?.focusNode(id)
+  const select = useCallback((id: string | null, focus = false) => {
+    setSelectedId(id)
+    if (id && focus) graphRef.current?.focusNode(id)
+  }, [])
+
+  // --- modo foco ---
+  const enterFocus = useCallback(
+    (id: string) => {
+      layersBeforeFocusRef.current = layersOn
+      setLayersOn(true)
+      setFocusPath([id])
     },
-    [],
+    [layersOn],
   )
 
-  // URL reflete a seleção (?no=rar-12m) sem poluir o histórico.
+  const pushFocus = useCallback((id: string) => {
+    setFocusPath((path) => (path[path.length - 1] === id ? path : [...path, id]))
+  }, [])
+
+  /** Botão "Focar" do painel e duplo clique: entra em foco ou re-foca. */
+  const focusOn = useCallback(
+    (id: string) => {
+      if (focusId) pushFocus(id)
+      else enterFocus(id)
+    },
+    [focusId, pushFocus, enterFocus],
+  )
+
+  const exitFocus = useCallback(() => {
+    setFocusPath([])
+    setLayersOn(layersBeforeFocusRef.current)
+  }, [])
+
+  const lastClickRef = useRef({ id: '', t: 0 })
+  const handleNodeClick = useCallback(
+    (id: string) => {
+      const now = performance.now()
+      const isDouble = lastClickRef.current.id === id && now - lastClickRef.current.t < DBLCLICK_MS
+      lastClickRef.current = { id, t: now }
+      select(id)
+      // No foco: clicar num vizinho re-foca nele (empilha no breadcrumb).
+      // No mapa global: duplo clique entra em foco.
+      if (focusId) {
+        if (id !== focusId) pushFocus(id)
+      } else if (isDouble) {
+        enterFocus(id)
+      }
+    },
+    [select, focusId, pushFocus, enterFocus],
+  )
+
+  // URL reflete seleção (?no=) e foco (?foco=&prof=) sem poluir o histórico.
   useEffect(() => {
     const url = new URL(window.location.href)
     if (selectedId) url.searchParams.set('no', selectedId)
     else url.searchParams.delete('no')
+    if (focusId) {
+      url.searchParams.set('foco', focusId)
+      url.searchParams.set('prof', String(depth))
+    } else {
+      url.searchParams.delete('foco')
+      url.searchParams.delete('prof')
+    }
     window.history.replaceState(null, '', url)
-  }, [selectedId])
+  }, [selectedId, focusId, depth])
+
+  // Esc em dois estágios: fecha o painel primeiro, depois sai do foco.
+  // Handlers globais leem o estado corrente via ref para registrar uma só vez.
+  const escRef = useRef(() => {})
+  escRef.current = () => {
+    if (selectedId) setSelectedId(null)
+    else if (focusId) exitFocus()
+  }
 
   useEffect(() => {
     const onPopState = () => {
       const id = readUrlSelection()
+      const foco = readUrlFocus()
       setSelectedId(id)
+      setFocusPath(foco ? [foco] : [])
+      setDepth(readUrlDepth())
+      if (foco) setLayersOn(true)
       if (id) graphRef.current?.focusNode(id)
     }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSelectedId(null)
+      if (e.key === 'Escape') escRef.current()
     }
     window.addEventListener('popstate', onPopState)
     window.addEventListener('keydown', onKeyDown)
@@ -212,22 +379,52 @@ function App() {
     return { outgoing: out, incoming: inc }
   }, [selectedId, links, nodesById])
 
+  // Painel simplificado de sistema/origem: dados ligados direto e, para uma
+  // origem, também os dados dos sistemas que apontam para ela.
+  const derivadoDados = useMemo<GraphNodeData[]>(() => {
+    if (!selectedNode || !isDerivado(selectedNode)) return []
+    const ids = new Set<string>()
+    for (const l of links) {
+      if (l.target !== selectedNode.id) continue
+      const n = nodesById.get(l.source)
+      if (!n) continue
+      if (!isDerivado(n)) {
+        ids.add(n.id)
+      } else {
+        for (const l2 of links) {
+          if (l2.target !== n.id) continue
+          const m = nodesById.get(l2.source)
+          if (m && !isDerivado(m)) ids.add(m.id)
+        }
+      }
+    }
+    return [...ids]
+      .map((id) => nodesById.get(id))
+      .filter((n): n is GraphNodeData => n !== undefined)
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  }, [selectedNode, links, nodesById])
+
   const resolveWikiLink = useCallback(
     (target: string) => idByName.get(norm(target)) ?? null,
     [idByName],
+  )
+
+  const breadcrumb = useMemo(
+    () => focusPath.map((id) => ({ id, nome: nodesById.get(id)?.nome ?? id })),
+    [focusPath, nodesById],
   )
 
   return (
     <div className="app">
       <Graph
         ref={graphRef}
-        data={simData}
+        data={visibleData}
         degreeById={degreeById}
         dimmedIds={dimmedIds}
         hoverId={hoverId}
         selectedId={selectedId}
         initialFocusId={initialFocusId}
-        onNodeClick={(id) => select(id)}
+        onNodeClick={handleNodeClick}
         onNodeHover={setHoverId}
         onBackgroundClick={() => setSelectedId(null)}
       />
@@ -248,16 +445,28 @@ function App() {
         />
       </header>
 
+      {focusId && (
+        <FocusBar
+          path={breadcrumb}
+          depth={depth}
+          onCrumbClick={(i) => setFocusPath((path) => path.slice(0, i + 1))}
+          onDepthChange={setDepth}
+          onExit={exitFocus}
+        />
+      )}
+
       <Filters
         dominios={dominios}
         selectedDominios={selDominios}
         selectedDebitos={selDebitos}
         somenteSemOwner={somenteSemOwner}
+        layersOn={layersOn}
         counts={counts}
         hasActiveFilter={hasActiveFilter}
         onToggleDominio={(d) => setSelDominios((prev) => toggled(prev, d))}
         onToggleDebito={(d) => setSelDebitos((prev) => toggled(prev, d))}
         onToggleSemOwner={() => setSomenteSemOwner((v) => !v)}
+        onToggleLayers={() => setLayersOn((v) => !v)}
         onClear={() => {
           setQuery('')
           setSelDominios(new Set())
@@ -266,15 +475,18 @@ function App() {
         }}
       />
 
-      <Legend />
+      <Legend layersVisible={layersOn} />
 
       {selectedNode && (
         <DetailPanel
           node={selectedNode}
           outgoing={outgoing}
           incoming={incoming}
+          derivadoDados={derivadoDados}
+          isFocused={selectedId === focusId}
           resolveWikiLink={resolveWikiLink}
           onNavigate={(id) => select(id, true)}
+          onFocus={focusOn}
           onClose={() => setSelectedId(null)}
         />
       )}

@@ -26,8 +26,24 @@ export interface GraphNodeData {
   incompleto?: boolean
   /** Nó fantasma: alvo de wikilink sem arquivo no vault. */
   fantasma?: boolean
+  /** Nó derivado pelo build (camada de linhagem): sistema ou origem. */
+  derivado?: boolean
   /** Corpo markdown do .md (pode não existir no JSON gerado). */
   corpo?: string
+}
+
+/** Camada visual do nó: dado (círculo), sistema (quadrado), origem (losango). */
+export type NodeKind = 'dado' | 'sistema' | 'origem'
+
+export function nodeKind(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): NodeKind {
+  if (node.tipo === 'sistema') return 'sistema'
+  if (node.tipo === 'origem') return 'origem'
+  return 'dado'
+}
+
+/** Nó da camada de linhagem (sistema/origem emitido pelo build). */
+export function isDerivado(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): boolean {
+  return node.derivado === true || nodeKind(node) !== 'dado'
 }
 
 export interface GraphLinkData {

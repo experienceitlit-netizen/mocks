@@ -12,11 +12,14 @@ interface FiltersProps {
   selectedDominios: ReadonlySet<string>
   selectedDebitos: ReadonlySet<Debito>
   somenteSemOwner: boolean
+  /** Camada de linhagem (sistemas/origens) visível no grafo. */
+  layersOn: boolean
   counts: Counts
   hasActiveFilter: boolean
   onToggleDominio(dominio: string): void
   onToggleDebito(debito: Debito): void
   onToggleSemOwner(): void
+  onToggleLayers(): void
   onClear(): void
 }
 
@@ -27,11 +30,13 @@ export default function Filters({
   selectedDominios,
   selectedDebitos,
   somenteSemOwner,
+  layersOn,
   counts,
   hasActiveFilter,
   onToggleDominio,
   onToggleDebito,
   onToggleSemOwner,
+  onToggleLayers,
   onClear,
 }: FiltersProps) {
   return (
@@ -85,6 +90,11 @@ export default function Filters({
       <label className="filters__toggle">
         <input type="checkbox" checked={somenteSemOwner} onChange={onToggleSemOwner} />
         Somente sem owner
+      </label>
+
+      <label className="filters__toggle" title="Mostrar sistemas e origens (linhagem) no grafo">
+        <input type="checkbox" checked={layersOn} onChange={onToggleLayers} />
+        Fontes e origens
       </label>
 
       {hasActiveFilter && (
