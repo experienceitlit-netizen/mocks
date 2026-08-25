@@ -20,6 +20,8 @@ interface GraphProps {
   /** Conjunto final de nós esmaecidos (hover + filtros, calculado no App). */
   dimmedIds: ReadonlySet<string>
   hoverId: string | null
+  /** "Hover fixado" pelo clique esquerdo: mesmo visual do hover, persistente. */
+  pinnedId: string | null
   selectedId: string | null
   /** Nó a centralizar quando a física estabilizar (seleção vinda da URL). */
   initialFocusId: string | null
@@ -30,6 +32,8 @@ interface GraphProps {
    *  nível, desenhado sob nós e arestas; null fora da vista em níveis. */
   levelColumns: LineageColumn[] | null
   onNodeClick(id: string): void
+  /** Clique direito: abre o balão de detalhe (a antiga ação do esquerdo). */
+  onNodeRightClick(id: string): void
   onNodeHover(id: string | null): void
   onBackgroundClick(): void
   ref?: Ref<GraphHandle>
@@ -65,16 +69,42 @@ const BAND_FILL = 'rgba(255,255,255,0.03)'
 const BAND_STROKE = 'rgba(255,255,255,0.10)'
 const BAND_TITLE_COLOR = '#8A8A8A'
 
+/** Raio mínimo NA TELA (px) para o glifo do Databricks aparecer — abaixo
+ *  disso os tijolos viram ruído. */
+const GLYPH_MIN_PX = 8
+
+/** Glifo inspirado no logo do Databricks: três "tijolos" (paralelogramos)
+ *  empilhados, em branco translúcido sobre a cor do nó. Canvas puro — o
+ *  standalone continua autocontido. */
+function drawDatabricksGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  const w = r * 0.52 // meia-largura de cada tijolo
+  const h = r * 0.14 // meia-altura
+  const skew = r * 0.26 // inclinação: topo deslocado à direita
+  ctx.fillStyle = 'rgba(255,255,255,0.8)'
+  for (const k of [-0.42, 0, 0.42]) {
+    const cy = y + k * r
+    ctx.beginPath()
+    ctx.moveTo(x - w + skew, cy - h)
+    ctx.lineTo(x + w, cy - h)
+    ctx.lineTo(x + w - skew, cy + h)
+    ctx.lineTo(x - w, cy + h)
+    ctx.closePath()
+    ctx.fill()
+  }
+}
+
 export default function Graph({
   data,
   degreeById,
   dimmedIds,
   hoverId,
+  pinnedId,
   selectedId,
   initialFocusId,
   fixedLayout,
   levelColumns,
   onNodeClick,
+  onNodeRightClick,
   onNodeHover,
   onBackgroundClick,
   ref,
@@ -280,6 +310,11 @@ export default function Graph({
           // Derivados: preenchimento sólido, nunca borda de incompletude.
           ctx.fillStyle = nodeColor(node)
           ctx.fill()
+          // Tabelas UCS e sistemas Databricks ganham o glifo de "tijolos".
+          const databricks =
+            kind === 'fonte-secundaria' ||
+            (kind === 'sistema' && node.nome.toLowerCase().includes('databricks'))
+          if (databricks && r * scale >= GLYPH_MIN_PX) drawDatabricksGlyph(ctx, x, y, r)
         }
       } else if (node.fantasma) {
         // Fantasma: sem preenchimento sólido, contorno cinza tracejado.
@@ -313,7 +348,8 @@ export default function Graph({
         }
       }
 
-      if (node.id === selectedId || node.id === hoverId) {
+      // Halo: seleção (balão) forte; hover e "hover fixado" com o mesmo traço.
+      if (node.id === selectedId || node.id === hoverId || node.id === pinnedId) {
         ctx.beginPath()
         ctx.arc(x, y, extent + 2.5 / scale, 0, 2 * Math.PI)
         ctx.strokeStyle =
@@ -331,7 +367,7 @@ export default function Graph({
       ctx.fillText(node.nome, x, y + extent + 3 / scale)
       ctx.globalAlpha = 1
     },
-    [degreeById, dimmedIds, hoverId, selectedId],
+    [degreeById, dimmedIds, hoverId, pinnedId, selectedId],
   )
 
   const paintPointerArea = useCallback(
@@ -349,47 +385,54 @@ export default function Graph({
     [degreeById],
   )
 
-  const linkTouchesHover = useCallback(
+  // Arestas acesas do nó "ativo": hover momentâneo sobrepõe o fixado.
+  const activeId = hoverId ?? pinnedId
+  const linkTouchesActive = useCallback(
     (link: SimLink) =>
-      hoverId !== null &&
-      (linkEndId(link.source) === hoverId || linkEndId(link.target) === hoverId),
-    [hoverId],
+      activeId !== null &&
+      (linkEndId(link.source) === activeId || linkEndId(link.target) === activeId),
+    [activeId],
   )
 
   const linkColor = useCallback(
     (link: SimLink) => {
-      if (linkTouchesHover(link)) return 'rgba(255,255,255,0.85)'
+      if (linkTouchesActive(link)) return 'rgba(255,255,255,0.85)'
       const dim =
         dimmedIds.has(linkEndId(link.source)) || dimmedIds.has(linkEndId(link.target))
       return dim ? 'rgba(150,150,150,0.05)' : 'rgba(150,150,150,0.3)'
     },
-    [dimmedIds, linkTouchesHover],
+    [dimmedIds, linkTouchesActive],
   )
 
   return (
-    <ForceGraph2D<GraphNodeData, GraphLinkData>
-      ref={fgRef}
-      graphData={data}
-      width={size.w}
-      height={size.h}
-      backgroundColor={BACKGROUND}
-      cooldownTicks={fixedLayout ? 0 : 150}
-      onEngineStop={handleEngineStop}
-      onRenderFramePre={fixedLayout ? drawLevelBands : undefined}
-      linkCurvature={fixedLayout ? 0.18 : 0}
-      autoPauseRedraw={false}
-      nodeLabel={() => ''}
-      nodeCanvasObject={drawNode}
-      nodePointerAreaPaint={paintPointerArea}
-      linkColor={linkColor}
-      linkWidth={(l) => (linkTouchesHover(l) ? 1.6 : 1)}
-      linkDirectionalArrowLength={3.5}
-      linkDirectionalArrowRelPos={1}
-      linkDirectionalArrowColor={linkColor}
-      linkLabel={(l) => l.label ?? 'consome'}
-      onNodeClick={(node) => onNodeClick(node.id)}
-      onNodeHover={(node) => onNodeHover(node ? node.id : null)}
-      onBackgroundClick={onBackgroundClick}
-    />
+    // O menu de contexto do navegador é suprimido sobre o canvas: o botão
+    // direito é a ação de "abrir detalhes" do mapa.
+    <div onContextMenu={(e) => e.preventDefault()}>
+      <ForceGraph2D<GraphNodeData, GraphLinkData>
+        ref={fgRef}
+        graphData={data}
+        width={size.w}
+        height={size.h}
+        backgroundColor={BACKGROUND}
+        cooldownTicks={fixedLayout ? 0 : 150}
+        onEngineStop={handleEngineStop}
+        onRenderFramePre={fixedLayout ? drawLevelBands : undefined}
+        linkCurvature={fixedLayout ? 0.18 : 0}
+        autoPauseRedraw={false}
+        nodeLabel={() => ''}
+        nodeCanvasObject={drawNode}
+        nodePointerAreaPaint={paintPointerArea}
+        linkColor={linkColor}
+        linkWidth={(l) => (linkTouchesActive(l) ? 1.6 : 1)}
+        linkDirectionalArrowLength={3.5}
+        linkDirectionalArrowRelPos={1}
+        linkDirectionalArrowColor={linkColor}
+        linkLabel={(l) => l.label ?? 'consome'}
+        onNodeClick={(node) => onNodeClick(node.id)}
+        onNodeRightClick={(node) => onNodeRightClick(node.id)}
+        onNodeHover={(node) => onNodeHover(node ? node.id : null)}
+        onBackgroundClick={onBackgroundClick}
+      />
+    </div>
   )
 }

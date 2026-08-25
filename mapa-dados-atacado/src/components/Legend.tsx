@@ -104,6 +104,7 @@ export default function Legend({
             </li>
           </>
         )}
+        <li className="legend__hint">botão direito no nó = detalhes · clique fixa o destaque</li>
       </ul>
     </div>
   )

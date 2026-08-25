@@ -184,6 +184,9 @@ function App() {
   const [aba, setAba] = useState<Aba>(readUrlAba)
   const [selectedId, setSelectedId] = useState<string | null>(readUrlSelection)
   const [hoverId, setHoverId] = useState<string | null>(null)
+  // "Hover fixado" pelo clique esquerdo: destaque persistente de nó+vizinhos
+  // (cadeia inteira na vista Níveis), sem balão e sem URL. Estado efêmero.
+  const [pinnedId, setPinnedId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [selDominios, setSelDominios] = useState<ReadonlySet<string>>(new Set())
   const [selDebitos, setSelDebitos] = useState<ReadonlySet<Debito>>(new Set())
@@ -305,9 +308,10 @@ function App() {
   const dimmedIds = useMemo(() => {
     // Hover tem prioridade: acende o nó + vizinhos (na vista em níveis, a
     // cadeia inteira de ancestrais/descendentes) e esmaece todo o resto.
-    // Com o balão aberto (seleção), o mesmo destaque persiste no selecionado;
-    // um hover momentâneo em outro nó sobrepõe e, ao sair, a seleção volta.
-    const highlightId = hoverId ?? (selectedId && shownIds.has(selectedId) ? selectedId : null)
+    // Depois vêm o "hover fixado" (clique esquerdo) e a seleção (balão) —
+    // um hover momentâneo em outro nó sobrepõe e, ao sair, o fixado volta.
+    const persistentId = pinnedId ?? selectedId
+    const highlightId = hoverId ?? (persistentId && shownIds.has(persistentId) ? persistentId : null)
     if (highlightId) {
       const lit = lineage
         ? lineage.chainOf(highlightId)
@@ -344,6 +348,7 @@ function App() {
     shownIds,
     nodesById,
     hoverId,
+    pinnedId,
     selectedId,
     neighborsById,
     lineage,
@@ -358,6 +363,8 @@ function App() {
 
   const select = useCallback((id: string | null, focus = false) => {
     setSelectedId(id)
+    // A seleção assume o destaque persistente: o "hover fixado" anterior sai.
+    if (id) setPinnedId(null)
     if (id && focus) graphRef.current?.focusNode(id)
   }, [])
 
@@ -403,17 +410,32 @@ function App() {
   const lastClickRef = useRef({ id: '', t: 0 })
   const handleNodeClick = useCallback(
     (id: string) => {
-      // Placeholders da linhagem são só visuais: não selecionam nem focam.
+      // Placeholders da linhagem são só visuais: não fixam nem focam.
       if (lineage?.placeholderIds.has(id)) return
       const now = performance.now()
       const isDouble = lastClickRef.current.id === id && now - lastClickRef.current.t < DBLCLICK_MS
       lastClickRef.current = { id, t: now }
-      // Clique simples só abre o balão de detalhe (nunca foca/re-foca);
-      // duplo clique entra em foco (ou re-foca, empilhando no breadcrumb).
-      select(id)
-      if (isDouble) focusOn(id)
+      // Clique esquerdo simples fixa o destaque de hover (toggle no mesmo nó,
+      // re-fixa em outro) — sem balão, sem URL. Duplo clique entra em foco
+      // (ou re-foca, empilhando no breadcrumb); o foco já isola a vizinhança,
+      // então o fixado é dispensado. O balão fica com o clique direito.
+      if (isDouble) {
+        setPinnedId(null)
+        focusOn(id)
+        return
+      }
+      setPinnedId((prev) => (prev === id ? null : id))
     },
-    [select, focusOn, lineage],
+    [focusOn, lineage],
+  )
+
+  const handleNodeRightClick = useCallback(
+    (id: string) => {
+      // Clique direito: abre o balão de detalhe (antiga ação do esquerdo).
+      if (lineage?.placeholderIds.has(id)) return
+      select(id)
+    },
+    [select, lineage],
   )
 
   // URL reflete aba (?aba=tabela), seleção (?no=) e foco (?foco=&vista=, com
@@ -442,13 +464,14 @@ function App() {
     window.history.replaceState(null, '', url)
   }, [aba, selectedId, focusId, depth, vista])
 
-  // Esc em dois estágios: fecha o painel primeiro, depois sai do foco. Na aba
-  // Tabela, volta ao mapa (o estado do mapa é invisível ali — não mexe nele).
-  // Handlers globais leem o estado corrente via ref para registrar uma só vez.
+  // Esc em estágios: fecha o balão, senão desfixa o destaque, senão sai do
+  // foco. Na aba Tabela, volta ao mapa (o estado do mapa é invisível ali —
+  // não mexe nele). Handlers globais leem o estado via ref (registro único).
   const escRef = useRef(() => {})
   escRef.current = () => {
     if (aba === 'tabela') setAba('mapa')
     else if (selectedId) setSelectedId(null)
+    else if (pinnedId) setPinnedId(null)
     else if (focusId) exitFocus()
   }
 
@@ -458,6 +481,7 @@ function App() {
       const path = readInitialFocusPath()
       setAba(readUrlAba())
       setSelectedId(id)
+      setPinnedId(null)
       setFocusPath(path)
       setDepth(readUrlDepth())
       setVista(readUrlVista())
@@ -564,13 +588,18 @@ function App() {
         degreeById={degreeById}
         dimmedIds={dimmedIds}
         hoverId={hoverId}
+        pinnedId={pinnedId}
         selectedId={selectedId}
         initialFocusId={initialFocusId}
         fixedLayout={lineage !== null}
         levelColumns={lineage && bandsOn ? lineage.columns : null}
         onNodeClick={handleNodeClick}
+        onNodeRightClick={handleNodeRightClick}
         onNodeHover={setHoverId}
-        onBackgroundClick={() => setSelectedId(null)}
+        onBackgroundClick={() => {
+          setSelectedId(null)
+          setPinnedId(null)
+        }}
       />
 
       {aba === 'tabela' && (
@@ -684,7 +713,7 @@ function App() {
         <div className="empty-state">
           <p>
             Nenhum dado no grafo ainda. Rode <code>npm run data</code> para gerar{' '}
-            <code>src/data/graph.json</code> a partir do vault.
+            <code>src/data/graph.json</code> a partir do catalogo.csv.
           </p>
         </div>
       )}

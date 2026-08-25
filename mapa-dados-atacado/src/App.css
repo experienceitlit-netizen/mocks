@@ -787,6 +787,15 @@
   border-top: 1px solid #333;
 }
 
+/* Dica de interação no rodapé da legenda. */
+.legend__hint {
+  margin-top: 0.35rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid #333;
+  font-style: italic;
+  color: #8a8a8a;
+}
+
 .legend__dot--fantasma {
   background: rgba(90, 90, 90, 0.25);
   border: 1.5px dashed;
