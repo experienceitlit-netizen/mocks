@@ -4,19 +4,23 @@
 // por HMR (react-refresh preserva o estado; a página NÃO recarrega), então o
 // submit re-lê o catálogo antes de montar o conjunto completo (as rows da prop
 // podem ser as do mount) e o App re-busca as rows após o save (onSaved).
-// O primeiro campo ("Tipo de componente") escolhe o nível da linha e adapta os
-// demais campos: domínio/origem só têm identificação e governança; fonte ganha
-// as origens associadas; fonte secundária, as fontes associadas; produtos
-// (primário/final/ambos) mantêm o formulário completo.
+// O primeiro campo ("Tipo de componente") escolhe o nível da linha; os demais
+// são os mesmos em todos os níveis (o formulário é padrão). Origem, fonte e
+// fontes secundárias saíram: viraram níveis próprios, e a ligação entre
+// componentes é feita por "Consome/Upstream" e "Associações" — em 'fonte' e
+// 'fonte-secundaria' a lista de associações mora nas colunas de rota.
+// Trocar o tipo nunca apaga campo: o estado carrega a linha inteira e é
+// gravado como está (ver catalog-form-row.ts), com aviso do que não couber.
 // Esc cancela (tratado pelo handler global do App, que fecha o form antes dos
 // demais estágios).
-// TODO: exclusão de linhas fica para uma próxima fase (o contrato atual da API
-// não tem delete).
+// TODO: exclusão de linhas fica para uma próxima fase.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import type { CatalogoRow, NivelRow, SaveOk } from './catalog-api'
-import { fetchCatalogo, formatAssocList, isProdutoRow, parseAssocList, saveCatalogo } from './catalog-api'
-import type { Debito } from './graph-types'
+import { fetchCatalogo, isProdutoRow, parseAssocList, saveCatalogo } from './catalog-api'
+import type { RowFormState } from './catalog-form-row'
+import { avisoTroca, montarRow } from './catalog-form-row'
+import type { Debito, NivelDef } from './graph-types'
 
 /** Comparação insensível a caixa e acentos (unicidade de nome, sugestões). */
 function norm(s: string): string {
@@ -30,15 +34,35 @@ function norm(s: string): string {
 /** Sentinela do select de domínio: revela o input de domínio novo. */
 const NOVO_DOMINIO = '__novo__'
 
-const TIPO_OPTIONS: ReadonlyArray<{ value: NivelRow; label: string }> = [
-  { value: 'dominio', label: 'Domínio' },
-  { value: 'origem', label: 'Origem' },
-  { value: 'fonte', label: 'Fonte (sistema)' },
-  { value: 'fonte-secundaria', label: 'Fonte secundária' },
-  { value: 'primario', label: 'Produto primário' },
-  { value: 'final', label: 'Produto final' },
-  { value: 'ambos', label: 'Primário e final' },
-]
+/** Rótulos dos tipos built-in no select (mantidos mesmo com o bloco `niveis`
+ *  dinâmico); a raiz não é opção e 'ambos' entra logo após 'primario'. */
+const BUILTIN_TIPO_LABEL: Record<string, string> = {
+  dominio: 'Domínio',
+  origem: 'Origem',
+  fonte: 'Fonte (sistema)',
+  'fonte-secundaria': 'Fonte secundária',
+  primario: 'Produto primário',
+  final: 'Produto final',
+}
+
+/** Opções do select "Tipo de componente" montadas do bloco `niveis` do
+ *  graph.json, na ordem das colunas: built-ins com os rótulos atuais, níveis
+ *  customizados pelo título cadastrado. */
+function tipoOptionsDe(niveis: readonly NivelDef[]): Array<{ value: NivelRow; label: string }> {
+  const opts: Array<{ value: NivelRow; label: string }> = []
+  for (const nv of [...niveis].sort((a, b) => a.ordem - b.ordem)) {
+    if (nv.slug === 'raiz') continue
+    if (nv.builtin) {
+      const label = BUILTIN_TIPO_LABEL[nv.slug]
+      if (label === undefined) continue
+      opts.push({ value: nv.slug, label })
+      if (nv.slug === 'primario') opts.push({ value: 'ambos', label: 'Primário e final' })
+    } else {
+      opts.push({ value: nv.slug, label: nv.titulo })
+    }
+  }
+  return opts
+}
 
 const DEBITO_OPTIONS: ReadonlyArray<{ value: Debito; label: string }> = [
   { value: 'sim', label: 'Sim' },
@@ -47,6 +71,10 @@ const DEBITO_OPTIONS: ReadonlyArray<{ value: Debito; label: string }> = [
 ]
 
 const STATUS_OPTIONS = ['producao', 'transicao', 'investigacao'] as const
+
+/** Nível customizado aceita a linha sem débito/status: é o componente simples
+ *  (só identificação), que fica na cor do nível em vez da cor de débito. */
+const VAZIO_LABEL = '— não declarado —'
 
 /** Unicidade de nome: global entre produtos, por tipo entre componentes. */
 function grupoDe(nivel: NivelRow): string {
@@ -191,10 +219,16 @@ interface CatalogFormProps {
   /** Linhas atuais do catálogo (GET /api/catalogo no mount do App). */
   rows: CatalogoRow[]
   target: FormTarget
+  /** Bloco `niveis` do graph.json (built-ins + customs): monta o select de
+   *  tipo e identifica os slugs customizados. */
+  niveis: readonly NivelDef[]
   /** Nomes de origens que existem no grafo (nós org-*, mesmo sem linha). */
   origensGrafo: string[]
   /** Nomes de fontes/sistemas que existem no grafo (nós sys-*). */
   fontesGrafo: string[]
+  /** Nomes de TODOS os componentes não-produto do grafo (alvos possíveis das
+   *  associações de um componente de nível customizado). */
+  componentesGrafo: string[]
   /** Save confirmado pela API: o App re-busca as rows do catálogo. */
   onSaved(): void
   onClose(): void
@@ -203,8 +237,10 @@ interface CatalogFormProps {
 export default function CatalogForm({
   rows,
   target,
+  niveis,
   origensGrafo,
   fontesGrafo,
+  componentesGrafo,
   onSaved,
   onClose,
 }: CatalogFormProps) {
@@ -225,28 +261,37 @@ export default function CatalogForm({
   const [dominio, setDominio] = useState(initial?.dominio ?? '')
   const [novoDominio, setNovoDominio] = useState('')
   const isProduto = isProdutoRow(tipo)
-  const [origem, setOrigem] = useState(initial && isProdutoRow(initial.nivel) ? (initial.origem ?? '') : '')
-  const [fonteSistema, setFonteSistema] = useState(
-    initial && isProdutoRow(initial.nivel) ? (initial.fonte_sistema ?? '') : '',
+  const tipoOptions = useMemo(() => tipoOptionsDe(niveis), [niveis])
+  // Tipo de nível customizado: slug presente no bloco `niveis` sem builtin.
+  const slugsCustom = useMemo(
+    () => new Set(niveis.filter((nv) => !nv.builtin).map((nv) => nv.slug)),
+    [niveis],
   )
-  // Associações das linhas de componente: fonte → origens (campo `origem`),
-  // fonte secundária → fontes (campo `fonte_sistema`), separadas por " | ".
-  const [origensAssoc, setOrigensAssoc] = useState<string[]>(
-    initial !== null && initial.nivel === 'fonte' ? parseAssocList(initial.origem) : [],
+  const isCustom = slugsCustom.has(tipo)
+  // Campo único de associação, igual em todos os níveis. A linha guarda a lista
+  // na coluna que o nível usa: 'fonte' em `origem`, 'fonte-secundaria' em
+  // `fonte_sistema`, os demais em `associacoes`.
+  const [associacoes, setAssociacoes] = useState<string[]>(() => {
+    if (initial === null) return []
+    if (initial.nivel === 'fonte') return parseAssocList(initial.origem)
+    if (initial.nivel === 'fonte-secundaria') return parseAssocList(initial.fonte_sistema)
+    return initial.associacoes
+  })
+  // Rota da linha: fora do formulário desde que origem e fonte viraram níveis
+  // próprios, mas carregada e regravada — trocar de tipo não apaga a planilha.
+  const [origem] = useState(initial?.nivel === 'fonte' ? '' : (initial?.origem ?? ''))
+  const [fonteSistema] = useState(
+    initial?.nivel === 'fonte-secundaria' ? '' : (initial?.fonte_sistema ?? ''),
   )
-  const [fontesAssoc, setFontesAssoc] = useState<string[]>(
-    initial !== null && initial.nivel === 'fonte-secundaria'
-      ? parseAssocList(initial.fonte_sistema)
-      : [],
-  )
-  const [fsec, setFsec] = useState<string[]>(initial?.fontes_secundarias ?? [])
+  const [fsec] = useState<string[]>(initial?.fontes_secundarias ?? [])
   const [consome, setConsome] = useState<string[]>(initial?.consome ?? [])
   const [descricao, setDescricao] = useState(initial?.descricao ?? '')
   const [observacoes, setObservacoes] = useState(initial?.observacoes ?? '')
-  // "||" (não "??"): linha de componente chega com debito/status "" — se o
-  // usuário trocar o tipo para produto, os defaults valem.
-  const [debito, setDebito] = useState<Debito>(initial?.debito || 'avaliar')
-  const [status, setStatus] = useState(initial?.status || 'producao')
+  // Linha de componente chega com debito/status "" e assim permanece: é um
+  // valor legítimo fora dos produtos. Ao gravar produto, montarRow aplica os
+  // defaults (avaliar/producao) — nenhum campo é forçado antes disso.
+  const [debito, setDebito] = useState<Debito | ''>(initial ? initial.debito : 'avaliar')
+  const [status, setStatus] = useState(initial ? initial.status : 'producao')
   const [owner, setOwner] = useState(initial?.owner ?? '')
   const [centroDeCusto, setCentroDeCusto] = useState(initial?.centro_de_custo ?? '')
 
@@ -266,59 +311,33 @@ export default function CatalogForm({
       ),
     [rows],
   )
-  // Origens conhecidas: nós org-* do grafo + linhas 'origem' do catálogo +
-  // origens citadas em produtos e em fontes (campo assoc).
-  const origensExistentes = useMemo(
-    () =>
-      uniaoNomes(
-        origensGrafo,
-        rows.filter((r) => r.nivel === 'origem').map((r) => r.nome),
-        rows
-          .filter((r) => isProdutoRow(r.nivel))
-          .map((r) => r.origem)
-          .filter((o): o is string => o !== null && o !== ''),
-        rows.filter((r) => r.nivel === 'fonte').flatMap((r) => parseAssocList(r.origem)),
-      ),
-    [rows, origensGrafo],
+  // Alvos possíveis das associações, em qualquer nível: as linhas do catálogo
+  // (o build resolve produtos e componentes) mais os componentes que só existem
+  // derivados no grafo — origens e fontes inclusive —, menos o próprio.
+  const componentesExistentes = useMemo(
+    () => uniaoNomes(componentesGrafo, origensGrafo, fontesGrafo, rows.map((r) => r.nome)),
+    [rows, componentesGrafo, origensGrafo, fontesGrafo],
   )
-  // Fontes conhecidas: nós sys-* do grafo + linhas 'fonte' + fontes citadas
-  // em produtos e em fontes secundárias (campo assoc).
-  const fontesExistentes = useMemo(
-    () =>
-      uniaoNomes(
-        fontesGrafo,
-        rows.filter((r) => r.nivel === 'fonte').map((r) => r.nome),
-        rows
-          .filter((r) => isProdutoRow(r.nivel))
-          .map((r) => r.fonte_sistema)
-          .filter((s): s is string => s !== null && s !== ''),
-        rows
-          .filter((r) => r.nivel === 'fonte-secundaria')
-          .flatMap((r) => parseAssocList(r.fonte_sistema)),
-      ),
-    [rows, fontesGrafo],
+  const componentesConhecidos = useMemo(
+    () => new Set(componentesExistentes.map(norm)),
+    [componentesExistentes],
   )
-  const fsecExistentes = useMemo(
-    () =>
-      uniaoNomes(
-        rows.filter((r) => r.nivel === 'fonte-secundaria').map((r) => r.nome),
-        rows.flatMap((r) => r.fontes_secundarias),
-      ),
-    [rows],
-  )
-  // Candidatos a "consome": os produtos do catálogo, menos o próprio nó.
-  const nomesProdutos = useMemo(
-    () => new Set(rows.filter((r) => isProdutoRow(r.nivel)).map((r) => norm(r.nome))),
-    [rows],
-  )
+  const assocSugestoes = useMemo(() => {
+    const proprio = norm(target.modo === 'editar' ? target.nome : nome)
+    return componentesExistentes.filter((n) => norm(n) !== proprio)
+  }, [componentesExistentes, target, nome])
+  // Candidatos a "consome": qualquer linha do catálogo — desde que níveis
+  // customizados são níveis de dado, um produto pode consumir uma linha Gold
+  // ou um componente sem virar fantasma. As sugestões priorizam os dados.
+  const nomesCatalogo = useMemo(() => new Set(rows.map((r) => norm(r.nome))), [rows])
   const consomeSugestoes = useMemo(() => {
     const proprio = norm(target.modo === 'editar' ? target.nome : nome)
     return rows
-      .filter((r) => isProdutoRow(r.nivel))
+      .filter((r) => isProdutoRow(r.nivel) || slugsCustom.has(r.nivel))
       .map((r) => r.nome)
       .filter((n) => norm(n) !== proprio)
       .sort((a, b) => a.localeCompare(b, 'pt-BR'))
-  }, [rows, target, nome])
+  }, [rows, slugsCustom, target, nome])
 
   // Status fora do trio padrão (linha antiga): mantém como opção para não
   // perder ("" de linha de componente não conta — não é um status).
@@ -349,14 +368,42 @@ export default function CatalogForm({
     })
   }, [nome, tipo, rows, target])
 
-  const tipoLabel = TIPO_OPTIONS.find((o) => o.value === tipo)?.label ?? tipo
+  const tipoLabel = tipoOptions.find((o) => o.value === tipo)?.label ?? tipo
+  const dominioFinal = dominio === NOVO_DOMINIO ? novoDominio.trim() : dominio
+
+  // Estado completo da linha: todo campo viaja, exibido ou não pelo tipo atual.
+  const estado = useMemo<RowFormState>(
+    () => ({
+      nome,
+      tipo,
+      custom: isCustom,
+      dominio: dominioFinal,
+      origem,
+      fonteSistema,
+      fsec,
+      consome,
+      associacoes,
+      descricao,
+      observacoes,
+      debito,
+      status,
+      owner,
+      centroDeCusto,
+    }),
+    [
+      nome, tipo, isCustom, dominioFinal, origem, fonteSistema, fsec,
+      consome, associacoes, descricao, observacoes, debito, status, owner, centroDeCusto,
+    ],
+  )
+
+  // O que a troca de tipo faz com os campos já preenchidos (nada some calado).
+  const aviso = useMemo(() => avisoTroca(estado), [estado])
 
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (saving || saved) return
     const locais: string[] = []
     const nomeFinal = nome.trim()
-    const dominioFinal = dominio === NOVO_DOMINIO ? novoDominio.trim() : dominio
     // Cadastro independente: só nome e tipo são obrigatórios (domínio vazio
     // vira "A definir" no build).
     if (!nomeFinal) locais.push('Nome é obrigatório.')
@@ -372,33 +419,7 @@ export default function CatalogForm({
       return
     }
 
-    const row: CatalogoRow = {
-      nome: nomeFinal,
-      nivel: tipo,
-      dominio: isProduto ? dominioFinal : '',
-      origem: isProduto
-        ? origem.trim() === ''
-          ? null
-          : origem.trim()
-        : tipo === 'fonte'
-          ? formatAssocList(origensAssoc)
-          : null,
-      fonte_sistema: isProduto
-        ? fonteSistema.trim() === ''
-          ? null
-          : fonteSistema.trim()
-        : tipo === 'fonte-secundaria'
-          ? formatAssocList(fontesAssoc)
-          : null,
-      fontes_secundarias: isProduto ? fsec : [],
-      consome: isProduto ? consome.filter((c) => norm(c) !== norm(nomeFinal)) : [],
-      descricao: descricao.trim(),
-      debito: isProduto ? debito : 'avaliar',
-      status: isProduto ? status : '',
-      owner: owner.trim() === '' ? null : owner.trim(),
-      centro_de_custo: centroDeCusto.trim() === '' ? null : centroDeCusto.trim(),
-      observacoes,
-    }
+    const row: CatalogoRow = montarRow(estado)
     setErrors([])
     setSaving(true)
     try {
@@ -478,7 +499,7 @@ export default function CatalogForm({
                   value={tipo}
                   onChange={(e) => setTipo(e.target.value as NivelRow)}
                 >
-                  {TIPO_OPTIONS.map((o) => (
+                  {tipoOptions.map((o) => (
                     <option key={o.value} value={o.value}>
                       {o.label}
                     </option>
@@ -507,8 +528,7 @@ export default function CatalogForm({
                 )}
               </div>
 
-              {isProduto && (
-                <div className="cform__field">
+              <div className="cform__field">
                   <label className="cform__label" htmlFor="cf-dominio">
                     Domínio
                   </label>
@@ -533,97 +553,27 @@ export default function CatalogForm({
                       onChange={(e) => setNovoDominio(e.target.value)}
                     />
                   )}
-                </div>
-              )}
+              </div>
 
-              {isProduto && (
-                <div className="cform__row">
-                  <div className="cform__field">
-                    <label className="cform__label" htmlFor="cf-origem">
-                      Origem
-                    </label>
-                    <input
-                      id="cf-origem"
-                      type="text"
-                      list="cf-origens"
-                      placeholder="vazio = não se aplica"
-                      value={origem}
-                      onChange={(e) => setOrigem(e.target.value)}
-                    />
-                    <datalist id="cf-origens">
-                      {origensExistentes.map((o) => (
-                        <option key={o} value={o} />
-                      ))}
-                    </datalist>
-                  </div>
-                  <div className="cform__field">
-                    <label className="cform__label" htmlFor="cf-sistema">
-                      Fonte / sistema
-                    </label>
-                    <input
-                      id="cf-sistema"
-                      type="text"
-                      list="cf-sistemas"
-                      placeholder="vazio = não se aplica"
-                      value={fonteSistema}
-                      onChange={(e) => setFonteSistema(e.target.value)}
-                    />
-                    <datalist id="cf-sistemas">
-                      {fontesExistentes.map((s) => (
-                        <option key={s} value={s} />
-                      ))}
-                    </datalist>
-                  </div>
-                </div>
-              )}
+              <ChipsField
+                label="Consome/Upstream"
+                placeholder="buscar dado do catálogo…"
+                values={consome}
+                suggestions={consomeSugestoes}
+                knownNames={nomesCatalogo}
+                ghostNote="Nome fora do catálogo: vira nó fantasma no mapa até ganhar linha própria."
+                onChange={setConsome}
+              />
 
-              {tipo === 'fonte' && (
-                <ChipsField
-                  label="Origens associadas"
-                  placeholder="buscar origem existente ou digitar nova…"
-                  values={origensAssoc}
-                  suggestions={origensExistentes}
-                  knownNames={null}
-                  ghostNote=""
-                  onChange={setOrigensAssoc}
-                />
-              )}
-
-              {tipo === 'fonte-secundaria' && (
-                <ChipsField
-                  label="Fontes associadas"
-                  placeholder="buscar fonte existente ou digitar nova…"
-                  values={fontesAssoc}
-                  suggestions={fontesExistentes}
-                  knownNames={null}
-                  ghostNote=""
-                  onChange={setFontesAssoc}
-                />
-              )}
-
-              {isProduto && (
-                <ChipsField
-                  label="Fontes secundárias"
-                  placeholder="buscar tabela existente ou digitar nova…"
-                  values={fsec}
-                  suggestions={fsecExistentes}
-                  knownNames={null}
-                  ghostNote=""
-                  onChange={setFsec}
-                />
-              )}
-
-              {isProduto && (
-                <ChipsField
-                  label="Consome"
-                  placeholder="buscar dado do catálogo…"
-                  values={consome}
-                  suggestions={consomeSugestoes}
-                  knownNames={nomesProdutos}
-                  ghostNote="Nome fora do catálogo: vira nó fantasma no mapa até ganhar linha própria."
-                  onChange={setConsome}
-                />
-              )}
+              <ChipsField
+                label="Associações"
+                placeholder="buscar componente existente…"
+                values={associacoes}
+                suggestions={assocSugestoes}
+                knownNames={componentesConhecidos}
+                ghostNote="A associação precisa apontar para uma linha que exista no catálogo."
+                onChange={setAssociacoes}
+              />
 
               <div className="cform__field">
                 <label className="cform__label" htmlFor="cf-descricao">
@@ -649,17 +599,18 @@ export default function CatalogForm({
                 />
               </div>
 
-              {isProduto && (
-                <div className="cform__row">
+              <div className="cform__row">
                   <div className="cform__field">
                     <label className="cform__label" htmlFor="cf-debito">
                       Débito técnico
                     </label>
                     <select
                       id="cf-debito"
-                      value={debito}
-                      onChange={(e) => setDebito(e.target.value as Debito)}
+                      value={isProduto ? debito || 'avaliar' : debito}
+                      onChange={(e) => setDebito(e.target.value as Debito | '')}
                     >
+                      {/* Fora dos produtos o débito pode não se aplicar. */}
+                      {!isProduto && <option value="">{VAZIO_LABEL}</option>}
                       {DEBITO_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>
                           {o.label}
@@ -671,7 +622,12 @@ export default function CatalogForm({
                     <label className="cform__label" htmlFor="cf-status">
                       Status
                     </label>
-                    <select id="cf-status" value={status} onChange={(e) => setStatus(e.target.value)}>
+                    <select
+                      id="cf-status"
+                      value={isProduto ? status || 'producao' : status}
+                      onChange={(e) => setStatus(e.target.value)}
+                    >
+                      {!isProduto && <option value="">{VAZIO_LABEL}</option>}
                       {statusOptions.map((s) => (
                         <option key={s} value={s}>
                           {s}
@@ -679,8 +635,7 @@ export default function CatalogForm({
                       ))}
                     </select>
                   </div>
-                </div>
-              )}
+              </div>
 
               <div className="cform__row">
                 <div className="cform__field">
@@ -708,6 +663,24 @@ export default function CatalogForm({
                   />
                 </div>
               </div>
+
+              {(aviso.mantidos.length > 0 || aviso.perdidos.length > 0) && (
+                <ul className="catalog-form__notes">
+                  {aviso.mantidos.length > 0 && (
+                    <li>
+                      ⓘ {aviso.mantidos.join(', ')}: mantido{aviso.mantidos.length > 1 ? 's' : ''} na
+                      planilha, mas <strong>{tipoLabel}</strong> não usa {aviso.mantidos.length > 1 ? 'esses campos' : 'esse campo'}.
+                    </li>
+                  )}
+                  {aviso.perdidos.length > 0 && (
+                    <li>
+                      ⚠ {aviso.perdidos.join(', ')}: <strong>{tipoLabel}</strong> não guarda{' '}
+                      {aviso.perdidos.length > 1 ? 'esses campos' : 'esse campo'} — o conteúdo atual
+                      será descartado ao salvar.
+                    </li>
+                  )}
+                </ul>
+              )}
 
               {errors.length > 0 && (
                 <ul className="catalog-form__errors" role="alert">

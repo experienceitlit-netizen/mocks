@@ -9,7 +9,8 @@ implementado; a ordem abaixo não é prioridade.
   request, mantendo o Git como trilha de auditoria. *Atendido na versão dev server: o
   formulário multi-nível ("+ Novo componente" / "✎ Editar" no balão) cadastra e edita
   produtos e componentes, gravando o `catalogo.csv` e regenerando o `graph.json` pela
-  API local (`/api/catalogo`); falta a variante com PR e trilha de auditoria no Git.*
+  API local (`/api/catalogo`); falta a variante com PR e trilha de auditoria no Git.
+  Os níveis também são cadastráveis pelo modal "≣ Níveis" (`/api/niveis` → `niveis.csv`).*
 - **Autenticação corporativa e deploy interno oficial** — hoje o MVP é estático e sem
   login; a versão oficial precisa de SSO e hosting interno padrão.
 - **Visão por sistema e visão por owner** — agrupar/clusterizar o grafo por fonte

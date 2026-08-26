@@ -1104,6 +1104,26 @@
 
 /* erros da API (400) e validação local */
 
+/* Aviso do que a troca de tipo faz com os campos já preenchidos. */
+.catalog-form__notes {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 176, 32, 0.5);
+  background: rgba(255, 176, 32, 0.08);
+  color: #ffb020;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.catalog-form__notes strong {
+  color: #f0f0f0;
+  font-weight: 600;
+}
+
 .catalog-form__errors {
   list-style: none;
   display: flex;
@@ -1208,4 +1228,174 @@
   background: #2e2e2e;
   border-radius: 4px;
   padding: 0.1rem 0.35rem;
+}
+
+/* --- modal "≣ Níveis" (gerenciar níveis da cadeia; só em modo edição) --- */
+
+.niveis-modal {
+  width: min(30rem, 94vw);
+}
+
+.niveis-modal__list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.niveis-modal__row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 6px;
+  background: #1e1e1e;
+  border: 1px solid #2e2e2e;
+  font-size: 0.83rem;
+}
+
+.niveis-modal__row--builtin {
+  color: #8a8a8a;
+  background: transparent;
+}
+
+.niveis-modal__ordem {
+  width: 3.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.niveis-modal__ordem-input {
+  width: 3.2rem;
+  flex-shrink: 0;
+  text-align: right;
+  padding: 0.25rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid #3a3a3a;
+  background: #242424;
+  color: #e0e0e0;
+  font-size: 0.8rem;
+  font-family: inherit;
+  outline: none;
+}
+
+.niveis-modal__titulo {
+  flex: 1;
+}
+
+.niveis-modal__titulo-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #3a3a3a;
+  background: #242424;
+  color: #e0e0e0;
+  font-size: 0.83rem;
+  font-family: inherit;
+  outline: none;
+}
+
+.niveis-modal__ordem-input:focus,
+.niveis-modal__titulo-input:focus {
+  border-color: #6a6a6a;
+}
+
+.niveis-modal__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.niveis-modal__tag {
+  margin-left: auto;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #666;
+}
+
+.niveis-modal__remove {
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: none;
+  color: #8a8a8a;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.niveis-modal__remove:hover:not(:disabled) {
+  border-color: #cc092f;
+  color: #ff5a75;
+}
+
+.niveis-modal__remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.niveis-modal__add {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border-top: 1px solid #333;
+  padding-top: 0.75rem;
+}
+
+.niveis-modal__add-row {
+  display: grid;
+  grid-template-columns: 1fr 5.5rem auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.niveis-modal__add-row .cform__field input[type='number'] {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #3a3a3a;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  font-size: 0.83rem;
+  font-family: inherit;
+  outline: none;
+}
+
+.niveis-modal__add-row .cform__field input[type='number']:focus {
+  border-color: #6a6a6a;
+}
+
+.niveis-modal__add-btn,
+.niveis-modal__apply {
+  align-self: end;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid #3a5a7a;
+  background: rgba(127, 180, 232, 0.08);
+  color: #7fb4e8;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.niveis-modal__add-btn:hover:not(:disabled),
+.niveis-modal__apply:hover:not(:disabled) {
+  border-color: #7fb4e8;
+  background: rgba(127, 180, 232, 0.15);
+}
+
+.niveis-modal__add-btn:disabled,
+.niveis-modal__apply:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.niveis-modal__hint {
+  font-size: 0.72rem;
+  color: #8a8a8a;
+  line-height: 1.4;
 }

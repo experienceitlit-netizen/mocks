@@ -119,21 +119,55 @@ observacoes`.
 | Coluna | Obrigatória | Valores válidos / formato | Observações |
 |---|---|---|---|
 | `nome` | sim | texto livre curto | rótulo do nó; o `id` é derivado como slug (ex.: "RAR 12M" → `rar-12m`, usado na URL `?no=rar-12m`); linha sem nome é ignorada com aviso |
-| `nivel` | sim | `primario` \| `final` (legado: `secundario`) \| `ambos` | nível na cadeia (ver "Modelo em 4 níveis"); deriva o tipo do nó (primário = insumo, o resto = produto); a raiz não tem linha |
+| `nivel` | sim | `primario` \| `final` (legado: `secundario`) \| `ambos` \| `dominio` \| `origem` \| `fonte` \| `fonte-secundaria` \| slug de um nível customizado | nível na cadeia (ver "Modelo em 4 níveis"); deriva o tipo do nó (primário = insumo, o resto = produto); a raiz não tem linha |
 | `dominio` | sim | `Cadastro` \| `Mercado` \| `Risco` \| `Resultado` \| `Regulatorio` \| `A definir` | filtro por domínio na UI; vazio = `A definir` |
 | `origem` | primários | texto ou vazio | área ou processo de origem; vazio em produtos finais = não se aplica (UI mostra "—") |
 | `fonte_sistema` | primários | texto ou vazio | sistema/plataforma onde o dado vive; se contiver "legado" ou "on-premise", o nó fica âmbar; vazio em produtos finais = não se aplica |
-| `fontes_secundarias` | não | nomes separados por ` \| ` (ex.: `Mercado Alvo Semanal - UCS \| Mercado Alvo Mensal - UCS`) | tabelas UCS onde a fonte é ingerida; presença substitui a aresta direta dado→sistema por dado→fonte secundária→sistema (dedup global por nome) |
-| `consome` | produtos finais | nomes (ou ids) separados por ` \| `, sem diferenciar caixa | cria as arestas "consome"; nome inexistente vira nó fantasma + aviso |
+| `fontes_secundarias` | não | nomes separados por ` \| ` (ex.: `Mercado Alvo Semanal - UCS \| Mercado Alvo Mensal - UCS`) | tabelas UCS onde a fonte é ingerida; presença substitui a aresta direta dado→sistema por dado→fonte secundária→sistema; o nome resolve em qualquer linha do catálogo (inclusive de nível customizado) antes de materializar um nó próprio |
+| `consome` | produtos finais | nomes (ou ids) separados por ` \| `, sem diferenciar caixa nem acentos | cria as arestas "consome"; resolve em **qualquer linha do catálogo** — produto, componente ou nível customizado — e só o nome que não existe em lugar nenhum vira nó fantasma + aviso |
 | `descricao` | sim | uma linha | aparece no balão e na busca |
 | `debito` | sim | `sim` \| `nao` \| `avaliar` | manda na cor do nó (ver abaixo) |
 | `status` | sim | `producao` \| `transicao` \| `investigacao` | |
 | `owner` | sim (aceita vazio) | texto ou vazio | vazio = a definir → nó com borda tracejada |
 | `centro_de_custo` | sim (aceita vazio) | texto ou vazio | vazio = a definir → nó com borda tracejada |
 | `observacoes` | não | Markdown livre (multilinha, entre aspas) | corpo do balão de detalhe; wikilinks só navegam, não criam arestas |
+| `associacoes` | não | nomes separados por ` \| ` | só em linhas de **nível customizado**: liga a linha a qualquer outra do mapa (produto, fonte, origem, outro nível custom…), gerando arestas "vem de"; nome inexistente gera aviso |
 
 Problema no catálogo gera **warning** no build (não erro) — o dado entra mesmo assim,
 para o gap ficar visível em vez de escondido.
+
+## Níveis customizados
+
+Além dos níveis fixos (Domínio, Produto final, Produto primário, Fonte secundária,
+Fonte, Origem), dá para criar níveis próprios — por exemplo as camadas medallion
+Bronze, Prata e Ouro entre a fonte e a fonte secundária.
+
+Cada nível tem **Título** e **Ordem**; a ordem posiciona a coluna na vista de linhagem,
+que é lida da esquerda (produto) para a direita (origem). Os fixos ocupam as ordens 0
+(raiz), 10 (domínio), 20 (produto final), 30 (produto primário), 40 (fonte secundária),
+50 (fonte) e 60 (origem) — então Ouro 42, Prata 44 e Bronze 46 entram exatamente entre a
+fonte secundária e a fonte, do mais refinado ao mais cru.
+
+**Nível customizado é nível de DADO, não de metadado.** A linha aceita todos os campos de
+um produto (domínio, origem, fonte, fontes secundárias, consome, débito, status, owner,
+centro de custo) *mais* `associacoes`, e o nó segue as mesmas regras dos produtos quando
+esses campos existem: cor por débito/legado, borda tracejada com owner ou centro de custo
+vazio, arestas de rota e de consumo iguais às de um produto — mudando só a **coluna**.
+Preencher apenas nome e descrição continua valendo: a linha vira um componente simples, na
+cor do nível. Transferir um dado entre níveis, portanto, não quebra quem o consome nem
+apaga a ficha dele.
+
+Pelo app (`npm run dev`): botão **≣ Níveis** no topo lista os níveis, cria (Título +
+Ordem), renomeia e remove os customizados — remover um nível em uso é recusado com a
+lista de linhas que o utilizam. Linhas desse nível são cadastradas pelo **+ Novo
+componente** (ou pelo **✎ Editar** de um nó) escolhendo o nível no campo "Tipo de
+componente"; o campo "Associações" liga a linha às demais (coluna `associacoes`). Trocar o
+tipo de uma linha **nunca apaga campo**: o que o nível novo não usa continua na planilha, e
+o formulário avisa antes de salvar o que não couber.
+
+Na planilha, os níveis vivem em **`niveis.csv`** (`titulo;ordem`, só os customizados) e a
+coluna `nivel` do `catalogo.csv` aceita o slug do nível (ex.: `bronze`). Uma coluna só
+vira faixa no grafo quando tem ao menos um componente.
 
 ## Cores e bordas do grafo
 
@@ -165,10 +199,12 @@ está grande o suficiente na tela para o glifo ser legível.
 
 ```
 catalogo.csv                # conteúdo: a planilha do catálogo (uma linha por dado)
+niveis.csv                  # níveis customizados (titulo;ordem) — vazio = só os fixos
 scripts/
   build-graph.ts            # CLI: lê catalogo.csv e emite src/data/graph.json
   graph-lib.ts              # lógica pura do build (parser CSV, raiz automática, montagem do grafo)
   graph-lib.test.ts         # testes (npm test)
+  vite-plugin-catalogo.ts   # API do dev server: /api/catalogo e /api/niveis (grava os CSVs)
 src/
   data/graph.json           # GERADO pelo build — não editar à mão (mas é commitado)
   components/
