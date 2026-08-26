@@ -1,311 +1,172 @@
-// Vista de linhagem em níveis: a partir de um dado focado, resolve TUDO de
-// que ele depende seguindo as arestas "consome" — e "agrega", que o nó-raiz
-// usa para apontar os produtos finais — (montante, recursivo) e anexa
-// a rota de cada dado alcançado — fonte (campo `sistema`) e origem (campo
-// `origem`) — casando os campos de texto com os nós derivados do build.
-// Dados com fontes secundárias (tabelas UCS, arestas "vem de" dado→fsec)
-// ganham essas colunas intercaladas: dado → fsec → fonte → origem.
-// Quando o campo não tem nó correspondente (ex.: "a confirmar"), sintetiza um
-// placeholder só na UI, um por dado, para a cadeia sempre mostrar o nível
-// origem → fonte → produto.
-import type { GraphLinkData, GraphNodeData, NivelDef, SimLink, SimNode } from './graph-types'
-import { isRaiz, NIVEIS_BUILTIN, nodeKind, normalizeNivel } from './graph-types'
-
-/** Sistema/origem/fonte secundária são camadas de linhagem: não entram na
- *  árvore de dados (têm coluna própria). Nós de domínio derivados entram — são
- *  um nível entre a raiz e os finais — e nós de nível customizado também: são
- *  dados como qualquer outro, só que numa coluna cadastrada pelo usuário. */
-function isSysOrg(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): boolean {
-  const kind = nodeKind(node)
-  return kind === 'sistema' || kind === 'origem' || kind === 'fonte-secundaria'
-}
+// Vista em níveis: a partir de um componente focado, resolve TUDO de que ele
+// depende seguindo as arestas de saída ("consome" e "vem de", montante e
+// recursivo) e distribui os nós alcançados em colunas — uma por nível, na
+// ordem do bloco `niveis` do graph.json.
+//
+// Não há camada especial de linhagem nem nó sintetizado: cada componente cai
+// na coluna do seu `nivel` e as arestas cruzam colunas livremente (um nível
+// pode consumir outro que esteja duas colunas adiante, ou ao lado).
+import type {
+  GraphLinkData,
+  GraphNodeData,
+  NivelDef,
+  SimLink,
+  SimNode,
+} from './graph-types'
+import {
+  isReal,
+  linkLabel,
+  nivelDe,
+  nivelDeEntrada,
+  ordemDoNivel,
+  tituloDoNivel,
+} from './graph-types'
 
 /** Distância entre colunas (x) e entre linhas de uma coluna (y). */
 export const NIVEIS_COL_X = 250
 export const NIVEIS_ROW_Y = 70
 
-/** Slug do nível semântico de um nó da vista: cada nó cai num nível pelo que
- *  ele É (não pela distância em saltos), então p.ex. todos os sistemas dividem
- *  a mesma coluna mesmo quando só parte dos dados passa por fonte secundária.
- *  A ordem esquerda → direita vem do bloco `niveis` do graph.json (campo
- *  `ordem`), não mais de uma lista fixa — níveis customizados entram na coluna
- *  do seu `nivelCustom`, na posição cadastrada. */
-function nivelSlugDe(n: GraphNodeData, consumidoPorDado: ReadonlySet<string>): string {
-  if (isRaiz(n)) return 'raiz'
-  switch (nodeKind(n)) {
-    case 'dominio':
-      return 'dominio'
-    case 'fonte-secundaria':
-      return 'fonte-secundaria'
-    case 'sistema': // inclui placeholders ph-sistema-*
-      return 'fonte'
-    case 'origem': // inclui placeholders ph-origem-*
-      return 'origem'
-    case 'nivel-custom':
-      return n.nivelCustom ?? 'fonte-secundaria'
-    default: {
-      // "Ambos" conta no nível em que aparece na cadeia: insumo de outro dado
-      // → produto primário; só agregado por raiz/domínio → produto final.
-      const nivel = normalizeNivel(n.nivel)
-      if (nivel === 'final') return 'final'
-      if (nivel === 'ambos') return consumidoPorDado.has(n.id) ? 'primario' : 'final'
-      return 'primario' // primário (e dado sem nivel declarado)
-    }
-  }
-}
-
-/** Faixa vertical de uma coluna da vista em níveis (coordenadas de grafo,
- *  yMin/yMax são centros do primeiro e do último nó — o padding visual do
- *  retângulo fica a cargo de quem desenha). */
+/** Faixa vertical de uma coluna (coordenadas de grafo; yMin/yMax são centros
+ *  do primeiro e do último nó — o padding visual fica com quem desenha). */
 export interface LineageColumn {
+  /** Slug do nível da coluna. */
+  slug: string
   label: string
   x: number
   yMin: number
   yMax: number
 }
 
-/** Fonte ou origem de um dado: nó real (sys-/org-) ou placeholder da UI. */
-export interface LineageSource {
-  node: GraphNodeData
-  placeholder: boolean
+/** Aresta de saída de um componente, já resolvida no nó de destino. */
+export interface LineageEdge {
+  label: string
+  entry: LineageEntry
 }
 
-/** Árvore de linhagem de um dado (repete nós compartilhados por ramo). */
+/** Árvore montante de um componente (nós compartilhados reusam a entrada). */
 export interface LineageEntry {
   data: GraphNodeData
-  /** Tabelas UCS de ingestão (arestas "vem de" dado→fsec do build): quando
-   *  presentes, a cadeia visual passa por elas antes da fonte. */
-  fontesSecundarias: GraphNodeData[]
-  sistema: LineageSource | null
-  origem: LineageSource | null
-  insumos: LineageEntry[]
+  upstream: LineageEdge[]
 }
 
 export interface Lineage {
-  root: LineageEntry
-  /** Nós (com fx/fy fixos em colunas) e arestas da vista em níveis. */
+  /** null na vista sem foco (inventário): não há componente de partida. */
+  root: LineageEntry | null
+  /** Nós (com fx/fy fixos em colunas) e arestas da vista. */
   graph: { nodes: SimNode[]; links: SimLink[] }
-  /** Colunas presentes, esquerda → direita (retângulos/títulos da vista). */
+  /** Colunas presentes, esquerda → direita. */
   columns: LineageColumn[]
   /** Ids de tudo que a vista exibe (para esmaecimento por filtro/hover). */
   ids: ReadonlySet<string>
-  /** Placeholders não são clicáveis nem focáveis. */
-  placeholderIds: ReadonlySet<string>
   /** Cadeia completa do nó (montante + jusante), para destacar no hover. */
   chainOf(id: string): Set<string>
 }
 
-function norm(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim()
-}
-
-function titleize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1)
-}
-
-function makeSource(
-  data: GraphNodeData,
-  field: 'sistema' | 'origem',
-  byName: ReadonlyMap<string, GraphNodeData>,
-): LineageSource | null {
-  // null = "não se aplica" (secundário só tem cadeias de primários): nunca
-  // sintetiza placeholder — só strings sem nó correspondente viram um.
-  const valor = field === 'sistema' ? data.sistema : data.origem
-  if (valor === null || valor === undefined || valor.trim() === '') return null
-  const real = byName.get(norm(valor))
-  if (real) return { node: real, placeholder: false }
-  return {
-    node: {
-      id: `ph-${field}-${data.id}`,
-      nome: titleize(valor),
-      tipo: field,
-      derivado: true,
-      placeholder: true,
-    },
-    placeholder: true,
-  }
-}
-
-/** Árvore de linhagem montante de um dado ou domínio; null para
- *  sistema/origem ou nó inexistente. */
+/**
+ * Árvore montante de um componente: ele, tudo que consome e tudo a que se
+ * associa, recursivamente. null quando o id não existe no grafo.
+ */
 export function buildLineageTree(
   rootId: string,
   nodes: readonly GraphNodeData[],
   links: readonly GraphLinkData[],
 ): LineageEntry | null {
   const byId = new Map(nodes.map((n) => [n.id, n]))
-  const rootData = byId.get(rootId)
-  if (!rootData || isSysOrg(rootData)) return null
+  if (!byId.has(rootId)) return null
 
-  const sysByName = new Map<string, GraphNodeData>()
-  const orgByName = new Map<string, GraphNodeData>()
-  for (const n of nodes) {
-    if (n.tipo === 'sistema') sysByName.set(norm(n.nome), n)
-    else if (n.tipo === 'origem') orgByName.set(norm(n.nome), n)
-  }
-
-  // Fontes secundárias (tabelas UCS) de cada dado: arestas "vem de" dado→fsec.
-  const fsecByDado = new Map<string, GraphNodeData[]>()
+  const saidas = new Map<string, GraphLinkData[]>()
   for (const l of links) {
-    if ((l.label ?? 'consome') !== 'vem de') continue
-    const alvo = byId.get(l.target)
-    if (!alvo || nodeKind(alvo) !== 'fonte-secundaria') continue
-    if (!fsecByDado.has(l.source)) fsecByDado.set(l.source, [])
-    fsecByDado.get(l.source)?.push(alvo)
+    if (!byId.has(l.source) || !byId.has(l.target)) continue
+    const lista = saidas.get(l.source)
+    if (lista) lista.push(l)
+    else saidas.set(l.source, [l])
   }
 
-  // Adjacência "consome"/"agrega" só entre dados (consumidor → insumo; a
-  // raiz → produto final tem a mesma direção de dependência).
-  const consome = new Map<string, string[]>()
-  for (const l of links) {
-    const label = l.label ?? 'consome'
-    if (label !== 'consome' && label !== 'agrega') continue
-    const alvo = byId.get(l.target)
-    if (!alvo || isSysOrg(alvo)) continue
-    if (!consome.has(l.source)) consome.set(l.source, [])
-    consome.get(l.source)?.push(l.target)
-  }
-
-  // Entradas memoizadas: insumo compartilhado vira o mesmo objeto nos ramos.
+  // Entradas memoizadas: alvo compartilhado vira o mesmo objeto em cada ramo.
   const entries = new Map<string, LineageEntry>()
   const build = (id: string, trilha: ReadonlySet<string>): LineageEntry | null => {
     const cached = entries.get(id)
     if (cached) return cached
     const data = byId.get(id)
-    if (!data || isSysOrg(data)) return null
-    const entry: LineageEntry = {
-      data,
-      fontesSecundarias: fsecByDado.get(id) ?? [],
-      sistema: makeSource(data, 'sistema', sysByName),
-      origem: makeSource(data, 'origem', orgByName),
-      insumos: [],
-    }
+    if (!data) return null
+    const entry: LineageEntry = { data, upstream: [] }
     entries.set(id, entry)
-    for (const alvo of consome.get(id) ?? []) {
-      if (trilha.has(alvo)) continue // guarda contra ciclo de "consome"
-      const filho = build(alvo, new Set([...trilha, alvo]))
-      if (filho) entry.insumos.push(filho)
+    for (const l of saidas.get(id) ?? []) {
+      if (trilha.has(l.target)) continue // guarda contra ciclo
+      const filho = build(l.target, new Set([...trilha, l.target]))
+      if (filho) entry.upstream.push({ label: linkLabel(l), entry: filho })
     }
     return entry
   }
   return build(rootId, new Set([rootId]))
 }
 
-/** Linhagem completa com layout em colunas semânticas, lidas da esquerda para
- *  a direita: nó focado à esquerda e uma coluna por nível da cadeia presente
- *  na sub-árvore, na ordem do bloco `niveis` do graph.json (built-ins raiz →
- *  domínio → final → primário → fonte secundária → fonte → origem, com níveis
- *  customizados intercalados pelo campo `ordem`). Uma aresta pode atravessar
- *  colunas: dado sem fonte secundária liga direto na coluna de fontes,
- *  cruzando a de fsec. */
+/**
+ * Linhagem com layout em colunas: nó focado à esquerda e uma coluna por nível
+ * presente, na ordem do bloco `niveis`.
+ *
+ * `rootId` null (ou o foco num componente do NÍVEL DE ENTRADA, o de menor
+ * ordem) abre o inventário completo: todo componente do catálogo entra na
+ * coluna do seu nível, mesmo sem nenhuma aresta. É o que mantém o mapa legível
+ * enquanto as ligações estão sendo construídas — e o que faz a vista em níveis
+ * sobreviver ao nível de entrada ficar vazio. Focar em qualquer outro
+ * componente mostra só a sub-árvore dele.
+ */
 export function buildLineage(
-  rootId: string,
+  rootId: string | null,
   nodes: readonly GraphNodeData[],
   links: readonly GraphLinkData[],
-  niveis: readonly NivelDef[] = NIVEIS_BUILTIN,
+  niveis: readonly NivelDef[] = [],
 ): Lineage | null {
-  const root = buildLineageTree(rootId, nodes, links)
-  if (!root) return null
+  // Sem foco, a vista é só o inventário: nenhum componente é indispensável,
+  // então o mapa em níveis existe mesmo com o nível de entrada vazio.
+  const root = rootId === null ? null : buildLineageTree(rootId, nodes, links)
+  if (rootId !== null && !root) return null
 
-  // Rótulo original de cada aresta dado→dado ("consome" ou "agrega" da raiz).
-  const labelByPair = new Map<string, string>()
-  for (const l of links) labelByPair.set(`${l.source}→${l.target}`, l.label ?? 'consome')
-
-  // Achata a árvore em nós únicos (ordem de visita = agrupamento vertical
-  // de cada cadeia perto do seu produto) e arestas deduplicadas.
+  // Achata a árvore em nós únicos — a ordem de visita agrupa cada cadeia perto
+  // do componente que a puxou.
   const nodeById = new Map<string, SimNode>()
-  const graphLinks: GraphLinkData[] = []
-  const linkKeys = new Set<string>()
   const addNode = (n: GraphNodeData) => {
     if (!nodeById.has(n.id)) nodeById.set(n.id, { ...n })
   }
-  const addLink = (source: string, target: string, label: string) => {
-    const key = `${source}→${target}`
-    if (linkKeys.has(key)) return
-    linkKeys.add(key)
-    graphLinks.push({ source, target, label })
-  }
-
-  const seen = new Set<string>()
-  const walk = (entry: LineageEntry) => {
-    if (seen.has(entry.data.id)) return
-    seen.add(entry.data.id)
+  const walk = (entry: LineageEntry, vistos: Set<string>) => {
+    if (vistos.has(entry.data.id)) return
+    vistos.add(entry.data.id)
     addNode(entry.data)
-    // Com fontes secundárias (tabelas UCS), a cadeia visual as intercala:
-    // dado → fsec → fonte → origem; sem elas, dado → fonte → origem direto.
-    const fsecs = entry.fontesSecundarias
-    for (const f of fsecs) {
-      addNode(f)
-      addLink(entry.data.id, f.id, 'vem de')
-    }
-    const cabecas = fsecs.length > 0 ? fsecs.map((f) => f.id) : [entry.data.id]
-    if (entry.sistema) {
-      addNode(entry.sistema.node)
-      for (const cabeca of cabecas) addLink(cabeca, entry.sistema.node.id, 'vem de')
-      if (entry.origem) {
-        addNode(entry.origem.node)
-        addLink(entry.sistema.node.id, entry.origem.node.id, 'origina de')
-      }
-    } else if (entry.origem) {
-      addNode(entry.origem.node)
-      for (const cabeca of cabecas) addLink(cabeca, entry.origem.node.id, 'origina de')
-    }
-    for (const filho of entry.insumos) {
-      const label = labelByPair.get(`${entry.data.id}→${filho.data.id}`) ?? 'consome'
-      addLink(entry.data.id, filho.data.id, label)
-      walk(filho)
-    }
+    for (const { entry: filho } of entry.upstream) walk(filho, vistos)
   }
-  walk(root)
+  if (root) walk(root, new Set())
 
-  // Foco na raiz é o inventário completo: componentes cadastrados no catálogo
-  // (domínio/origem/fonte/fonte secundária) que nenhuma cadeia alcançou —
-  // ex.: tabela UCS recém-cadastrada, ainda sem associações — entram na
-  // coluna do seu nível, ao fim da pilha. Foco em outro nó mantém só a
-  // sub-árvore dele.
-  if (isRaiz(root.data)) {
-    for (const n of nodes) {
-      if (n.cadastrado === true && !nodeById.has(n.id)) addNode(n)
-    }
-    // Associações dos componentes de nível custom (arestas custom→alvo
-    // "vem de" do build): visíveis quando os dois lados estão na vista —
-    // customs nunca são alcançados pela árvore de "consome", então só aqui
-    // (inventário da raiz) suas arestas aparecem.
-    for (const l of links) {
-      if ((l.label ?? 'consome') !== 'vem de') continue
-      const fonte = nodeById.get(l.source)
-      if (!fonte || nodeKind(fonte) !== 'nivel-custom') continue
-      if (nodeById.has(l.target)) addLink(l.source, l.target, 'vem de')
-    }
+  const entrada = nivelDeEntrada(nodes, niveis)
+  if (root === null || (entrada !== null && nivelDe(root.data) === entrada)) {
+    for (const n of nodes) if (isReal(n)) addNode(n)
   }
 
-  // Slug do nível de cada nó → ordem numérica do bloco `niveis`. Slug fora do
-  // bloco (dado ainda não migrado) cai depois do último nível conhecido.
-  const consumidoPorDado = new Set<string>()
-  for (const l of graphLinks) {
-    const fonte = nodeById.get(l.source)
-    if (!fonte || isRaiz(fonte)) continue
-    const kind = nodeKind(fonte)
-    if (kind === 'dado' || kind === 'nivel-custom') consumidoPorDado.add(l.target)
+  // Toda aresta cujas duas pontas estão na vista — inclusive as que ligam nós
+  // irmãos, que a árvore montante não percorre.
+  const graphLinks: GraphLinkData[] = []
+  const linkKeys = new Set<string>()
+  for (const l of links) {
+    if (!nodeById.has(l.source) || !nodeById.has(l.target)) continue
+    const key = `${l.source}→${l.target}`
+    if (linkKeys.has(key)) continue
+    linkKeys.add(key)
+    graphLinks.push({ source: l.source, target: l.target, label: linkLabel(l) })
   }
-  const nivelBySlug = new Map(niveis.map((nv) => [nv.slug, nv]))
-  const ordemMax = Math.max(0, ...niveis.map((nv) => nv.ordem))
-  const ordemDe = (slug: string): number => nivelBySlug.get(slug)?.ordem ?? ordemMax + 1
 
-  // Colunas da esquerda para a direita: só os níveis presentes na sub-árvore
-  // (nível vazio não vira coluna); espaçamento vertical uniforme por coluna,
-  // centrado, na ordem de visita da árvore.
+  // Colunas da esquerda para a direita: só os níveis presentes (nível vazio
+  // não vira coluna); espaçamento vertical uniforme por coluna, centrado.
   const porSlug = new Map<string, SimNode[]>()
   for (const n of nodeById.values()) {
-    const slug = nivelSlugDe(n, consumidoPorDado)
-    if (!porSlug.has(slug)) porSlug.set(slug, [])
-    porSlug.get(slug)?.push(n)
+    const slug = nivelDe(n)
+    const lista = porSlug.get(slug)
+    if (lista) lista.push(n)
+    else porSlug.set(slug, [n])
   }
-  const slugsPresentes = [...porSlug.keys()].sort((a, b) => ordemDe(a) - ordemDe(b))
+  const slugsPresentes = [...porSlug.keys()].sort((a, b) => {
+    const delta = ordemDoNivel(niveis, a) - ordemDoNivel(niveis, b)
+    return delta !== 0 ? delta : a.localeCompare(b, 'pt-BR')
+  })
   const columns: LineageColumn[] = []
   slugsPresentes.forEach((slug, col) => {
     const coluna = porSlug.get(slug) ?? []
@@ -319,9 +180,8 @@ export function buildLineage(
     })
     const meiaAltura = ((coluna.length - 1) / 2) * NIVEIS_ROW_Y
     columns.push({
-      // A coluna da raiz é rotulada com o nome do próprio nó ("Atacado —
-      // Dados"); as demais, com o título do nível no bloco `niveis`.
-      label: slug === 'raiz' ? root.data.nome : (nivelBySlug.get(slug)?.titulo ?? slug),
+      slug,
+      label: tituloDoNivel(niveis, slug),
       x,
       yMin: -meiaAltura,
       yMax: meiaAltura,
@@ -332,10 +192,12 @@ export function buildLineage(
   const up = new Map<string, string[]>()
   const down = new Map<string, string[]>()
   for (const l of graphLinks) {
-    if (!up.has(l.source)) up.set(l.source, [])
-    if (!down.has(l.target)) down.set(l.target, [])
-    up.get(l.source)?.push(l.target)
-    down.get(l.target)?.push(l.source)
+    const saida = up.get(l.source)
+    if (saida) saida.push(l.target)
+    else up.set(l.source, [l.target])
+    const entrada = down.get(l.target)
+    if (entrada) entrada.push(l.source)
+    else down.set(l.target, [l.source])
   }
   const chainOf = (id: string): Set<string> => {
     const lit = new Set([id])
@@ -355,15 +217,11 @@ export function buildLineage(
     return lit
   }
 
-  const placeholderIds = new Set<string>()
-  for (const [id, n] of nodeById) if (n.placeholder) placeholderIds.add(id)
-
   return {
     root,
     graph: { nodes: [...nodeById.values()], links: graphLinks as SimLink[] },
     columns,
     ids: new Set(nodeById.keys()),
-    placeholderIds,
     chainOf,
   }
 }

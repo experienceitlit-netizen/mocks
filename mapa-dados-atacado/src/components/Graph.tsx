@@ -2,9 +2,10 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'r
 import ForceGraph2D from 'react-force-graph-2d'
 import type { Ref } from 'react'
 import type { GraphLinkData, GraphMethods, GraphNodeData, SimLink, SimNode } from './graph-types'
-import { isRaiz, isSecundario, linkEndId, nodeKind } from './graph-types'
+import { linkEndId, tipoComponenteDe } from './graph-types'
 import type { LineageColumn } from './lineage'
-import { BACKGROUND, PLACEHOLDER_FILL, PLACEHOLDER_STROKE, nodeColor } from './palette'
+import { extentOf, traceShape } from './shapes'
+import { BACKGROUND, nodeColor } from './palette'
 
 export interface GraphHandle {
   /** Centraliza e dá zoom no nó (usado por balão, busca e ?no= da URL). */
@@ -51,26 +52,21 @@ function radiusOf(degree: number): number {
   return 4 + Math.sqrt(degree) * 2.2
 }
 
-/** Grau de cortesia de nós sem aresta: placeholder e componente cadastrado
- *  ainda sem associações (recém-registrado pelo formulário) nascem do
- *  tamanho dos pares — p.ex. as tabelas UCS ligadas na cadeia têm grau 2 —
- *  em vez de encolhidos no raio mínimo. Ao ganhar arestas, o grau real
- *  volta a mandar. */
+/** Grau de cortesia de nós sem aresta: um componente recém-cadastrado nasce do
+ *  tamanho dos pares em vez de encolhido no raio mínimo. Ao ganhar arestas, o
+ *  grau real volta a mandar. */
 const SEM_ARESTA_DEGREE = 2
 
 function visualDegree(node: SimNode, degreeById: ReadonlyMap<string, number>): number {
   const degree = degreeById.get(node.id) ?? 0
   if (degree > 0) return degree
-  return node.placeholder || node.cadastrado === true ? SEM_ARESTA_DEGREE : 0
+  return node.fantasma === true ? 0 : SEM_ARESTA_DEGREE
 }
 
-/** Nó-raiz: raio fixo de protagonista, independente do grau. */
-const RAIZ_RADIUS = 14
-/** Circunraio do hexágono da raiz com área ~equivalente ao círculo. */
-const HEX_SCALE = 1.1
-/** Nó de domínio: raio fixo entre a raiz e os produtos (grau não conta,
- *  todas as suas arestas são "agrega"). */
-const DOMINIO_RADIUS = 10
+/** Extensão visual do nó além do centro (halo, âncora do balão e rótulo). */
+function extentDoNo(node: SimNode, r: number): number {
+  return extentOf(tipoComponenteDe(node), r)
+}
 
 /** Faixas da vista em níveis (coordenadas de grafo — escalam com o zoom).
  *  Largura menor que NIVEIS_COL_X (250) deixa um corredor entre faixas onde
@@ -90,14 +86,15 @@ const BAND_TITLE_COLOR = '#8A8A8A'
 const GLYPH_MIN_PX = 8
 
 /** Glifo inspirado no logo do Databricks: três "tijolos" (paralelogramos)
- *  empilhados, em branco translúcido sobre a cor do nó. Canvas puro — o
- *  standalone continua autocontido. */
+ *  empilhados, em branco translúcido sobre a cor do nó. Marca as Tabelas Delta
+ *  — o tipo de componente que vive no lakehouse. Canvas puro: o standalone
+ *  continua autocontido. */
 function drawDatabricksGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
-  const w = r * 0.52 // meia-largura de cada tijolo
-  const h = r * 0.14 // meia-altura
-  const skew = r * 0.26 // inclinação: topo deslocado à direita
+  const w = r * 0.42 // meia-largura de cada tijolo
+  const h = r * 0.12 // meia-altura
+  const skew = r * 0.2 // inclinação: topo deslocado à direita
   ctx.fillStyle = 'rgba(255,255,255,0.8)'
-  for (const k of [-0.42, 0, 0.42]) {
+  for (const k of [-0.34, 0, 0.34]) {
     const cy = y + k * r
     ctx.beginPath()
     ctx.moveTo(x - w + skew, cy - h)
@@ -141,7 +138,7 @@ export default function Graph({
     }, ms + 50)
   }, [])
 
-  // Mudou o conjunto visível (camadas/foco): re-simulação curta + zoomToFit.
+  // Mudou o conjunto visível (foco): re-simulação curta + zoomToFit.
   useEffect(() => {
     if (dataRef.current === data) return
     dataRef.current = data
@@ -181,11 +178,7 @@ export default function Graph({
       const node = data.nodes.find((n) => n.id === id)
       if (!fg || !node || node.x === undefined || node.y === undefined) return null
       const { x, y } = fg.graph2ScreenCoords(node.x, node.y)
-      const extent = isRaiz(node)
-        ? RAIZ_RADIUS * HEX_SCALE
-        : nodeKind(node) === 'dominio'
-          ? DOMINIO_RADIUS
-          : radiusOf(visualDegree(node, degreeById))
+      const extent = extentDoNo(node, radiusOf(visualDegree(node, degreeById)))
       return { x, y, r: extent * fg.zoom() }
     },
     [data, degreeById],
@@ -211,8 +204,8 @@ export default function Graph({
 
   // Faixas dos níveis, desenhadas sob arestas e nós (onRenderFramePre roda
   // antes do grafo, já no espaço de coordenadas do grafo): um retângulo com
-  // cabeçalho por coluna e, entre faixas vizinhas, um chevron "‹" apontando
-  // o sentido do fluxo do dado (da Origem, à direita, para os produtos, à
+  // cabeçalho por coluna e, entre faixas vizinhas, um chevron "‹" apontando o
+  // sentido do fluxo do dado (da última coluna, à direita, para a primeira, à
   // esquerda) — discreto de propósito: as arestas já têm setas, o chevron só
   // reforça a leitura do conjunto.
   const drawLevelBands = useCallback(
@@ -264,86 +257,15 @@ export default function Graph({
     (node: SimNode, ctx: CanvasRenderingContext2D, scale: number) => {
       const x = node.x ?? 0
       const y = node.y ?? 0
-      const raiz = isRaiz(node)
-      const kind = nodeKind(node)
-      const r = raiz
-        ? RAIZ_RADIUS
-        : kind === 'dominio'
-          ? DOMINIO_RADIUS
-          : radiusOf(visualDegree(node, degreeById))
-      // Extensão visual além do centro: vértice do hexágono da raiz ou o raio.
-      const extent = raiz ? r * HEX_SCALE : r
+      const r = radiusOf(visualDegree(node, degreeById))
+      const extent = extentDoNo(node, r)
       const dimmed = dimmedIds.has(node.id)
       ctx.globalAlpha = dimmed ? DIM_ALPHA : 1
 
-      ctx.beginPath()
-      if (raiz) {
-        // Hexágono de topo pontudo: forma exclusiva do nó-raiz.
-        for (let i = 0; i < 6; i++) {
-          const a = -Math.PI / 2 + (i * Math.PI) / 3
-          const px = x + extent * Math.cos(a)
-          const py = y + extent * Math.sin(a)
-          if (i === 0) ctx.moveTo(px, py)
-          else ctx.lineTo(px, py)
-        }
-        ctx.closePath()
-      } else if (kind === 'dominio') {
-        // Quadrado arredondado na cor do domínio (nível raiz → domínios).
-        const s = r * 0.95
-        ctx.roundRect(x - s, y - s, 2 * s, 2 * s, 3)
-      } else if (kind === 'fonte-secundaria' || kind === 'nivel-custom') {
-        // Quadrado de cantos bem arredondados: meio-termo entre o quadrado
-        // do sistema e o círculo do dado (a tabela UCS fica entre os dois na
-        // cadeia). Fonte secundária na cor teal própria; componente de nível
-        // custom reusa a forma na cor derivada do slug do nível.
-        const s = r * 0.9
-        ctx.roundRect(x - s, y - s, 2 * s, 2 * s, s * 0.55)
-      } else if (kind === 'sistema') {
-        // Quadrado com área ~equivalente ao círculo de raio r.
-        const s = r * 0.9
-        ctx.rect(x - s, y - s, 2 * s, 2 * s)
-      } else if (kind === 'origem') {
-        // Losango (quadrado rotacionado 45°).
-        const s = r * 1.15
-        ctx.moveTo(x, y - s)
-        ctx.lineTo(x + s, y)
-        ctx.lineTo(x, y + s)
-        ctx.lineTo(x - s, y)
-        ctx.closePath()
-      } else {
-        ctx.arc(x, y, r, 0, 2 * Math.PI)
-      }
-      if (kind !== 'dado') {
-        if (node.placeholder) {
-          // Fonte/origem desconhecida (vista de linhagem): cinza tracejado.
-          ctx.fillStyle = PLACEHOLDER_FILL
-          ctx.fill()
-          ctx.setLineDash([3 / scale, 2 / scale])
-          ctx.strokeStyle = PLACEHOLDER_STROKE
-          ctx.lineWidth = 1.4 / scale
-          ctx.stroke()
-          ctx.setLineDash([])
-        } else {
-          // Derivados: preenchimento sólido. Só nós de nível customizado podem
-          // vir incompletos (são linhas de dado, com owner e centro de custo).
-          ctx.fillStyle = nodeColor(node)
-          ctx.fill()
-          if (node.incompleto === true) {
-            // Gap de governança: borda branca tracejada, como nos produtos.
-            ctx.setLineDash([3 / scale, 2.2 / scale])
-            ctx.strokeStyle = '#FFFFFF'
-            ctx.lineWidth = 1.6 / scale
-            ctx.stroke()
-            ctx.setLineDash([])
-          }
-          // Tabelas UCS e sistemas Databricks ganham o glifo de "tijolos".
-          const databricks =
-            kind === 'fonte-secundaria' ||
-            (kind === 'sistema' && node.nome.toLowerCase().includes('databricks'))
-          if (databricks && r * scale >= GLYPH_MIN_PX) drawDatabricksGlyph(ctx, x, y, r)
-        }
-      } else if (node.fantasma) {
-        // Fantasma: sem preenchimento sólido, contorno cinza tracejado.
+      traceShape(ctx, tipoComponenteDe(node), x, y, r)
+      if (node.fantasma === true) {
+        // Citado sem linha no catálogo: sem preenchimento sólido, contorno
+        // cinza tracejado.
         ctx.fillStyle = 'rgba(90, 90, 90, 0.25)'
         ctx.fill()
         ctx.setLineDash([3 / scale, 2 / scale])
@@ -352,25 +274,21 @@ export default function Graph({
         ctx.stroke()
         ctx.setLineDash([])
       } else {
-        const cor = nodeColor(node)
-        ctx.fillStyle = cor
+        ctx.fillStyle = nodeColor(node)
         ctx.fill()
-        if (node.incompleto) {
-          // Gap de governança: borda branca tracejada.
+        if (node.incompleto === true) {
+          // Gap de governança (sem owner ou sem centro de custo): borda branca
+          // tracejada sobre a própria silhueta.
           ctx.setLineDash([3 / scale, 2.2 / scale])
           ctx.strokeStyle = '#FFFFFF'
           ctx.lineWidth = 1.6 / scale
           ctx.stroke()
           ctx.setLineDash([])
         }
-        if (isSecundario(node)) {
-          // Produto final: anel externo fino na cor do nó, por fora da borda
-          // tracejada de incompletude (e do halo de seleção/hover).
-          ctx.beginPath()
-          ctx.arc(x, y, r + 3.6 / scale, 0, 2 * Math.PI)
-          ctx.strokeStyle = cor
-          ctx.lineWidth = 1.1 / scale
-          ctx.stroke()
+        // O losango da Tabela Delta ganha o glifo de tijolos: reforça a leitura
+        // da forma girada, que é a mais fácil de confundir no raio mínimo.
+        if (tipoComponenteDe(node) === 'Tabela Delta' && r * scale >= GLYPH_MIN_PX) {
+          drawDatabricksGlyph(ctx, x, y, r)
         }
       }
 
@@ -384,9 +302,8 @@ export default function Graph({
         ctx.stroke()
       }
 
-      // Raiz: rótulo um pouco maior e em peso semibold (protagonista).
-      const fontSize = (raiz ? 12.5 : 10) / scale
-      ctx.font = `${raiz ? '600 ' : ''}${fontSize}px system-ui, sans-serif`
+      const fontSize = 10 / scale
+      ctx.font = `${fontSize}px system-ui, sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
       ctx.fillStyle = dimmed ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.88)'
@@ -398,11 +315,7 @@ export default function Graph({
 
   const paintPointerArea = useCallback(
     (node: SimNode, color: string, ctx: CanvasRenderingContext2D) => {
-      const r = isRaiz(node)
-        ? RAIZ_RADIUS * HEX_SCALE
-        : nodeKind(node) === 'dominio'
-          ? DOMINIO_RADIUS
-          : radiusOf(visualDegree(node, degreeById))
+      const r = extentDoNo(node, radiusOf(visualDegree(node, degreeById)))
       ctx.fillStyle = color
       ctx.beginPath()
       ctx.arc(node.x ?? 0, node.y ?? 0, r + 3, 0, 2 * Math.PI)

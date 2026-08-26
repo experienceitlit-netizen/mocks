@@ -6,7 +6,6 @@ import NodeBalloon from './components/NodeBalloon'
 import type { BalloonAnchor, Connection } from './components/NodeBalloon'
 import SearchBox from './components/SearchBox'
 import Filters from './components/Filters'
-import type { NivelFiltro } from './components/Filters'
 import FocusBar from './components/FocusBar'
 import type { Vista } from './components/FocusBar'
 import Legend from './components/Legend'
@@ -14,34 +13,45 @@ import TableView from './components/TableView'
 import type { Counts } from './components/Filters'
 import type { Debito, GraphJson, GraphNodeData, SimLink, SimNode } from './components/graph-types'
 import {
-  NIVEIS_BUILTIN,
-  isCamadaLinhagem,
-  isDerivado,
-  isDominio,
-  isRaiz,
+  debitoDe,
+  derivarNiveis,
+  isReal,
   linkEndId,
-  nodeKind,
+  nivelDe,
+  noDeEntrada,
 } from './components/graph-types'
 import { buildLineage, buildLineageTree } from './components/lineage'
 import CatalogForm from './components/CatalogForm'
 import type { FormTarget } from './components/CatalogForm'
 import NiveisModal from './components/NiveisModal'
-import type { CatalogoRow, NivelRow } from './components/catalog-api'
-import { fetchCatalogo, isProdutoRow } from './components/catalog-api'
+import type { CatalogoRow } from './components/catalog-api'
+import { fetchCatalogo } from './components/catalog-api'
 import './App.css'
 
 /** Busca insensível a caixa e acentos. */
 function norm(s: string): string {
   return s
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .trim()
 }
 
-/** Nó-raiz do domínio ("Atacado — Dados"), se o build já o emite. É a entrada
- *  padrão do app: sem parâmetros na URL, a navegação começa focada nele. */
-const RAIZ_ID = (graphJson as GraphJson).nodes.find((n) => isRaiz(n))?.id ?? null
+const GRAPH = graphJson as GraphJson
+
+/** Níveis da cadeia ordenados por `ordem` (colunas da vista Níveis, chips de
+ *  filtro, select do formulário). graph.json sem o bloco (build antigo) tem os
+ *  níveis derivados dos próprios componentes. */
+const NIVEIS =
+  GRAPH.niveis !== undefined && GRAPH.niveis.length > 0
+    ? [...GRAPH.niveis].sort((a, b) => a.ordem - b.ordem)
+    : derivarNiveis(GRAPH.nodes)
+
+/** Componente de entrada do mapa: o único do nível de menor ordem. É a entrada
+ *  padrão do app — sem parâmetros na URL, a navegação começa focada nele (e o
+ *  foco nele mostra o inventário completo, ver buildLineage). null quando não
+ *  há entrada óbvia: o app abre no mapa completo. */
+const ENTRADA_ID = noDeEntrada(GRAPH.nodes, NIVEIS)?.id ?? null
 
 function readUrlSelection(): string | null {
   return new URLSearchParams(window.location.search).get('no')
@@ -52,13 +62,14 @@ function readUrlFocus(): string | null {
 }
 
 /** Caminho de foco na carga: ?foco= explícito manda; sem ?foco= e sem ?no=,
- *  o padrão é abrir focado na raiz (vista Níveis, painel fechado). URL sem
- *  parâmetros SEMPRE significa essa entrada padrão — o estado "mapa global"
- *  não é codificado na URL (ver efeito de sincronização abaixo). */
+ *  o padrão é abrir focado no componente de entrada (vista Níveis, painel
+ *  fechado). URL sem parâmetros SEMPRE significa essa entrada padrão — o
+ *  estado "mapa global" não é codificado na URL (ver efeito de sincronização
+ *  abaixo). */
 function readInitialFocusPath(): string[] {
   const foco = readUrlFocus()
   if (foco) return [foco]
-  if (RAIZ_ID !== null && readUrlSelection() === null) return [RAIZ_ID]
+  if (ENTRADA_ID !== null && readUrlSelection() === null) return [ENTRADA_ID]
   return []
 }
 
@@ -90,18 +101,8 @@ function toggled<T>(set: ReadonlySet<T>, value: T): Set<T> {
 const DBLCLICK_MS = 350
 
 function App() {
-  // O JSON gerado tipa `debito` como string larga; o schema real é GraphJson.
-  const { nodes, links, niveis: niveisJson } = graphJson as GraphJson
-
-  // Níveis da cadeia ordenados por `ordem` (colunas da vista Níveis, select
-  // do form). graph.json sem o bloco (build antigo) cai nos built-ins fixos.
-  const niveis = useMemo(
-    () =>
-      niveisJson !== undefined && niveisJson.length > 0
-        ? [...niveisJson].sort((a, b) => a.ordem - b.ordem)
-        : [...NIVEIS_BUILTIN],
-    [niveisJson],
-  )
+  const { nodes, links } = GRAPH
+  const niveis = NIVEIS
 
   // A lib de força muta os objetos (injeta x/y) — clona uma única vez.
   const simData = useMemo<{ nodes: SimNode[]; links: SimLink[] }>(
@@ -128,30 +129,14 @@ function App() {
   }, [nodes])
 
   const degreeById = useMemo(() => {
-    // Dados: grau só entre dados (raio idêntico ao mapa sem linhagem).
-    // Derivados: grau conta tudo (sistemas com muitos dados ficam maiores).
     const map = new Map<string, number>()
     for (const n of nodes) map.set(n.id, 0)
-    const derivado = (id: string) => {
-      const n = nodesById.get(id)
-      return n ? isDerivado(n) : false
-    }
     for (const l of links) {
-      // "agrega" (raiz→produto) não infla raio: a raiz tem raio fixo e os
-      // produtos mantêm o tamanho que tinham no mapa sem a raiz.
-      if (l.label === 'agrega') continue
-      const sDeriv = derivado(l.source)
-      const tDeriv = derivado(l.target)
-      if (!sDeriv && !tDeriv) {
-        map.set(l.source, (map.get(l.source) ?? 0) + 1)
-        map.set(l.target, (map.get(l.target) ?? 0) + 1)
-      } else {
-        if (sDeriv) map.set(l.source, (map.get(l.source) ?? 0) + 1)
-        if (tDeriv) map.set(l.target, (map.get(l.target) ?? 0) + 1)
-      }
+      map.set(l.source, (map.get(l.source) ?? 0) + 1)
+      map.set(l.target, (map.get(l.target) ?? 0) + 1)
     }
     return map
-  }, [nodes, links, nodesById])
+  }, [nodes, links])
 
   const neighborsById = useMemo(() => {
     const map = new Map<string, Set<string>>()
@@ -164,10 +149,10 @@ function App() {
     return map
   }, [links])
 
-  // Contadores e filtros atuam só sobre nós de dados (derivados e a raiz
-  // nunca entram — a raiz não é um produto de dado).
+  // Contadores sobre TODO componente real (fantasmas ficam fora: não têm linha
+  // no catálogo, logo não têm governança a cobrar).
   const counts = useMemo<Counts>(() => {
-    const reais = nodes.filter((n) => !n.fantasma && !isDerivado(n) && !isRaiz(n))
+    const reais = nodes.filter(isReal)
     return {
       total: reais.length,
       comDebito: reais.filter((n) => n.debito === 'sim').length,
@@ -175,46 +160,18 @@ function App() {
     }
   }, [nodes])
 
-  // Grafo já migrado para o modelo de níveis? Antes disso o filtro de nível
-  // e a entrada da legenda ficam ocultos (não haveria o que casar).
-  const hasNiveis = useMemo(
-    () => nodes.some((n) => !isDerivado(n) && !isRaiz(n) && n.nivel !== undefined),
+  const dominios = useMemo(
+    () =>
+      [...new Set(nodes.filter((n) => isReal(n) && n.dominio).map((n) => n.dominio ?? ''))].sort(
+        (a, b) => a.localeCompare(b, 'pt-BR'),
+      ),
     [nodes],
   )
 
-  // Há nós de domínio derivados (nível raiz → domínio → produtos)?
-  const hasDominios = useMemo(() => nodes.some((n) => isDominio(n)), [nodes])
-
-  // Há fontes secundárias (tabelas UCS) derivadas? Legenda condicional.
-  const hasFsec = useMemo(
-    () => nodes.some((n) => nodeKind(n) === 'fonte-secundaria'),
-    [nodes],
-  )
-
-  // Níveis customizados com nós presentes no grafo (entradas da legenda).
-  const niveisCustomPresentes = useMemo(() => {
-    const presentes = new Set(
-      nodes.filter((n) => nodeKind(n) === 'nivel-custom').map((n) => n.nivelCustom ?? ''),
-    )
-    return niveis
-      .filter((nv) => !nv.builtin && presentes.has(nv.slug))
-      .map((nv) => ({ slug: nv.slug, titulo: nv.titulo }))
-  }, [nodes, niveis])
-
-  // Título de um nível customizado pelo slug (chip do balão).
+  /** Título de um nível pelo slug (chip do balão). */
   const nivelTituloDe = useCallback(
     (slug: string) => niveis.find((nv) => nv.slug === slug)?.titulo ?? slug,
     [niveis],
-  )
-
-  const dominios = useMemo(
-    () =>
-      [
-        ...new Set(
-          nodes.filter((n) => !n.fantasma && !isRaiz(n) && n.dominio).map((n) => n.dominio ?? ''),
-        ),
-      ].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [nodes],
   )
 
   // --- estado de UI ---
@@ -229,11 +186,9 @@ function App() {
   const [query, setQuery] = useState('')
   const [selDominios, setSelDominios] = useState<ReadonlySet<string>>(new Set())
   const [selDebitos, setSelDebitos] = useState<ReadonlySet<Debito>>(new Set())
-  const [selNiveis, setSelNiveis] = useState<ReadonlySet<NivelFiltro>>(new Set())
+  const [selNiveis, setSelNiveis] = useState<ReadonlySet<string>>(new Set())
   const [somenteSemOwner, setSomenteSemOwner] = useState(false)
 
-  // Camada de linhagem (sistemas/origens): desligada por padrão no mapa global,
-  // ligada automaticamente ao entrar em foco. ?foco= na URL já entra em foco.
   const [focusPath, setFocusPath] = useState<string[]>(readInitialFocusPath)
   const [depth, setDepth] = useState<number>(readUrlDepth)
   const [vista, setVista] = useState<Vista>(readUrlVista)
@@ -242,9 +197,6 @@ function App() {
   /** "Mostrar associações": desligado, o grafo fica só com os nós — as arestas
    *  do nó em destaque (hover, clique fixado ou balão) continuam visíveis. */
   const [assocOn, setAssocOn] = useState(true)
-  const [layersOn, setLayersOn] = useState<boolean>(() => readInitialFocusPath().length > 0)
-  // Estado da camada antes de entrar em foco, restaurado ao sair.
-  const layersBeforeFocusRef = useRef(false)
 
   const focusId = focusPath.length > 0 ? focusPath[focusPath.length - 1] : null
 
@@ -254,9 +206,9 @@ function App() {
   // standalone o fetch falha e nada de edição aparece.
   const [catalogRows, setCatalogRows] = useState<CatalogoRow[] | null>(null)
   // null = fechado; FormTarget = cadastro em branco, edição de linha ou
-  // cadastro pré-preenchido de um componente derivado.
+  // cadastro pré-preenchido de um componente ainda sem linha.
   const [catalogForm, setCatalogForm] = useState<FormTarget | null>(null)
-  // Modal "≣ Níveis" (gerenciar níveis da cadeia; só em modo edição).
+  // Modal "≣ Níveis" (gerenciar níveis; só em modo edição).
   const [niveisOpen, setNiveisOpen] = useState(false)
   useEffect(() => {
     let alive = true
@@ -292,20 +244,13 @@ function App() {
 
   const normQuery = norm(query)
 
-  // --- subgrafo visível (camadas + modo foco) ---
+  // --- subgrafo visível (modo foco) ---
   const visibleIds = useMemo(() => {
-    // Fora da simulação, não só esmaecidos: as camadas de linhagem saem quando
-    // a camada está desligada. Domínios e níveis customizados são sempre
-    // visíveis (são o caminho da raiz aos produtos finais e colunas de dado) e
-    // o nó em foco também, mesmo derivado.
-    const allowed = new Set(
-      nodes.filter((n) => layersOn || !isCamadaLinhagem(n) || n.id === focusId).map((n) => n.id),
-    )
-    if (!focusId || !allowed.has(focusId)) return allowed
+    const todos = new Set(nodes.map((n) => n.id))
+    if (!focusId || !todos.has(focusId)) return todos
 
     const adj = new Map<string, string[]>()
     for (const l of links) {
-      if (!allowed.has(l.source) || !allowed.has(l.target)) continue
       if (!adj.has(l.source)) adj.set(l.source, [])
       if (!adj.has(l.target)) adj.set(l.target, [])
       adj.get(l.source)?.push(l.target)
@@ -326,20 +271,8 @@ function App() {
       }
       frontier = next
     }
-    // Fecho de linhagem: cada nó visível arrasta sua cadeia derivada sem
-    // consumir profundidade (dado→fsec→sys→org na cadeia mais longa —
-    // três saltos, três passadas).
-    if (layersOn) {
-      for (let pass = 0; pass < 3; pass++) {
-        for (const l of links) {
-          if (!reached.has(l.source) || reached.has(l.target)) continue
-          const alvo = nodesById.get(l.target)
-          if (alvo && isCamadaLinhagem(alvo)) reached.add(l.target)
-        }
-      }
-    }
     return reached
-  }, [nodes, links, nodesById, layersOn, focusId, depth])
+  }, [nodes, links, focusId, depth])
 
   const visibleData = useMemo<{ nodes: SimNode[]; links: SimLink[] }>(
     () => ({
@@ -351,10 +284,10 @@ function App() {
     [simData, visibleIds],
   )
 
-  // Vista em níveis: linhagem montante completa do nó focado, em colunas.
-  // null quando o foco é um derivado (sem linhagem própria) — cai na força.
+  // Vista em níveis: linhagem montante do componente focado, em colunas.
   const lineage = useMemo(
-    () => (focusId && vista === 'niveis' ? buildLineage(focusId, nodes, links, niveis) : null),
+    () =>
+      vista === 'niveis' ? buildLineage(focusId, nodes, links, niveis) : null,
     [focusId, vista, nodes, links, niveis],
   )
 
@@ -367,16 +300,13 @@ function App() {
     const contains: GraphNodeData[] = []
     const inDesc: GraphNodeData[] = []
     for (const n of nodes) {
-      // Dados, domínios e níveis customizados sempre; sistemas, origens e
-      // fontes secundárias só com a camada visível.
-      if (isCamadaLinhagem(n) && !layersOn) continue
       const nome = norm(n.nome)
       if (nome.startsWith(normQuery)) starts.push(n)
       else if (nome.includes(normQuery)) contains.push(n)
       else if (norm(n.descricao ?? '').includes(normQuery)) inDesc.push(n)
     }
     return [...starts, ...contains, ...inDesc]
-  }, [nodes, normQuery, layersOn])
+  }, [nodes, normQuery])
 
   const hasActiveFilter =
     selDominios.size > 0 ||
@@ -403,24 +333,16 @@ function App() {
     return new Set(
       [...shownIds].filter((id) => {
         const n = nodesById.get(id)
-        // Placeholder da linhagem: só reage à busca (nunca casa com ela).
         if (!n) return normQuery.length > 0
-        if (isDerivado(n) || isRaiz(n)) {
-          // Derivados e a raiz só reagem à busca; os demais filtros são de
-          // governança e valem apenas para produtos de dados.
+        if (n.fantasma === true) {
+          // Fantasma não tem governança declarada: só reage à busca.
           return normQuery.length > 0 && !matchIds.has(n.id)
         }
         if (normQuery && !matchIds.has(n.id)) return true
+        if (selNiveis.size > 0 && !selNiveis.has(nivelDe(n))) return true
         if (selDominios.size > 0 && !selDominios.has(n.dominio ?? '')) return true
-        if (selDebitos.size > 0 && !selDebitos.has(n.debito ?? 'avaliar')) return true
-        // "ambos" casa com qualquer lado do filtro de nível.
-        if (
-          selNiveis.size > 0 &&
-          ![...selNiveis].some((v) => n.nivel === v || n.nivel === 'ambos')
-        ) {
-          return true
-        }
-        if (somenteSemOwner && (n.fantasma || Boolean(n.owner))) return true
+        if (selDebitos.size > 0 && !selDebitos.has(debitoDe(n))) return true
+        if (somenteSemOwner && Boolean(n.owner)) return true
         return false
       }),
     )
@@ -448,7 +370,7 @@ function App() {
     if (id && focus) graphRef.current?.focusNode(id)
   }, [])
 
-  /** Clique no nome de um dado na tabela: volta ao mapa já com o nó
+  /** Clique no nome de um componente na tabela: volta ao mapa já com o nó
    *  selecionado e centralizado (mesmo caminho do ?no=). */
   const openFromTable = useCallback(
     (id: string) => {
@@ -459,15 +381,10 @@ function App() {
   )
 
   // --- modo foco ---
-  const enterFocus = useCallback(
-    (id: string) => {
-      layersBeforeFocusRef.current = layersOn
-      setLayersOn(true)
-      setVista('niveis') // vista padrão ao entrar em foco
-      setFocusPath([id])
-    },
-    [layersOn],
-  )
+  const enterFocus = useCallback((id: string) => {
+    setVista('niveis') // vista padrão ao entrar em foco
+    setFocusPath([id])
+  }, [])
 
   const pushFocus = useCallback((id: string) => {
     setFocusPath((path) => (path[path.length - 1] === id ? path : [...path, id]))
@@ -482,16 +399,24 @@ function App() {
     [focusId, pushFocus, enterFocus],
   )
 
-  const exitFocus = useCallback(() => {
-    setFocusPath([])
-    setLayersOn(layersBeforeFocusRef.current)
-  }, [])
+  // Componente excluído com a página aberta: o caminho de foco (e a seleção)
+  // podem apontar para um id que não existe mais. Sem isto, a vista ficaria
+  // presa — buildLineage não acha o nó e a tela cairia no grafo livre.
+  useEffect(() => {
+    setFocusPath((path) => {
+      const valido = path.filter((id) => nodesById.has(id))
+      return valido.length === path.length ? path : valido
+    })
+    setSelectedId((id) => (id !== null && !nodesById.has(id) ? null : id))
+  }, [nodesById])
+
+  // "Ver mapa completo": sai do foco e mostra o inventário — todos os
+  // componentes nas colunas dos seus níveis. O switch Força leva ao grafo livre.
+  const exitFocus = useCallback(() => setFocusPath([]), [])
 
   const lastClickRef = useRef({ id: '', t: 0 })
   const handleNodeClick = useCallback(
     (id: string) => {
-      // Placeholders da linhagem são só visuais: não fixam nem focam.
-      if (lineage?.placeholderIds.has(id)) return
       const now = performance.now()
       const isDouble = lastClickRef.current.id === id && now - lastClickRef.current.t < DBLCLICK_MS
       lastClickRef.current = { id, t: now }
@@ -506,31 +431,25 @@ function App() {
       }
       setPinnedId((prev) => (prev === id ? null : id))
     },
-    [focusOn, lineage],
+    [focusOn],
   )
 
-  const handleNodeRightClick = useCallback(
-    (id: string) => {
-      // Clique direito: abre o balão de detalhe (antiga ação do esquerdo).
-      if (lineage?.placeholderIds.has(id)) return
-      select(id)
-    },
-    [select, lineage],
-  )
+  // Clique direito: abre o balão de detalhe (a antiga ação do esquerdo).
+  const handleNodeRightClick = useCallback((id: string) => select(id), [select])
 
   // URL reflete aba (?aba=tabela), seleção (?no=) e foco (?foco=&vista=, com
   // &prof= só na vista de força) sem poluir o histórico. O estado padrão de
-  // entrada (foco na raiz, vista Níveis, nada selecionado) fica com a URL
-  // limpa — o inverso de readInitialFocusPath. Consequência documentada: o
-  // mapa global também tem URL limpa, então recarregar a página a partir dele
-  // volta à entrada padrão (foco na raiz).
+  // entrada (foco no componente de entrada, vista Níveis, nada selecionado)
+  // fica com a URL limpa — o inverso de readInitialFocusPath. Consequência
+  // documentada: o mapa global também tem URL limpa, então recarregar a página
+  // a partir dele volta à entrada padrão.
   useEffect(() => {
     const url = new URL(window.location.href)
     if (aba === 'tabela') url.searchParams.set('aba', 'tabela')
     else url.searchParams.delete('aba')
     if (selectedId) url.searchParams.set('no', selectedId)
     else url.searchParams.delete('no')
-    const focoDefault = focusId === RAIZ_ID && vista === 'niveis' && !selectedId
+    const focoDefault = focusId === ENTRADA_ID && vista === 'niveis' && !selectedId
     if (focusId && !focoDefault) {
       url.searchParams.set('foco', focusId)
       url.searchParams.set('vista', vista)
@@ -545,8 +464,9 @@ function App() {
   }, [aba, selectedId, focusId, depth, vista])
 
   // Esc em estágios: cancela o formulário de edição, senão fecha o balão,
-  // senão desfixa o destaque, senão sai do foco. Na aba Tabela, volta ao mapa (o estado do mapa é invisível ali —
-  // não mexe nele). Handlers globais leem o estado via ref (registro único).
+  // senão desfixa o destaque, senão sai do foco. Na aba Tabela, volta ao mapa
+  // (o estado do mapa é invisível ali — não mexe nele). Handlers globais leem
+  // o estado via ref (registro único).
   const escRef = useRef(() => {})
   escRef.current = () => {
     if (catalogForm) setCatalogForm(null)
@@ -560,14 +480,12 @@ function App() {
   useEffect(() => {
     const onPopState = () => {
       const id = readUrlSelection()
-      const path = readInitialFocusPath()
       setAba(readUrlAba())
       setSelectedId(id)
       setPinnedId(null)
-      setFocusPath(path)
+      setFocusPath(readInitialFocusPath())
       setDepth(readUrlDepth())
       setVista(readUrlVista())
-      if (path.length > 0) setLayersOn(true)
       if (id) graphRef.current?.focusNode(id)
     }
     const onKeyDown = (e: KeyboardEvent) => {
@@ -583,62 +501,25 @@ function App() {
 
   const selectedNode = selectedId ? (nodesById.get(selectedId) ?? null) : null
 
-  // Alvo do "✎ Editar" do balão. Produtos com linha no catálogo e componentes
-  // derivados (domínio/origem/sistema/fonte secundária) são editáveis: com
-  // linha no catálogo o form edita; só derivado, abre pré-preenchido
-  // (nome + tipo) como "cadastrar este componente". Raiz, fantasmas e
-  // placeholders ficam sem o botão.
+  // Alvo do "✎ Editar" do balão: a linha do catálogo com o mesmo nome E nível.
+  // Componente citado mas ainda sem linha (fantasma) abre o form pré-preenchido
+  // como "cadastrar este componente".
   const editTarget = useMemo<FormTarget | null>(() => {
     if (!catalogRows || !selectedNode) return null
-    if (isRaiz(selectedNode) || selectedNode.fantasma || selectedNode.placeholder) return null
-    const kind = nodeKind(selectedNode)
-    if (kind === 'dado') {
-      const row = catalogRows.find(
-        (r) => isProdutoRow(r.nivel) && r.nome === selectedNode.nome,
-      )
-      return row ? { modo: 'editar', nome: row.nome, nivel: row.nivel } : null
-    }
-    // Componente de nível customizado: a linha tem nivel = slug do nível.
-    if (kind === 'nivel-custom') {
-      const slug = selectedNode.nivelCustom ?? ''
-      const row = catalogRows.find((r) => r.nivel === slug && r.nome === selectedNode.nome)
-      return row
-        ? { modo: 'editar', nome: row.nome, nivel: row.nivel }
-        : { modo: 'cadastrar', nome: selectedNode.nome, nivel: slug }
-    }
-    // Forma do nó → nível da linha de componente ('sistema' grava como 'fonte').
-    const nivel: NivelRow = kind === 'sistema' ? 'fonte' : kind
+    const nivel = nivelDe(selectedNode)
     const row = catalogRows.find((r) => r.nivel === nivel && r.nome === selectedNode.nome)
-    return row
-      ? { modo: 'editar', nome: row.nome, nivel: row.nivel }
-      : { modo: 'cadastrar', nome: selectedNode.nome, nivel }
+    if (row) return { modo: 'editar', nome: row.nome, nivel: row.nivel }
+    return { modo: 'cadastrar', nome: selectedNode.nome, nivel }
   }, [catalogRows, selectedNode])
 
-  // Sugestões de associação do form: origens e fontes que já existem no grafo
-  // (nós org-*/sys-*, derivados ou cadastrados).
-  const origensGrafo = useMemo(
-    () => nodes.filter((n) => nodeKind(n) === 'origem').map((n) => n.nome),
-    [nodes],
-  )
-  const fontesGrafo = useMemo(
-    () => nodes.filter((n) => nodeKind(n) === 'sistema').map((n) => n.nome),
-    [nodes],
-  )
-  // Alvos possíveis das associações de um nível custom: todos os componentes
-  // não-produto do grafo (domínio/origem/sistema/fsec/custom; a raiz é 'dado').
-  const componentesGrafo = useMemo(
-    () => nodes.filter((n) => nodeKind(n) !== 'dado').map((n) => n.nome),
-    [nodes],
-  )
+  // Alvos possíveis de "Consome/Upstream" e "Associações" no formulário.
+  const nomesGrafo = useMemo(() => nodes.filter(isReal).map((n) => n.nome), [nodes])
 
-  // Árvore de linhagem do painel (dados reais e níveis customizados têm rota
-  // própria; a raiz teria a árvore inteira — o painel dela lista só o que
-  // agrega, e sistemas/origens não têm montante).
-  const selectedLineage = useMemo(() => {
-    if (!selectedNode || selectedNode.fantasma === true || isRaiz(selectedNode)) return null
-    const proprio = !isDerivado(selectedNode) || nodeKind(selectedNode) === 'nivel-custom'
-    return proprio ? buildLineageTree(selectedNode.id, nodes, links) : null
-  }, [selectedNode, nodes, links])
+  // Árvore de linhagem do painel.
+  const selectedLineage = useMemo(
+    () => (selectedNode ? buildLineageTree(selectedNode.id, nodes, links) : null),
+    [selectedNode, nodes, links],
+  )
 
   const { outgoing, incoming } = useMemo(() => {
     const out: Connection[] = []
@@ -658,34 +539,6 @@ function App() {
     return { outgoing: out, incoming: inc }
   }, [selectedId, links, nodesById])
 
-  // Painel simplificado de sistema/origem: dados ligados direto e os que
-  // chegam através de outros derivados (fsec → sistema → origem), subindo
-  // recursivamente as arestas de entrada.
-  const derivadoDados = useMemo<GraphNodeData[]>(() => {
-    if (!selectedNode || !isDerivado(selectedNode)) return []
-    const ids = new Set<string>()
-    const fila = [selectedNode.id]
-    const visitados = new Set(fila)
-    while (fila.length > 0) {
-      const atual = fila.pop()
-      for (const l of links) {
-        if (l.target !== atual) continue
-        const n = nodesById.get(l.source)
-        if (!n) continue
-        if (!isDerivado(n)) {
-          ids.add(n.id)
-        } else if (!visitados.has(n.id)) {
-          visitados.add(n.id)
-          fila.push(n.id)
-        }
-      }
-    }
-    return [...ids]
-      .map((id) => nodesById.get(id))
-      .filter((n): n is GraphNodeData => n !== undefined)
-      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
-  }, [selectedNode, links, nodesById])
-
   // Âncora do balão: posição do nó selecionado em coordenadas de tela, lida
   // a cada frame pelo próprio balão (segue pan/zoom/física sem re-render).
   const getBalloonAnchor = useCallback(
@@ -700,15 +553,14 @@ function App() {
   )
 
   const breadcrumb = useMemo(
-    () => focusPath.map((id) => ({ id, nome: nodesById.get(id)?.nome ?? id })),
+    // Sem foco (inventário), o rótulo é o mapa inteiro: não há componente de
+    // partida para nomear a trilha.
+    () =>
+      focusPath.length === 0
+        ? [{ id: '', nome: 'Todos os componentes' }]
+        : focusPath.map((id) => ({ id, nome: nodesById.get(id)?.nome ?? id })),
     [focusPath, nodesById],
   )
-
-  // Foco num sistema/origem não tem linhagem própria: sem switch, sempre na
-  // vista de força. Domínios têm (raiz → domínio → produtos → cadeias) e
-  // níveis customizados também (são dados, com rota e insumos próprios).
-  const focusedNode = focusId ? (nodesById.get(focusId) ?? null) : null
-  const canNiveis = focusedNode !== null && !isCamadaLinhagem(focusedNode)
 
   return (
     <div className="app">
@@ -735,7 +587,12 @@ function App() {
 
       {aba === 'tabela' && (
         <div className="table-layer">
-          <TableView nodes={nodes} links={links} onSelectNode={openFromTable} />
+          <TableView
+            nodes={nodes}
+            links={links}
+            niveis={niveis}
+            onSelectNode={openFromTable}
+          />
         </div>
       )}
 
@@ -791,12 +648,11 @@ function App() {
         )}
       </header>
 
-      {aba === 'mapa' && focusId && (
+      {aba === 'mapa' && (
         <FocusBar
           path={breadcrumb}
           depth={depth}
           vista={lineage ? 'niveis' : 'forca'}
-          canNiveis={canNiveis}
           bandsOn={bandsOn}
           assocOn={assocOn}
           onCrumbClick={(i) => setFocusPath((path) => path.slice(0, i + 1))}
@@ -813,10 +669,9 @@ function App() {
           dominios={dominios}
           selectedDominios={selDominios}
           selectedDebitos={selDebitos}
-          hasNiveis={hasNiveis}
+          niveis={niveis}
           selectedNiveis={selNiveis}
           somenteSemOwner={somenteSemOwner}
-          layersOn={layersOn}
           assocOn={assocOn}
           counts={counts}
           hasActiveFilter={hasActiveFilter}
@@ -825,7 +680,6 @@ function App() {
           onToggleNivel={(n) => setSelNiveis((prev) => toggled(prev, n))}
           onToggleSemOwner={() => setSomenteSemOwner((v) => !v)}
           onToggleAssoc={() => setAssocOn((v) => !v)}
-          onToggleLayers={() => setLayersOn((v) => !v)}
           onClear={() => {
             setQuery('')
             setSelDominios(new Set())
@@ -836,23 +690,13 @@ function App() {
         />
       )}
 
-      {aba === 'mapa' && (
-        <Legend
-          layersVisible={layersOn}
-          hasNiveis={hasNiveis}
-          hasRaiz={RAIZ_ID !== null}
-          hasDominios={hasDominios}
-          hasFsec={hasFsec}
-          niveisCustom={niveisCustomPresentes}
-        />
-      )}
+      {aba === 'mapa' && <Legend />}
 
       {aba === 'mapa' && selectedNode && (
         <NodeBalloon
           node={selectedNode}
           outgoing={outgoing}
           incoming={incoming}
-          derivadoDados={derivadoDados}
           lineage={selectedLineage}
           isFocused={selectedId === focusId}
           nivelTituloDe={nivelTituloDe}
@@ -871,9 +715,7 @@ function App() {
           rows={catalogRows}
           target={catalogForm}
           niveis={niveis}
-          origensGrafo={origensGrafo}
-          fontesGrafo={fontesGrafo}
-          componentesGrafo={componentesGrafo}
+          nomesGrafo={nomesGrafo}
           onSaved={refreshCatalogo}
           onClose={() => setCatalogForm(null)}
         />
@@ -890,7 +732,7 @@ function App() {
       {nodes.length === 0 && (
         <div className="empty-state">
           <p>
-            Nenhum dado no grafo ainda. Rode <code>npm run data</code> para gerar{' '}
+            Nenhum componente no grafo ainda. Rode <code>npm run data</code> para gerar{' '}
             <code>src/data/graph.json</code> a partir do catalogo.csv.
           </p>
         </div>

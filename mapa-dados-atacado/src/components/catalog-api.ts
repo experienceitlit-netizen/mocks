@@ -2,71 +2,24 @@
 // plugin regrava catalogo.csv e regenera graph.json ao salvar). O App faz
 // feature-detect no mount: se o GET falhar (build estático/standalone),
 // nenhum controle de edição aparece.
-import type { Debito } from './graph-types'
+import type { Debito, TipoComponente } from './graph-types'
+import { TIPO_COMPONENTE_PADRAO, TIPOS_COMPONENTE } from './graph-types'
 
-/** Nível como registrado no CSV (a raiz não tem linha no catálogo).
- *  Além dos produtos (primario/final/ambos), o catálogo aceita linhas de
- *  componente: dominio, origem, fonte (sistema), fonte-secundaria e qualquer
- *  slug de nível customizado cadastrado em /api/niveis (`string & {}` mantém
- *  o autocomplete dos built-ins sem fechar o conjunto). */
-export type NivelRow =
-  | 'dominio'
-  | 'origem'
-  | 'fonte'
-  | 'fonte-secundaria'
-  | 'primario'
-  | 'final'
-  | 'ambos'
-  | (string & {})
-
-/** 'secundario' é o nome legado de 'final' e ainda pode chegar em CSV/JSON
- *  antigos; fora deste arquivo ele não circula. */
-export type NivelRowLegado = NivelRow | 'secundario'
-
-/** Ponto ÚNICO de tratamento do legado no contrato da API: toda linha lida
- *  passa por aqui antes de chegar à UI. */
-export function normalizeNivelRow(nivel: NivelRowLegado): NivelRow {
-  return nivel === 'secundario' ? 'final' : nivel
-}
-
-/** Linha de produto de dado (o resto são linhas de componente). */
-export function isProdutoRow(nivel: NivelRow): boolean {
-  return nivel === 'primario' || nivel === 'final' || nivel === 'ambos'
-}
-
-/** Listas de associação em campos string do CSV usam " | " como separador
- *  (linhas 'fonte' guardam origens associadas em `origem`; linhas
- *  'fonte-secundaria' guardam fontes associadas em `fonte_sistema`).
- *  parse/format ficam isolados aqui: se o shape da integração virar array,
- *  o ajuste é local. */
-export function parseAssocList(value: string | null): string[] {
-  if (value === null) return []
-  return value
-    .split('|')
-    .map((s) => s.trim())
-    .filter((s) => s !== '')
-}
-
-export function formatAssocList(names: string[]): string | null {
-  const limpos = names.map((s) => s.trim()).filter((s) => s !== '')
-  return limpos.length === 0 ? null : limpos.join(' | ')
-}
-
-/** Linha do catalogo.csv como servida por GET /api/catalogo. */
+/** Linha do catalogo.csv como servida por GET /api/catalogo. Uma linha por
+ *  COMPONENTE: o `nivel` (slug) diz a que camada ele pertence e
+ *  `tipo_componente` o que ele é fisicamente. */
 export interface CatalogoRow {
   nome: string
-  nivel: NivelRow
+  /** Slug do nível — qualquer um do bloco `niveis`, sem valor especial. */
+  nivel: string
+  tipo_componente: TipoComponente
   dominio: string
-  /** Produto: área/processo de origem (null = não se aplica).
-   *  Linha 'fonte': origens associadas separadas por " | " (parseAssocList). */
-  origem: string | null
-  /** Produto: sistema onde o dado vive (null = não se aplica).
-   *  Linha 'fonte-secundaria': fontes associadas separadas por " | ". */
-  fonte_sistema: string | null
-  fontes_secundarias: string[]
+  /** Nomes consumidos por este componente (arestas "consome"). */
   consome: string[]
+  /** Nomes a que este componente se associa (arestas "vem de"). */
+  associacoes: string[]
   descricao: string
-  /** "" só em linhas de componente (coluna ignorada nelas). */
+  /** "" = não declarado (linha antiga); o formulário sempre grava um valor. */
   debito: Debito | ''
   status: string
   /** null = a definir. */
@@ -74,9 +27,18 @@ export interface CatalogoRow {
   /** null = a definir. */
   centro_de_custo: string | null
   observacoes: string
-  /** Só linhas de nível customizado usam: nomes de outros componentes
-   *  não-produto aos quais este se associa (arestas custom→alvo "vem de"). */
-  associacoes: string[]
+}
+
+/** Tipo de componente válido, com o padrão para o que vier fora do
+ *  vocabulário (linha antiga, coluna ainda vazia). */
+export function normalizeTipoComponente(valor: unknown): TipoComponente {
+  return typeof valor === 'string' && (TIPOS_COMPONENTE as readonly string[]).includes(valor)
+    ? (valor as TipoComponente)
+    : TIPO_COMPONENTE_PADRAO
+}
+
+function asStringArray(valor: unknown): string[] {
+  return Array.isArray(valor) ? valor.filter((v): v is string => typeof v === 'string') : []
 }
 
 export interface SaveOk {
@@ -108,12 +70,13 @@ export async function fetchCatalogo(): Promise<CatalogoRow[] | null> {
         typeof r === 'object' && r !== null && typeof (r as { nome?: unknown }).nome === 'string',
     )
     if (!ok) return null
-    // Nível legado normalizado na entrada: a UI só vê o vocabulário novo.
-    // `associacoes` pode faltar em API anterior à migração de níveis.
-    return (rows as (CatalogoRow & { nivel: NivelRowLegado })[]).map((r) => ({
+    // Campos do contrato normalizados na entrada: a UI só vê valores válidos.
+    return (rows as CatalogoRow[]).map((r) => ({
       ...r,
-      nivel: normalizeNivelRow(r.nivel),
-      associacoes: Array.isArray(r.associacoes) ? r.associacoes : [],
+      nivel: typeof r.nivel === 'string' ? r.nivel : '',
+      tipo_componente: normalizeTipoComponente(r.tipo_componente),
+      consome: asStringArray(r.consome),
+      associacoes: asStringArray(r.associacoes),
     }))
   } catch {
     return null
@@ -124,42 +87,23 @@ export async function fetchCatalogo(): Promise<CatalogoRow[] | null> {
  *  linha pelo nome original; cadastro acrescenta ao final). Lança em falha de
  *  rede/resposta ilegível; 400 vem como {ok:false, errors}. */
 export async function saveCatalogo(rows: CatalogoRow[]): Promise<SaveResult> {
-  const res = await fetch('/api/catalogo', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rows }),
-  })
-  const body: unknown = await res.json().catch(() => null)
-  if (typeof body === 'object' && body !== null && 'ok' in body) {
-    const r = body as { ok: boolean; warnings?: unknown; errors?: unknown; counts?: unknown }
-    if (r.ok) {
-      return {
-        ok: true,
-        warnings: Array.isArray(r.warnings) ? r.warnings.map(String) : [],
-        counts:
-          typeof r.counts === 'object' && r.counts !== null
-            ? (r.counts as Record<string, number>)
-            : {},
-      }
-    }
-    return {
-      ok: false,
-      errors: Array.isArray(r.errors) ? r.errors.map(String) : [`Erro ${res.status} ao salvar.`],
-    }
-  }
-  throw new Error(`Resposta inesperada da API (HTTP ${res.status}).`)
+  return postJson('/api/catalogo', { rows })
 }
 
-/** Linha de nível customizado como trafegada por GET/POST /api/niveis (SÓ os
- *  customs — built-ins são fixos; o slug é derivado do título pelo backend). */
-export interface NivelCustomRow {
+/** Nível como trafegado por GET/POST /api/niveis. `slug` é a chave semântica —
+ *  mandá-lo de volta é o que diz "este é aquele nível, só mudei o rótulo";
+ *  ausente/vazio, o backend deriva um novo do título. `builtin` só vem no GET
+ *  (informativo: diz que o nível veio com o modelo). */
+export interface NivelApiRow {
   titulo: string
   ordem: number
+  slug?: string
+  builtin?: boolean
 }
 
 /** GET /api/niveis. null quando a API não existe (mesma disciplina de
  *  feature-detect do fetchCatalogo). */
-export async function fetchNiveis(): Promise<NivelCustomRow[] | null> {
+export async function fetchNiveis(): Promise<NivelApiRow[] | null> {
   try {
     const res = await fetch('/api/niveis')
     if (!res.ok) return null
@@ -174,20 +118,24 @@ export async function fetchNiveis(): Promise<NivelCustomRow[] | null> {
         typeof (r as { titulo?: unknown }).titulo === 'string' &&
         typeof (r as { ordem?: unknown }).ordem === 'number',
     )
-    return ok ? (rows as NivelCustomRow[]) : null
+    return ok ? (rows as NivelApiRow[]) : null
   } catch {
     return null
   }
 }
 
-/** POST /api/niveis com o conjunto COMPLETO de níveis customizados (remoção =
- *  conjunto sem a linha; a API recusa se o nível estiver em uso). Mesma
- *  disciplina ok/errors do saveCatalogo. */
-export async function saveNiveis(rows: NivelCustomRow[]): Promise<SaveResult> {
-  const res = await fetch('/api/niveis', {
+/** POST /api/niveis com a lista COMPLETA de níveis (remoção = lista sem a
+ *  linha; a API recusa se o nível estiver em uso). */
+export async function saveNiveis(rows: NivelApiRow[]): Promise<SaveResult> {
+  return postJson('/api/niveis', { rows })
+}
+
+/** POST + interpretação da resposta {ok, warnings|errors}, comum às duas APIs. */
+async function postJson(url: string, payload: unknown): Promise<SaveResult> {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rows }),
+    body: JSON.stringify(payload),
   })
   const body: unknown = await res.json().catch(() => null)
   if (typeof body === 'object' && body !== null && 'ok' in body) {

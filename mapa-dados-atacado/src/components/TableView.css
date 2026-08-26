@@ -69,7 +69,7 @@
 .table-view__table {
   border-collapse: collapse;
   width: 100%;
-  min-width: 60rem; /* força o scroll horizontal em telas estreitas */
+  min-width: 78rem; /* força o scroll horizontal em telas estreitas */
 }
 
 /* ---------- cabeçalho ---------- */
@@ -139,12 +139,29 @@
   background: rgba(255, 255, 255, 0.045);
 }
 
-/* separador mais forte no início de cada grupo de domínio */
+/* separador mais forte quando muda o nível */
 .table-view__row--group-start td {
   border-top: 1px solid #3a3a3a;
 }
 
 /* ---------- células ---------- */
+
+.table-view__cell--nivel {
+  white-space: nowrap;
+}
+
+/* nível do componente: a coluna é o que diz a camada — sem cor própria, para
+   não competir com a semântica de débito dos chips */
+.table-view__nivel {
+  display: inline-block;
+  padding: 0.12rem 0.55rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #c8c8c8;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 
 .table-view__cell--dominio {
   white-space: nowrap;
@@ -158,16 +175,6 @@
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.02em;
-}
-
-/* repetição discreta: só um traço na cor do domínio */
-.table-view__domain-tick {
-  display: inline-block;
-  width: 0.5rem;
-  height: 0.18rem;
-  border-radius: 2px;
-  margin-left: 0.55rem;
-  opacity: 0.55;
 }
 
 .table-view__cell--nome {
@@ -195,59 +202,46 @@
   text-decoration: underline;
 }
 
+/* tipo de componente: mesma etiqueta discreta do select do formulário */
 .table-view__kind {
-  margin-left: 0.45rem;
-  padding: 0.08rem 0.4rem;
+  display: inline-block;
+  padding: 0.08rem 0.45rem;
   border-radius: 999px;
   border: 1px solid #4a4a4a;
-  font-size: 0.62rem;
+  font-size: 0.65rem;
   letter-spacing: 0.03em;
   color: #a0a0a0;
-  vertical-align: 1px;
-}
-
-.table-view__kind--produto {
-  border-color: #5c7a99;
-  color: #9dbbd8;
-}
-
-/* chip de nível ("Primário e final") ao lado do nome do produto */
-.table-view__kind--nivel {
-  border-color: #5c7a99;
-  color: #9dbbd8;
   white-space: nowrap;
 }
 
-/* primário sem produto secundário */
+/* célula de relação vazia */
 .table-view__none {
   color: #7a7a7a;
 }
 
-.table-view__cell--origem,
-.table-view__cell--sistema {
-  min-width: 10rem;
+.table-view__cell--owner {
+  min-width: 8rem;
   color: #c8c8c8;
 }
 
-/* fontes secundárias (tabelas UCS): empilhadas na célula, acento teal da
-   fonte secundária no grafo (#178A94, clareado para o fundo escuro) */
-.table-view__cell--fsec {
-  min-width: 12rem;
+/* relações (Consome/Upstream e Associações): empilhadas na célula */
+.table-view__cell--rel {
+  min-width: 11rem;
+}
+
+.table-view__rel {
+  display: block;
+  font-weight: 500;
+  color: #9dbbd8;
   white-space: nowrap;
 }
 
-.table-view__fsec {
-  display: block;
-  font-weight: 500;
-  color: #58b5be;
-}
-
-.table-view__fsec + .table-view__fsec {
+.table-view__rel + .table-view__rel {
   margin-top: 0.15rem;
 }
 
-.table-view__name-link.table-view__fsec:hover {
-  color: #7fd4dc;
+.table-view__name-link.table-view__rel:hover {
+  color: #7fb4e8;
 }
 
 /* ---------- estados de valor (mesmo padrão do balão de detalhe) ---------- */

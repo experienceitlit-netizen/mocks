@@ -1,6 +1,11 @@
-// Tipos do domínio (schema do graph.json — seção 3 do plano) e wrapper tipado
-// da lib react-force-graph-2d. Todo acesso à lib passa por estes aliases para
-// manter o resto do app 100% tipado (zero `any` fora daqui).
+// Tipos do domínio (schema do graph.json) e wrapper tipado da lib
+// react-force-graph-2d. Todo acesso à lib passa por estes aliases para manter o
+// resto do app 100% tipado (zero `any` fora daqui).
+//
+// MODELO ÚNICO: todo nó é um COMPONENTE que pertence a um NÍVEL. Não existe
+// categoria especial de nó — raiz, domínio, fonte e origem são níveis como
+// qualquer outro, e o que separa um componente de outro é o `nivel` (coluna na
+// vista em níveis) e o `tipoComponente` (forma no mapa).
 import type {
   ForceGraphMethods,
   LinkObject,
@@ -9,25 +14,34 @@ import type {
 
 export type Debito = 'sim' | 'nao' | 'avaliar'
 
-/** Nível do produto de dado no modelo executivo em 4 camadas:
- *  primário (tem origem/sistema próprios, não consome nada), final
- *  (derivado de primários via "consome"; sistema/origem null = não se aplica),
- *  ambos (primário que também é produto final) ou raiz (nó único do domínio
- *  que agrega todos os produtos finais via arestas "agrega").
- *  'secundario' é o nome legado de 'final' (graph.json antigo). */
-export type Nivel = 'primario' | 'secundario' | 'final' | 'ambos' | 'raiz'
+/** O que o componente É fisicamente. Define a FORMA do nó no mapa (a cor fica
+ *  com a semântica de débito) e é independente do nível: uma Tabela Delta pode
+ *  estar em qualquer camada. */
+export type TipoComponente = 'Tabela SQL' | 'Tabela Delta' | 'Excel' | 'Default'
 
-/** Ponto ÚNICO de tratamento do legado: 'secundario' (JSON/CSV antigos) é o
- *  nível 'final'. Todo código que compara/rotula nível passa por aqui. */
-export function normalizeNivel(nivel: Nivel): Nivel
-export function normalizeNivel(nivel: Nivel | undefined): Nivel | undefined
-export function normalizeNivel(nivel: Nivel | undefined): Nivel | undefined {
-  return nivel === 'secundario' ? 'final' : nivel
+export const TIPOS_COMPONENTE: readonly TipoComponente[] = [
+  'Tabela SQL',
+  'Tabela Delta',
+  'Excel',
+  'Default',
+]
+
+/** Valor assumido quando a linha não declara nada. */
+export const TIPO_COMPONENTE_PADRAO: TipoComponente = 'Default'
+
+const TIPOS_VALIDOS = new Set<string>(TIPOS_COMPONENTE)
+
+/** Ponto único de leitura do tipo: valor ausente ou fora do vocabulário cai no
+ *  padrão, então forma e select nunca ficam indefinidos. */
+export function tipoComponenteDe(node: Pick<GraphNodeData, 'tipoComponente'>): TipoComponente {
+  const t = node.tipoComponente
+  return t !== undefined && TIPOS_VALIDOS.has(t) ? t : TIPO_COMPONENTE_PADRAO
 }
 
-/** Definição de um nível da cadeia (bloco `niveis` do graph.json): built-ins
- *  fixos do modelo + níveis customizados cadastrados via /api/niveis. A ordem
- *  numérica posiciona a coluna na vista em níveis (asc = esquerda → direita). */
+/** Definição de um nível (bloco `niveis` do graph.json). A ordem numérica
+ *  posiciona a coluna na vista em níveis (asc = esquerda → direita) e define
+ *  qual é o nível de ENTRADA do mapa (o de menor ordem). `builtin` diz apenas
+ *  que o nível veio com o modelo — não muda o comportamento de nada. */
 export interface NivelDef {
   slug: string
   titulo: string
@@ -35,113 +49,102 @@ export interface NivelDef {
   builtin: boolean
 }
 
-/** Fallback quando o graph.json ainda não traz o bloco `niveis` (build
- *  anterior à migração): os sete níveis built-in na ordem canônica. */
-export const NIVEIS_BUILTIN: readonly NivelDef[] = [
-  { slug: 'raiz', titulo: 'Raiz', ordem: 0, builtin: true },
-  { slug: 'dominio', titulo: 'Domínio', ordem: 10, builtin: true },
-  { slug: 'final', titulo: 'Produto final', ordem: 20, builtin: true },
-  { slug: 'primario', titulo: 'Produto primário', ordem: 30, builtin: true },
-  { slug: 'fonte-secundaria', titulo: 'Fonte secundária', ordem: 40, builtin: true },
-  { slug: 'fonte', titulo: 'Fonte (sistema)', ordem: 50, builtin: true },
-  { slug: 'origem', titulo: 'Origem', ordem: 60, builtin: true },
-]
-
 /** Nó como emitido pelo build (scripts/build-graph.ts). Campos além de
  *  id/nome são opcionais para tolerar variações do JSON gerado. */
 export interface GraphNodeData {
   id: string
   nome: string
-  tipo?: string
+  /** Slug do nível a que o componente pertence (coluna na vista em níveis). */
+  nivel?: string
+  tipoComponente?: TipoComponente
   dominio?: string
   debito?: Debito
+  status?: string
   owner?: string | null
   centroDeCusto?: string | null
   descricao?: string
-  /** null = não se aplica (secundário); string pendente = "a confirmar…". */
-  sistema?: string | null
-  /** null = não se aplica (secundário); string pendente = "a confirmar…". */
-  origem?: string | null
-  nivel?: Nivel
-  status?: string
-  /** Nomes das fontes secundárias (tabelas UCS), na ordem do frontmatter;
-   *  os nós fsec-* correspondentes vêm das arestas "vem de" dado→fsec. */
-  fontesSecundarias?: string[]
-  incompleto?: boolean
-  /** Nó fantasma: citado em "consome" sem linha no catálogo. */
-  fantasma?: boolean
-  /** Nó derivado pelo build (camada de linhagem): sistema ou origem. */
-  derivado?: boolean
-  /** Componente com linha própria no catálogo (domínio/origem/fonte/fonte
-   *  secundária cadastrados): carrega descricao/owner/centroDeCusto/corpo. */
-  cadastrado?: boolean
-  /** Nó sintetizado na UI: fonte/origem desconhecida na vista de linhagem. */
-  placeholder?: boolean
-  /** Componente de nível customizado (tipo "nivel-custom"): slug do nível a
-   *  que pertence (coluna própria na vista em níveis, cor derivada do slug). */
-  nivelCustom?: string
-  /** Corpo markdown do .md (pode não existir no JSON gerado). */
+  /** Corpo markdown das observações. */
   corpo?: string
+  /** Sem owner ou sem centro de custo: borda tracejada no mapa. */
+  incompleto?: boolean
+  /** Nó fantasma: citado em "consome"/"vem de" sem linha no catálogo. */
+  fantasma?: boolean
 }
 
-/** Camada visual do nó: dado (círculo), domínio (quadrado arredondado na cor
- *  da área), fonte secundária (quadrado de cantos bem arredondados), sistema
- *  (quadrado), origem (losango), nível customizado (mesma forma da fonte
- *  secundária, na cor derivada do slug do nível). */
-export type NodeKind =
-  | 'dado'
-  | 'dominio'
-  | 'fonte-secundaria'
-  | 'sistema'
-  | 'origem'
-  | 'nivel-custom'
-
-export function nodeKind(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): NodeKind {
-  if (node.tipo === 'sistema') return 'sistema'
-  if (node.tipo === 'origem') return 'origem'
-  if (node.tipo === 'fonte-secundaria') return 'fonte-secundaria'
-  if (node.tipo === 'nivel-custom') return 'nivel-custom'
-  // A raiz também tem tipo "dominio", mas é nó de dado (criado pelo build);
-  // só o nó de domínio derivado pelo build ganha a forma própria.
-  if (node.tipo === 'dominio' && node.derivado === true) return 'dominio'
-  return 'dado'
+/** Slug do nível do nó ('' quando a linha ainda não declara nenhum). */
+export function nivelDe(node: Pick<GraphNodeData, 'nivel'>): string {
+  return node.nivel ?? ''
 }
 
-/** Nó derivado pelo build (domínio, sistema ou origem — sem linha no catálogo). */
-export function isDerivado(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): boolean {
-  return node.derivado === true || nodeKind(node) !== 'dado'
+/** Débito do nó para cor, chip e filtro: o build emite "" na linha que ainda
+ *  não declarou nada, e isso vale "a avaliar" — a mesma leitura em toda a UI.
+ *  Quem precisa distinguir "não declarado" de "avaliar" (a tabela, que mostra
+ *  "⚠ a definir") lê `node.debito` direto. */
+export function debitoDe(node: Pick<GraphNodeData, 'debito'>): Debito {
+  return node.debito === 'sim' || node.debito === 'nao' ? node.debito : 'avaliar'
 }
 
-/** Nó de domínio derivado (nível entre a raiz e os produtos finais). */
-export function isDominio(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): boolean {
-  return nodeKind(node) === 'dominio'
+/** Componente com linha própria no catálogo (o oposto do fantasma). */
+export function isReal(node: Pick<GraphNodeData, 'fantasma'>): boolean {
+  return node.fantasma !== true
 }
 
-/** Camada de linhagem — sistema, origem e fonte secundária: é o que o botão
- *  de camadas liga e desliga. Nós de nível customizado ficam de fora: são
- *  colunas de DADO cadastradas pelo usuário e seguem visíveis como qualquer
- *  produto (transferir um dado de nível não pode escondê-lo do mapa). */
-export function isCamadaLinhagem(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): boolean {
-  const kind = nodeKind(node)
-  return kind === 'sistema' || kind === 'origem' || kind === 'fonte-secundaria'
+/** Rótulo de um nível pelo slug, com o próprio slug como último recurso. */
+export function tituloDoNivel(niveis: readonly NivelDef[], slug: string): string {
+  return niveis.find((nv) => nv.slug === slug)?.titulo ?? (slug === '' ? 'Sem nível' : slug)
 }
 
-/** Nível "ambos" conta nos dois lados do modelo executivo. */
-export function isPrimario(node: Pick<GraphNodeData, 'nivel'>): boolean {
-  return node.nivel === 'primario' || node.nivel === 'ambos'
+/** Ordem numérica de um nível; slug desconhecido vai para o fim da fila. */
+export function ordemDoNivel(niveis: readonly NivelDef[], slug: string): number {
+  const nv = niveis.find((n) => n.slug === slug)
+  if (nv) return nv.ordem
+  return Math.max(0, ...niveis.map((n) => n.ordem)) + 1
 }
 
-/** Produto final ('final', legado 'secundario') ou 'ambos'. */
-export function isSecundario(node: Pick<GraphNodeData, 'nivel'>): boolean {
-  const nivel = normalizeNivel(node.nivel)
-  return nivel === 'final' || nivel === 'ambos'
+/** Níveis derivados dos próprios nós, para o graph.json que ainda não traz o
+ *  bloco `niveis`: um nível por slug presente, em ordem alfabética. */
+export function derivarNiveis(nodes: readonly GraphNodeData[]): NivelDef[] {
+  const slugs = [...new Set(nodes.map(nivelDe).filter((s) => s !== ''))].sort((a, b) =>
+    a.localeCompare(b, 'pt-BR'),
+  )
+  return slugs.map((slug, i) => ({
+    slug,
+    titulo: slug.charAt(0).toUpperCase() + slug.slice(1).replace(/-/g, ' '),
+    ordem: i * 10,
+    builtin: false,
+  }))
 }
 
-/** Nó-raiz do domínio ("Atacado — Dados"): agrega os produtos finais, mas não
- *  é um produto de dado — fica fora de contadores, filtros e tabela. */
-export function isRaiz(node: Pick<GraphNodeData, 'nivel'>): boolean {
-  return node.nivel === 'raiz'
+/** Nível de ENTRADA: o de menor `ordem` entre os que têm componente no grafo.
+ *  É o topo da cadeia — focar num componente dele abre o inventário completo
+ *  (todos os nós, cada um na sua coluna). null = grafo sem nenhum nível. */
+export function nivelDeEntrada(
+  nodes: readonly GraphNodeData[],
+  niveis: readonly NivelDef[],
+): string | null {
+  const presentes = new Set(nodes.filter(isReal).map(nivelDe).filter((s) => s !== ''))
+  let melhor: NivelDef | null = null
+  for (const nv of niveis) {
+    if (presentes.has(nv.slug) && (melhor === null || nv.ordem < melhor.ordem)) melhor = nv
+  }
+  return melhor === null ? null : melhor.slug
 }
+
+/** Componente de entrada do app (foco padrão sem parâmetros na URL): o único
+ *  nó do nível de entrada. Com mais de um componente nesse nível não há
+ *  entrada óbvia e o app abre no mapa completo. */
+export function noDeEntrada(
+  nodes: readonly GraphNodeData[],
+  niveis: readonly NivelDef[],
+): GraphNodeData | null {
+  const slug = nivelDeEntrada(nodes, niveis)
+  if (slug === null) return null
+  const doNivel = nodes.filter((n) => isReal(n) && nivelDe(n) === slug)
+  return doNivel.length === 1 ? doNivel[0] : null
+}
+
+/** Relação entre dois componentes: consumo de dado ou associação declarada. */
+export type LinkLabel = 'consome' | 'vem de'
 
 export interface GraphLinkData {
   source: string
@@ -149,11 +152,16 @@ export interface GraphLinkData {
   label?: string
 }
 
+/** Aresta sem rótulo é consumo (formato antigo do build). */
+export function linkLabel(link: Pick<GraphLinkData, 'label'>): string {
+  return link.label ?? 'consome'
+}
+
 export interface GraphJson {
   nodes: GraphNodeData[]
   links: GraphLinkData[]
-  /** TODOS os níveis (built-ins + customizados), ordenados por `ordem`.
-   *  Ausente em graph.json de builds antigos — use NIVEIS_BUILTIN. */
+  /** TODOS os níveis, ordenados por `ordem`. Ausente em builds antigos — use
+   *  derivarNiveis(nodes). */
   niveis?: NivelDef[]
 }
 

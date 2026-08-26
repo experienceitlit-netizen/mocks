@@ -4,24 +4,24 @@
 // por HMR (react-refresh preserva o estado; a página NÃO recarrega), então o
 // submit re-lê o catálogo antes de montar o conjunto completo (as rows da prop
 // podem ser as do mount) e o App re-busca as rows após o save (onSaved).
-// O primeiro campo ("Tipo de componente") escolhe o nível da linha; os demais
-// são os mesmos em todos os níveis (o formulário é padrão). Origem, fonte e
-// fontes secundárias saíram: viraram níveis próprios, e a ligação entre
-// componentes é feita por "Consome/Upstream" e "Associações" — em 'fonte' e
-// 'fonte-secundaria' a lista de associações mora nas colunas de rota.
-// Trocar o tipo nunca apaga campo: o estado carrega a linha inteira e é
-// gravado como está (ver catalog-form-row.ts), com aviso do que não couber.
+//
+// Os dois primeiros campos identificam o componente: "Nível/Camada" (a que
+// camada ele pertence — qualquer nível do bloco `niveis`, sem exceção) e
+// "Tipo de componente" (o que ele é fisicamente, o que define a forma no
+// mapa). Todos os demais campos são iguais em todos os níveis, então trocar de
+// nível nunca esconde nem descarta nada.
 // Esc cancela (tratado pelo handler global do App, que fecha o form antes dos
 // demais estágios).
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
-import type { CatalogoRow, NivelRow, SaveOk } from './catalog-api'
-import { fetchCatalogo, isProdutoRow, parseAssocList, saveCatalogo } from './catalog-api'
+import type { CatalogoRow, SaveOk } from './catalog-api'
+import { fetchCatalogo, saveCatalogo } from './catalog-api'
 import type { Referencia } from './catalog-delete'
 import { removerComponente } from './catalog-delete'
 import type { RowFormState } from './catalog-form-row'
-import { avisoTroca, montarRow } from './catalog-form-row'
-import type { Debito, NivelDef } from './graph-types'
+import { montarRow } from './catalog-form-row'
+import type { Debito, NivelDef, TipoComponente } from './graph-types'
+import { TIPO_COMPONENTE_PADRAO, TIPOS_COMPONENTE } from './graph-types'
 
 /** Comparação insensível a caixa e acentos (unicidade de nome, sugestões). */
 function norm(s: string): string {
@@ -35,34 +35,13 @@ function norm(s: string): string {
 /** Sentinela do select de domínio: revela o input de domínio novo. */
 const NOVO_DOMINIO = '__novo__'
 
-/** Rótulos dos tipos built-in no select (mantidos mesmo com o bloco `niveis`
- *  dinâmico); a raiz não é opção e 'ambos' entra logo após 'primario'. */
-const BUILTIN_TIPO_LABEL: Record<string, string> = {
-  dominio: 'Domínio',
-  origem: 'Origem',
-  fonte: 'Fonte (sistema)',
-  'fonte-secundaria': 'Fonte secundária',
-  primario: 'Produto primário',
-  final: 'Produto final',
-}
-
-/** Opções do select "Tipo de componente" montadas do bloco `niveis` do
- *  graph.json, na ordem das colunas: built-ins com os rótulos atuais, níveis
- *  customizados pelo título cadastrado. */
-function tipoOptionsDe(niveis: readonly NivelDef[]): Array<{ value: NivelRow; label: string }> {
-  const opts: Array<{ value: NivelRow; label: string }> = []
-  for (const nv of [...niveis].sort((a, b) => a.ordem - b.ordem)) {
-    if (nv.slug === 'raiz') continue
-    if (nv.builtin) {
-      const label = BUILTIN_TIPO_LABEL[nv.slug]
-      if (label === undefined) continue
-      opts.push({ value: nv.slug, label })
-      if (nv.slug === 'primario') opts.push({ value: 'ambos', label: 'Primário e final' })
-    } else {
-      opts.push({ value: nv.slug, label: nv.titulo })
-    }
-  }
-  return opts
+/** Opções do select "Nível/Camada": TODOS os níveis do bloco `niveis`, na
+ *  ordem das colunas. Nenhum nível é especial — o rótulo é sempre o título
+ *  cadastrado, então renomear um nível aparece aqui na hora. */
+function nivelOptionsDe(niveis: readonly NivelDef[]): Array<{ value: string; label: string }> {
+  return [...niveis]
+    .sort((a, b) => a.ordem - b.ordem)
+    .map((nv) => ({ value: nv.slug, label: nv.titulo }))
 }
 
 const DEBITO_OPTIONS: ReadonlyArray<{ value: Debito; label: string }> = [
@@ -72,15 +51,6 @@ const DEBITO_OPTIONS: ReadonlyArray<{ value: Debito; label: string }> = [
 ]
 
 const STATUS_OPTIONS = ['producao', 'transicao', 'investigacao'] as const
-
-/** Nível customizado aceita a linha sem débito/status: é o componente simples
- *  (só identificação), que fica na cor do nível em vez da cor de débito. */
-const VAZIO_LABEL = '— não declarado —'
-
-/** Unicidade de nome: global entre produtos, por tipo entre componentes. */
-function grupoDe(nivel: NivelRow): string {
-  return isProdutoRow(nivel) ? 'produto' : nivel
-}
 
 /** União de listas de nomes, sem duplicatas (caixa/acentos à parte), ordenada. */
 function uniaoNomes(...listas: string[][]): string[] {
@@ -209,27 +179,22 @@ function ChipsField({
 }
 
 /** O que o form abre: cadastro em branco, edição de uma linha existente
- *  (identificada por nome + grupo do nível) ou cadastro pré-preenchido de um
- *  componente que só existe derivado no grafo (sem linha no catálogo). */
+ *  (identificada por nome + nível) ou cadastro pré-preenchido de um componente
+ *  que só existe como fantasma no grafo (citado, mas sem linha). */
 export type FormTarget =
   | { modo: 'novo' }
-  | { modo: 'editar'; nome: string; nivel: NivelRow }
-  | { modo: 'cadastrar'; nome: string; nivel: NivelRow }
+  | { modo: 'editar'; nome: string; nivel: string }
+  | { modo: 'cadastrar'; nome: string; nivel: string }
 
 interface CatalogFormProps {
   /** Linhas atuais do catálogo (GET /api/catalogo no mount do App). */
   rows: CatalogoRow[]
   target: FormTarget
-  /** Bloco `niveis` do graph.json (built-ins + customs): monta o select de
-   *  tipo e identifica os slugs customizados. */
+  /** Bloco `niveis` do graph.json: monta o select "Nível/Camada". */
   niveis: readonly NivelDef[]
-  /** Nomes de origens que existem no grafo (nós org-*, mesmo sem linha). */
-  origensGrafo: string[]
-  /** Nomes de fontes/sistemas que existem no grafo (nós sys-*). */
-  fontesGrafo: string[]
-  /** Nomes de TODOS os componentes não-produto do grafo (alvos possíveis das
-   *  associações de um componente de nível customizado). */
-  componentesGrafo: string[]
+  /** Nomes de todos os componentes que existem no grafo (alvos possíveis de
+   *  "Consome/Upstream" e "Associações"). */
+  nomesGrafo: string[]
   /** Save confirmado pela API: o App re-busca as rows do catálogo. */
   onSaved(): void
   onClose(): void
@@ -239,58 +204,32 @@ export default function CatalogForm({
   rows,
   target,
   niveis,
-  origensGrafo,
-  fontesGrafo,
-  componentesGrafo,
+  nomesGrafo,
   onSaved,
   onClose,
 }: CatalogFormProps) {
   const initial = useMemo(
     () =>
       target.modo === 'editar'
-        ? (rows.find(
-            (r) => r.nome === target.nome && grupoDe(r.nivel) === grupoDe(target.nivel),
-          ) ?? null)
+        ? (rows.find((r) => r.nome === target.nome && r.nivel === target.nivel) ?? null)
         : null,
     [rows, target],
   )
 
+  const nivelOptions = useMemo(() => nivelOptionsDe(niveis), [niveis])
+  const nivelPadrao = target.modo === 'cadastrar' ? target.nivel : (nivelOptions[0]?.value ?? '')
+
   const [nome, setNome] = useState(initial?.nome ?? (target.modo === 'cadastrar' ? target.nome : ''))
-  const [tipo, setTipo] = useState<NivelRow>(
-    initial?.nivel ?? (target.modo === 'cadastrar' ? target.nivel : 'primario'),
+  const [nivel, setNivel] = useState<string>(initial?.nivel ?? nivelPadrao)
+  const [tipoComponente, setTipoComponente] = useState<TipoComponente>(
+    initial?.tipo_componente ?? TIPO_COMPONENTE_PADRAO,
   )
   const [dominio, setDominio] = useState(initial?.dominio ?? '')
   const [novoDominio, setNovoDominio] = useState('')
-  const isProduto = isProdutoRow(tipo)
-  const tipoOptions = useMemo(() => tipoOptionsDe(niveis), [niveis])
-  // Tipo de nível customizado: slug presente no bloco `niveis` sem builtin.
-  const slugsCustom = useMemo(
-    () => new Set(niveis.filter((nv) => !nv.builtin).map((nv) => nv.slug)),
-    [niveis],
-  )
-  const isCustom = slugsCustom.has(tipo)
-  // Campo único de associação, igual em todos os níveis. A linha guarda a lista
-  // na coluna que o nível usa: 'fonte' em `origem`, 'fonte-secundaria' em
-  // `fonte_sistema`, os demais em `associacoes`.
-  const [associacoes, setAssociacoes] = useState<string[]>(() => {
-    if (initial === null) return []
-    if (initial.nivel === 'fonte') return parseAssocList(initial.origem)
-    if (initial.nivel === 'fonte-secundaria') return parseAssocList(initial.fonte_sistema)
-    return initial.associacoes
-  })
-  // Rota da linha: fora do formulário desde que origem e fonte viraram níveis
-  // próprios, mas carregada e regravada — trocar de tipo não apaga a planilha.
-  const [origem] = useState(initial?.nivel === 'fonte' ? '' : (initial?.origem ?? ''))
-  const [fonteSistema] = useState(
-    initial?.nivel === 'fonte-secundaria' ? '' : (initial?.fonte_sistema ?? ''),
-  )
-  const [fsec] = useState<string[]>(initial?.fontes_secundarias ?? [])
   const [consome, setConsome] = useState<string[]>(initial?.consome ?? [])
+  const [associacoes, setAssociacoes] = useState<string[]>(initial?.associacoes ?? [])
   const [descricao, setDescricao] = useState(initial?.descricao ?? '')
   const [observacoes, setObservacoes] = useState(initial?.observacoes ?? '')
-  // Linha de componente chega com debito/status "" e assim permanece: é um
-  // valor legítimo fora dos produtos. Ao gravar produto, montarRow aplica os
-  // defaults (avaliar/producao) — nenhum campo é forçado antes disso.
   const [debito, setDebito] = useState<Debito | ''>(initial ? initial.debito : 'avaliar')
   const [status, setStatus] = useState(initial ? initial.status : 'producao')
   const [owner, setOwner] = useState(initial?.owner ?? '')
@@ -314,36 +253,23 @@ export default function CatalogForm({
       ),
     [rows],
   )
-  // Alvos possíveis das associações, em qualquer nível: as linhas do catálogo
-  // (o build resolve produtos e componentes) mais os componentes que só existem
-  // derivados no grafo — origens e fontes inclusive —, menos o próprio.
+  // Alvos possíveis de qualquer relação: as linhas do catálogo mais o que já
+  // existe no grafo, menos o próprio componente.
   const componentesExistentes = useMemo(
-    () => uniaoNomes(componentesGrafo, origensGrafo, fontesGrafo, rows.map((r) => r.nome)),
-    [rows, componentesGrafo, origensGrafo, fontesGrafo],
+    () => uniaoNomes(nomesGrafo, rows.map((r) => r.nome)),
+    [rows, nomesGrafo],
   )
   const componentesConhecidos = useMemo(
     () => new Set(componentesExistentes.map(norm)),
     [componentesExistentes],
   )
-  const assocSugestoes = useMemo(() => {
+  const sugestoes = useMemo(() => {
     const proprio = norm(target.modo === 'editar' ? target.nome : nome)
     return componentesExistentes.filter((n) => norm(n) !== proprio)
   }, [componentesExistentes, target, nome])
-  // Candidatos a "consome": qualquer linha do catálogo — desde que níveis
-  // customizados são níveis de dado, um produto pode consumir uma linha Gold
-  // ou um componente sem virar fantasma. As sugestões priorizam os dados.
-  const nomesCatalogo = useMemo(() => new Set(rows.map((r) => norm(r.nome))), [rows])
-  const consomeSugestoes = useMemo(() => {
-    const proprio = norm(target.modo === 'editar' ? target.nome : nome)
-    return rows
-      .filter((r) => isProdutoRow(r.nivel) || slugsCustom.has(r.nivel))
-      .map((r) => r.nome)
-      .filter((n) => norm(n) !== proprio)
-      .sort((a, b) => a.localeCompare(b, 'pt-BR'))
-  }, [rows, slugsCustom, target, nome])
 
   // Status fora do trio padrão (linha antiga): mantém como opção para não
-  // perder ("" de linha de componente não conta — não é um status).
+  // perder.
   const statusOptions = useMemo<string[]>(() => {
     const extra =
       initial && initial.status !== '' && !STATUS_OPTIONS.some((s) => s === initial.status)
@@ -352,38 +278,31 @@ export default function CatalogForm({
     return [...STATUS_OPTIONS, ...extra]
   }, [initial])
 
-  // Validação viva de nome: obrigatório e único no grupo do tipo escolhido —
-  // global entre produtos, por tipo entre componentes (uma fonte e uma origem
-  // podem ter o mesmo nome). Na edição, a própria linha é permitida.
+  const nivelLabel = nivelOptions.find((o) => o.value === nivel)?.label ?? nivel
+
+  // Validação viva de nome: obrigatório e único DENTRO do nível escolhido (o
+  // mesmo nome em outro nível é outro componente). Na edição, a própria linha
+  // é permitida.
   const nomeDuplicado = useMemo(() => {
     const key = norm(nome)
     if (!key) return false
     return rows.some((r) => {
-      if (grupoDe(r.nivel) !== grupoDe(tipo)) return false
-      if (
-        target.modo === 'editar' &&
-        r.nome === target.nome &&
-        grupoDe(r.nivel) === grupoDe(target.nivel)
-      ) {
+      if (r.nivel !== nivel) return false
+      if (target.modo === 'editar' && r.nome === target.nome && r.nivel === target.nivel) {
         return false
       }
       return norm(r.nome) === key
     })
-  }, [nome, tipo, rows, target])
+  }, [nome, nivel, rows, target])
 
-  const tipoLabel = tipoOptions.find((o) => o.value === tipo)?.label ?? tipo
   const dominioFinal = dominio === NOVO_DOMINIO ? novoDominio.trim() : dominio
 
-  // Estado completo da linha: todo campo viaja, exibido ou não pelo tipo atual.
   const estado = useMemo<RowFormState>(
     () => ({
       nome,
-      tipo,
-      custom: isCustom,
+      nivel,
+      tipoComponente,
       dominio: dominioFinal,
-      origem,
-      fonteSistema,
-      fsec,
       consome,
       associacoes,
       descricao,
@@ -394,35 +313,28 @@ export default function CatalogForm({
       centroDeCusto,
     }),
     [
-      nome, tipo, isCustom, dominioFinal, origem, fonteSistema, fsec,
-      consome, associacoes, descricao, observacoes, debito, status, owner, centroDeCusto,
+      nome, nivel, tipoComponente, dominioFinal, consome, associacoes,
+      descricao, observacoes, debito, status, owner, centroDeCusto,
     ],
   )
-
-  // O que a troca de tipo faz com os campos já preenchidos (nada some calado).
-  const aviso = useMemo(() => avisoTroca(estado), [estado])
 
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (saving || saved) return
     const locais: string[] = []
     const nomeFinal = nome.trim()
-    // Cadastro independente: só nome e tipo são obrigatórios (domínio vazio
+    // Cadastro independente: só nome e nível são obrigatórios (domínio vazio
     // vira "A definir" no build).
     if (!nomeFinal) locais.push('Nome é obrigatório.')
+    if (!nivel) locais.push('Nível/Camada é obrigatório.')
     if (nomeDuplicado) {
-      locais.push(
-        isProduto
-          ? `Já existe um produto chamado "${nomeFinal}" no catálogo.`
-          : `Já existe ${tipoLabel} chamado "${nomeFinal}" no catálogo.`,
-      )
+      locais.push(`Já existe "${nomeFinal}" no nível ${nivelLabel}.`)
     }
     if (locais.length > 0) {
       setErrors(locais)
       return
     }
 
-    const row: CatalogoRow = montarRow(estado)
     setErrors([])
     setSaving(true)
     try {
@@ -432,10 +344,9 @@ export default function CatalogForm({
       const atuais = (await fetchCatalogo()) ?? rows
       const idx =
         target.modo === 'editar'
-          ? atuais.findIndex(
-              (r) => r.nome === target.nome && grupoDe(r.nivel) === grupoDe(target.nivel),
-            )
+          ? atuais.findIndex((r) => r.nome === target.nome && r.nivel === target.nivel)
           : -1
+      const row: CatalogoRow = montarRow(estado, idx >= 0 ? atuais[idx] : null)
       const next = idx >= 0 ? atuais.map((r, i) => (i === idx ? row : r)) : [...atuais, row]
       const res = await saveCatalogo(next)
       if (res.ok) {
@@ -526,21 +437,36 @@ export default function CatalogForm({
         ) : (
           <>
             <div className="catalog-form__body">
-              <div className="cform__field">
-                <label className="cform__label" htmlFor="cf-tipo">
-                  Tipo de componente
-                </label>
-                <select
-                  id="cf-tipo"
-                  value={tipo}
-                  onChange={(e) => setTipo(e.target.value as NivelRow)}
-                >
-                  {tipoOptions.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
+              <div className="cform__row">
+                <div className="cform__field">
+                  <label className="cform__label" htmlFor="cf-nivel">
+                    Nível/Camada
+                  </label>
+                  <select id="cf-nivel" value={nivel} onChange={(e) => setNivel(e.target.value)}>
+                    {nivelOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="cform__field">
+                  <label className="cform__label" htmlFor="cf-tipo-componente">
+                    Tipo de componente
+                  </label>
+                  <select
+                    id="cf-tipo-componente"
+                    value={tipoComponente}
+                    onChange={(e) => setTipoComponente(e.target.value as TipoComponente)}
+                  >
+                    {TIPOS_COMPONENTE.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="cform__field">
@@ -557,57 +483,55 @@ export default function CatalogForm({
                 />
                 {nomeDuplicado && (
                   <p className="cform__error-inline">
-                    {isProduto
-                      ? 'Já existe um produto com este nome.'
-                      : `Já existe ${tipoLabel} com este nome.`}
+                    Já existe um componente com este nome no nível {nivelLabel}.
                   </p>
                 )}
               </div>
 
               <div className="cform__field">
-                  <label className="cform__label" htmlFor="cf-dominio">
-                    Domínio
-                  </label>
-                  <select
-                    id="cf-dominio"
-                    value={dominio}
-                    onChange={(e) => setDominio(e.target.value)}
-                  >
-                    <option value="">— escolher —</option>
-                    {dominios.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                    <option value={NOVO_DOMINIO}>+ Novo domínio…</option>
-                  </select>
-                  {dominio === NOVO_DOMINIO && (
-                    <input
-                      type="text"
-                      placeholder="nome do novo domínio"
-                      value={novoDominio}
-                      onChange={(e) => setNovoDominio(e.target.value)}
-                    />
-                  )}
+                <label className="cform__label" htmlFor="cf-dominio">
+                  Domínio
+                </label>
+                <select
+                  id="cf-dominio"
+                  value={dominio}
+                  onChange={(e) => setDominio(e.target.value)}
+                >
+                  <option value="">— escolher —</option>
+                  {dominios.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                  <option value={NOVO_DOMINIO}>+ Novo domínio…</option>
+                </select>
+                {dominio === NOVO_DOMINIO && (
+                  <input
+                    type="text"
+                    placeholder="nome do novo domínio"
+                    value={novoDominio}
+                    onChange={(e) => setNovoDominio(e.target.value)}
+                  />
+                )}
               </div>
 
               <ChipsField
                 label="Consome/Upstream"
-                placeholder="buscar dado do catálogo…"
+                placeholder="buscar componente do catálogo…"
                 values={consome}
-                suggestions={consomeSugestoes}
-                knownNames={nomesCatalogo}
+                suggestions={sugestoes}
+                knownNames={componentesConhecidos}
                 ghostNote="Nome fora do catálogo: vira nó fantasma no mapa até ganhar linha própria."
                 onChange={setConsome}
               />
 
               <ChipsField
                 label="Associações"
-                placeholder="buscar componente existente…"
+                placeholder="buscar componente do catálogo…"
                 values={associacoes}
-                suggestions={assocSugestoes}
+                suggestions={sugestoes}
                 knownNames={componentesConhecidos}
-                ghostNote="A associação precisa apontar para uma linha que exista no catálogo."
+                ghostNote="Nome fora do catálogo: vira nó fantasma no mapa até ganhar linha própria."
                 onChange={setAssociacoes}
               />
 
@@ -636,41 +560,38 @@ export default function CatalogForm({
               </div>
 
               <div className="cform__row">
-                  <div className="cform__field">
-                    <label className="cform__label" htmlFor="cf-debito">
-                      Débito técnico
-                    </label>
-                    <select
-                      id="cf-debito"
-                      value={isProduto ? debito || 'avaliar' : debito}
-                      onChange={(e) => setDebito(e.target.value as Debito | '')}
-                    >
-                      {/* Fora dos produtos o débito pode não se aplicar. */}
-                      {!isProduto && <option value="">{VAZIO_LABEL}</option>}
-                      {DEBITO_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="cform__field">
-                    <label className="cform__label" htmlFor="cf-status">
-                      Status
-                    </label>
-                    <select
-                      id="cf-status"
-                      value={isProduto ? status || 'producao' : status}
-                      onChange={(e) => setStatus(e.target.value)}
-                    >
-                      {!isProduto && <option value="">{VAZIO_LABEL}</option>}
-                      {statusOptions.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div className="cform__field">
+                  <label className="cform__label" htmlFor="cf-debito">
+                    Débito técnico
+                  </label>
+                  <select
+                    id="cf-debito"
+                    value={debito || 'avaliar'}
+                    onChange={(e) => setDebito(e.target.value as Debito | '')}
+                  >
+                    {DEBITO_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="cform__field">
+                  <label className="cform__label" htmlFor="cf-status">
+                    Status
+                  </label>
+                  <select
+                    id="cf-status"
+                    value={status || 'producao'}
+                    onChange={(e) => setStatus(e.target.value)}
+                  >
+                    {statusOptions.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="cform__row">
@@ -699,24 +620,6 @@ export default function CatalogForm({
                   />
                 </div>
               </div>
-
-              {(aviso.mantidos.length > 0 || aviso.perdidos.length > 0) && (
-                <ul className="catalog-form__notes">
-                  {aviso.mantidos.length > 0 && (
-                    <li>
-                      ⓘ {aviso.mantidos.join(', ')}: mantido{aviso.mantidos.length > 1 ? 's' : ''} na
-                      planilha, mas <strong>{tipoLabel}</strong> não usa {aviso.mantidos.length > 1 ? 'esses campos' : 'esse campo'}.
-                    </li>
-                  )}
-                  {aviso.perdidos.length > 0 && (
-                    <li>
-                      ⚠ {aviso.perdidos.join(', ')}: <strong>{tipoLabel}</strong> não guarda{' '}
-                      {aviso.perdidos.length > 1 ? 'esses campos' : 'esse campo'} — o conteúdo atual
-                      será descartado ao salvar.
-                    </li>
-                  )}
-                </ul>
-              )}
 
               {confirmarExclusao !== null && (
                 <div className="catalog-form__danger" role="alert">

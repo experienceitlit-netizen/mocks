@@ -1,79 +1,33 @@
-// Paleta central (seção 2 do plano). Graph, NodeBalloon e a futura legenda
-// (Fase 5) devem importar daqui para não divergirem.
-import type { Debito, GraphNodeData, Nivel } from './graph-types'
-import { isRaiz, nodeKind } from './graph-types'
+// Paleta central do mapa. Graph, NodeBalloon, TableView e Legend importam
+// daqui para não divergirem.
+//
+// COR = semântica de débito, igual para TODO componente (não existe paleta por
+// nível nem por categoria de nó). A FORMA é que varia, e vem do
+// `tipoComponente` (ver shapeOf em Graph.tsx / Legend.tsx).
+import type { Debito, GraphNodeData } from './graph-types'
+import { debitoDe } from './graph-types'
 
 export const BACKGROUND = '#1E1E1E'
-/** Nó-raiz do domínio: azul accent do app — fora da semântica de débito. */
-export const COLOR_RAIZ = '#7FB4E8'
+
 export const COLOR_DEBITO = '#CC092F'
 export const COLOR_AVALIAR = '#8A8A8A'
 export const COLOR_LEGADO = '#B8860B'
 export const COLOR_CURADO = '#3A7D44'
 export const COLOR_FANTASMA = '#5A5A5A'
 
-/* Camada de linhagem (nós derivados pelo build). */
-export const COLOR_SISTEMA = '#5C7A99'
-export const COLOR_SISTEMA_LEGADO = COLOR_LEGADO
-export const COLOR_ORIGEM = '#41566B'
-/** Fonte secundária (tabela UCS de ingestão): teal/petróleo — deliberadamente
- *  fora da semântica de débito (vermelho/âmbar/verde) e distinto das cores de
- *  domínio (o verde de Resultado #2E8B57 puxa para folha; este, para ciano). */
-export const COLOR_FONTE_SECUNDARIA = '#178A94'
+/** Sinal textual de rota legada/manual no que o componente declara de si. Era
+ *  lido do campo `sistema`, que saiu do nó no modelo unificado; sobrou o texto
+ *  que o próprio componente carrega (nome e descrição). */
+const LEGADO_RE = /legado|on-premise|planilha/i
 
-/* Placeholders da vista de linhagem (fonte/origem desconhecida). */
-export const PLACEHOLDER_FILL = 'rgba(90, 90, 90, 0.25)'
-export const PLACEHOLDER_STROKE = '#8A8A8A'
-
-/** Tons discretos para níveis customizados: meios-tons deliberadamente fora
- *  da semântica de débito (vermelho/âmbar/verde), das cores de domínio e dos
- *  azuis/teal da camada de linhagem. A cor de um nível é estável: derivada do
- *  hash do slug, não da ordem de cadastro. */
-const NIVEL_CUSTOM_PALETTE = [
-  '#A57C3B', // bronze
-  '#8E9C4B', // oliva
-  '#C4677C', // framboesa
-  '#7D6BC5', // índigo
-  '#5BB0C9', // ciano claro
-  '#D08770', // salmão
-  '#7E9E9B', // verde-acinzentado
-] as const
-
-/** Cor estável de um nível customizado (hash djb2 do slug → paleta). */
-export function nivelCustomColor(slug: string): string {
-  let h = 5381
-  for (const ch of slug) h = (Math.imul(h, 33) ^ (ch.codePointAt(0) ?? 0)) >>> 0
-  return NIVEL_CUSTOM_PALETTE[h % NIVEL_CUSTOM_PALETTE.length]
-}
-
-const LEGADO_RE = /legado|on-premise|planilha|excel/i
-
-/** Semântica de cor de um dado: débito sim > avaliar > sistema legado > curado. */
-function corPorDebito(node: GraphNodeData): string {
-  if (node.debito === 'sim') return COLOR_DEBITO
-  if (node.debito === 'avaliar') return COLOR_AVALIAR
-  const sistema = (node.sistema ?? '').toLowerCase()
-  if (sistema.includes('legado') || sistema.includes('on-premise')) return COLOR_LEGADO
-  return COLOR_CURADO
-}
-
-/** Cor do nó por precedência: débito sim > avaliar > sistema legado > curado.
- *  Nós derivados (domínio/sistema/origem) têm paleta própria. Nível
- *  customizado é nível de dado: a linha que declara débito entra na semântica
- *  dos produtos; a que só se identifica (componente simples) fica na cor do
- *  nível — assim transferir um dado entre níveis não muda a cor dele. */
+/** Cor do componente por precedência: fantasma > débito sim > débito a avaliar
+ *  (inclui o não declarado) > legado/manual > curado. */
 export function nodeColor(node: GraphNodeData): string {
-  if (isRaiz(node)) return COLOR_RAIZ
-  const kind = nodeKind(node)
-  if (kind === 'dominio') return domainColor(node.nome)
-  if (kind === 'fonte-secundaria') return COLOR_FONTE_SECUNDARIA
-  if (kind === 'nivel-custom') {
-    return node.debito ? corPorDebito(node) : nivelCustomColor(node.nivelCustom ?? '')
-  }
-  if (kind === 'sistema') return LEGADO_RE.test(node.nome) ? COLOR_SISTEMA_LEGADO : COLOR_SISTEMA
-  if (kind === 'origem') return COLOR_ORIGEM
-  if (node.fantasma) return COLOR_FANTASMA
-  return corPorDebito(node)
+  if (node.fantasma === true) return COLOR_FANTASMA
+  const debito = debitoDe(node)
+  if (debito === 'sim') return COLOR_DEBITO
+  if (debito === 'avaliar') return COLOR_AVALIAR
+  return LEGADO_RE.test(`${node.nome} ${node.descricao ?? ''}`) ? COLOR_LEGADO : COLOR_CURADO
 }
 
 /** Cores dos chips de domínio (distintas da semântica de cor dos nós). */
@@ -86,18 +40,18 @@ export const DOMAIN_COLORS: Record<string, string> = {
   'A definir': '#8A8A8A',
 }
 
-// Lookup insensível a acentos: o nó de domínio derivado exibe "Regulatório",
-// mas a chave da paleta (e o frontmatter) é "Regulatorio".
-const DOMAIN_COLORS_NORM = new Map(
-  Object.entries(DOMAIN_COLORS).map(([k, v]) => [normalizeDomainKey(k), v]),
-)
-
 function normalizeDomainKey(s: string): string {
   return s
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
 }
+
+// Lookup insensível a acentos: a UI exibe "Regulatório", mas a chave da paleta
+// (e do catálogo) é "Regulatorio".
+const DOMAIN_COLORS_NORM = new Map(
+  Object.entries(DOMAIN_COLORS).map(([k, v]) => [normalizeDomainKey(k), v]),
+)
 
 export function domainColor(dominio: string | undefined): string {
   return DOMAIN_COLORS_NORM.get(normalizeDomainKey(dominio ?? '')) ?? '#8A8A8A'
@@ -107,14 +61,4 @@ export const DEBITO_LABEL: Record<Debito, string> = {
   sim: 'Sim',
   nao: 'Não',
   avaliar: 'A avaliar',
-}
-
-/** Rótulos executivos do nível (chips do NodeBalloon e da tabela).
- *  'secundario' (legado) exibe o mesmo rótulo de 'final'. */
-export const NIVEL_LABEL: Record<Nivel, string> = {
-  primario: 'Produto primário',
-  secundario: 'Produto final',
-  final: 'Produto final',
-  ambos: 'Primário e final',
-  raiz: 'Raiz',
 }

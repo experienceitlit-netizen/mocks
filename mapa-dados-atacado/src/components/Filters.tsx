@@ -1,8 +1,5 @@
-import type { Debito } from './graph-types'
+import type { Debito, NivelDef } from './graph-types'
 import { DEBITO_LABEL, domainColor } from './palette'
-
-/** Lado do filtro de nível ("ambos" casa com os dois). */
-export type NivelFiltro = 'primario' | 'final'
 
 export interface Counts {
   total: number
@@ -14,39 +11,32 @@ interface FiltersProps {
   dominios: string[]
   selectedDominios: ReadonlySet<string>
   selectedDebitos: ReadonlySet<Debito>
-  /** Grupo "Nível" só aparece quando o grafo já traz `nivel` nos dados. */
-  hasNiveis: boolean
-  selectedNiveis: ReadonlySet<NivelFiltro>
+  /** TODOS os níveis do bloco `niveis`, na ordem das colunas: cada um vira um
+   *  chip de filtro. Nenhum nível é especial. */
+  niveis: readonly NivelDef[]
+  /** Slugs de nível selecionados. */
+  selectedNiveis: ReadonlySet<string>
   somenteSemOwner: boolean
-  /** Camada de linhagem (sistemas/origens) visível no grafo. */
-  layersOn: boolean
   assocOn: boolean
   counts: Counts
   hasActiveFilter: boolean
   onToggleDominio(dominio: string): void
   onToggleDebito(debito: Debito): void
-  onToggleNivel(nivel: NivelFiltro): void
+  onToggleNivel(slug: string): void
   onToggleSemOwner(): void
-  onToggleLayers(): void
   onToggleAssoc(): void
   onClear(): void
 }
 
 const DEBITOS: Debito[] = ['sim', 'nao', 'avaliar']
 
-const NIVEIS: { valor: NivelFiltro; label: string }[] = [
-  { valor: 'primario', label: 'Produto primário' },
-  { valor: 'final', label: 'Produto final' },
-]
-
 export default function Filters({
   dominios,
   selectedDominios,
   selectedDebitos,
-  hasNiveis,
+  niveis,
   selectedNiveis,
   somenteSemOwner,
-  layersOn,
   assocOn,
   counts,
   hasActiveFilter,
@@ -54,16 +44,37 @@ export default function Filters({
   onToggleDebito,
   onToggleNivel,
   onToggleSemOwner,
-  onToggleLayers,
   onToggleAssoc,
   onClear,
 }: FiltersProps) {
   return (
     <aside className="filters">
       <p className="filters__counter">
-        <strong>{counts.total}</strong> dados • <strong>{counts.comDebito}</strong> com débito •{' '}
-        <strong>{counts.semOwner}</strong> sem owner
+        <strong>{counts.total}</strong> componentes • <strong>{counts.comDebito}</strong> com débito
+        • <strong>{counts.semOwner}</strong> sem owner
       </p>
+
+      {niveis.length > 0 && (
+        <div className="filters__group">
+          <span className="filters__label">Nível</span>
+          <div className="filters__chips">
+            {niveis.map((nv) => {
+              const active = selectedNiveis.has(nv.slug)
+              return (
+                <button
+                  key={nv.slug}
+                  type="button"
+                  className={`filter-chip${active ? ' filter-chip--active' : ''}`}
+                  onClick={() => onToggleNivel(nv.slug)}
+                  aria-pressed={active}
+                >
+                  {nv.titulo}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="filters__group">
         <span className="filters__label">Domínio</span>
@@ -106,36 +117,9 @@ export default function Filters({
         </div>
       </div>
 
-      {hasNiveis && (
-        <div className="filters__group">
-          <span className="filters__label">Nível</span>
-          <div className="filters__chips">
-            {NIVEIS.map(({ valor, label }) => {
-              const active = selectedNiveis.has(valor)
-              return (
-                <button
-                  key={valor}
-                  type="button"
-                  className={`filter-chip${active ? ' filter-chip--active' : ''}`}
-                  onClick={() => onToggleNivel(valor)}
-                  aria-pressed={active}
-                >
-                  {label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
       <label className="filters__toggle">
         <input type="checkbox" checked={somenteSemOwner} onChange={onToggleSemOwner} />
         Somente sem owner
-      </label>
-
-      <label className="filters__toggle" title="Mostrar sistemas e origens (linhagem) no grafo">
-        <input type="checkbox" checked={layersOn} onChange={onToggleLayers} />
-        Fontes e origens
       </label>
 
       <label

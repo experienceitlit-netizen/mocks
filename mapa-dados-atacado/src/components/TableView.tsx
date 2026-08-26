@@ -1,17 +1,17 @@
-// Visão de tabela dos dados do Atacado — espelho da tabela executiva em
-// cadeias: uma linha por cadeia primário→final (derivada das arestas
-// "consome"), com Domínio | Origem | Fonte | Fonte secundária | Produto
-// primário | Produto final | Débito | Status vindos do primário. Autocontido: a integração
-// no App só precisa passar nós, arestas e (opcional) onSelectNode.
+// Visão de tabela do catálogo: uma linha POR COMPONENTE, com o nível na
+// primeira coluna e as relações de saída (Consome/Upstream e Associações) nas
+// últimas. Autocontido: a integração no App só precisa passar nós, arestas,
+// níveis e (opcional) onSelectNode.
 import { useMemo, useState } from 'react'
-import type { GraphLinkData, GraphNodeData } from './graph-types'
-import { DEBITO_LABEL, NIVEL_LABEL, domainColor } from './palette'
+import type { GraphLinkData, GraphNodeData, NivelDef } from './graph-types'
+import { tipoComponenteDe } from './graph-types'
+import { DEBITO_LABEL, domainColor } from './palette'
 import {
-  buildChains,
+  buildRows,
   domainLabel,
   isPendingValue,
   matchesFilter,
-  sortChains,
+  sortRows,
   statusLabel,
   type SortDir,
   type SortKey,
@@ -20,9 +20,11 @@ import './TableView.css'
 
 export interface TableViewProps {
   nodes: GraphNodeData[]
-  /** Arestas "consome": definem as cadeias primário→secundário. */
+  /** Arestas "consome" e "vem de" entre componentes. */
   links: GraphLinkData[]
-  /** Clique no nome de um produto → navegação para o mapa. */
+  /** Bloco `niveis`: título e ordem da coluna Nível. */
+  niveis: readonly NivelDef[]
+  /** Clique no nome de um componente → navegação para o mapa. */
   onSelectNode?: (id: string) => void
 }
 
@@ -32,11 +34,14 @@ interface SortState {
 }
 
 const SORT_LABEL: Record<SortKey, string> = {
+  nivel: 'Nível',
+  nome: 'Nome',
+  tipo: 'Tipo de componente',
   dominio: 'Domínio',
-  primario: 'Produto primário',
-  secundario: 'Produto final',
   debito: 'Débito',
   status: 'Status',
+  owner: 'Owner',
+  centroDeCusto: 'Centro de custo',
 }
 
 /** Célula de texto: null = "não se aplica" (—), ausência/vazio = "⚠ a
@@ -52,64 +57,31 @@ function ValueCell({ value }: { value: string | null | undefined }) {
   return <>{value}</>
 }
 
-/** Nome de produto clicável (→ mapa) com chip opcional de nível. */
-function ProductCell({
-  node,
-  chip,
+/** Lista de componentes relacionados, empilhados e clicáveis (→ mapa). */
+function RelacaoCell({
+  itens,
   onSelectNode,
 }: {
-  node: GraphNodeData | null
-  chip?: string
+  itens: GraphNodeData[]
   onSelectNode?: (id: string) => void
 }) {
-  if (node === null) return <span className="table-view__none">—</span>
+  if (itens.length === 0) return <span className="table-view__none">—</span>
   return (
     <>
-      {onSelectNode ? (
-        <button
-          type="button"
-          className="table-view__name-link"
-          onClick={() => onSelectNode(node.id)}
-          title="Ver no mapa"
-        >
-          {node.nome}
-        </button>
-      ) : (
-        <span className="table-view__name">{node.nome}</span>
-      )}
-      {chip !== undefined && (
-        <span className="table-view__kind table-view__kind--nivel">{chip}</span>
-      )}
-    </>
-  )
-}
-
-/** Fontes secundárias (tabelas UCS) do primário, empilhadas na mesma célula
- *  e clicáveis (→ mapa); sem mapeamento = "—". */
-function FsecCell({
-  fontes,
-  onSelectNode,
-}: {
-  fontes: GraphNodeData[]
-  onSelectNode?: (id: string) => void
-}) {
-  if (fontes.length === 0) return <span className="table-view__none">—</span>
-  return (
-    <>
-      {fontes.map((f) =>
+      {itens.map((n) =>
         onSelectNode ? (
           <button
-            key={f.id}
+            key={n.id}
             type="button"
-            className="table-view__name-link table-view__fsec"
-            onClick={() => onSelectNode(f.id)}
+            className="table-view__name-link table-view__rel"
+            onClick={() => onSelectNode(n.id)}
             title="Ver no mapa"
           >
-            {f.nome}
+            {n.nome}
           </button>
         ) : (
-          <span key={f.id} className="table-view__name table-view__fsec">
-            {f.nome}
+          <span key={n.id} className="table-view__name table-view__rel">
+            {n.nome}
           </span>
         ),
       )}
@@ -147,16 +119,16 @@ function SortHeader({
   )
 }
 
-export function TableView({ nodes, links, onSelectNode }: TableViewProps) {
+export function TableView({ nodes, links, niveis, onSelectNode }: TableViewProps) {
   const [query, setQuery] = useState('')
-  const [sort, setSort] = useState<SortState>({ key: 'dominio', dir: 'asc' })
+  const [sort, setSort] = useState<SortState>({ key: 'nivel', dir: 'asc' })
 
-  const chains = useMemo(() => buildChains(nodes, links), [nodes, links])
+  const componentes = useMemo(() => buildRows(nodes, links, niveis), [nodes, links, niveis])
 
   const rows = useMemo(() => {
-    const visible = chains.filter((row) => matchesFilter(row, query))
-    return sortChains(visible, sort.key, sort.dir)
-  }, [chains, query, sort])
+    const visible = componentes.filter((row) => matchesFilter(row, query))
+    return sortRows(visible, sort.key, sort.dir)
+  }, [componentes, query, sort])
 
   const handleSort = (key: SortKey) => {
     setSort((prev) =>
@@ -172,10 +144,10 @@ export function TableView({ nodes, links, onSelectNode }: TableViewProps) {
         <input
           type="search"
           className="table-view__filter"
-          placeholder="Filtrar por produto, descrição, origem ou fonte…"
+          placeholder="Filtrar por nome, nível, domínio, owner ou relação…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          aria-label="Filtrar cadeias"
+          aria-label="Filtrar componentes"
         />
         {query !== '' && (
           <button
@@ -192,17 +164,17 @@ export function TableView({ nodes, links, onSelectNode }: TableViewProps) {
         <table className="table-view__table">
           <thead>
             <tr>
+              <SortHeader colKey="nivel" sort={sort} onSort={handleSort}>
+                Nível
+              </SortHeader>
+              <SortHeader colKey="nome" sort={sort} onSort={handleSort}>
+                Nome
+              </SortHeader>
+              <SortHeader colKey="tipo" sort={sort} onSort={handleSort}>
+                Tipo de componente
+              </SortHeader>
               <SortHeader colKey="dominio" sort={sort} onSort={handleSort}>
                 Domínio
-              </SortHeader>
-              <th scope="col">Origem</th>
-              <th scope="col">Fonte (sistema)</th>
-              <th scope="col">Fonte secundária</th>
-              <SortHeader colKey="primario" sort={sort} onSort={handleSort}>
-                Produto primário
-              </SortHeader>
-              <SortHeader colKey="secundario" sort={sort} onSort={handleSort}>
-                Produto final
               </SortHeader>
               <SortHeader colKey="debito" sort={sort} onSort={handleSort}>
                 Débito
@@ -210,86 +182,89 @@ export function TableView({ nodes, links, onSelectNode }: TableViewProps) {
               <SortHeader colKey="status" sort={sort} onSort={handleSort}>
                 Status
               </SortHeader>
+              <SortHeader colKey="owner" sort={sort} onSort={handleSort}>
+                Owner
+              </SortHeader>
+              <SortHeader colKey="centroDeCusto" sort={sort} onSort={handleSort}>
+                Centro de custo
+              </SortHeader>
+              <th scope="col">Consome/Upstream</th>
+              <th scope="col">Associações</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row, i) => {
-              const { primario, secundario } = row
+              const { node } = row
               const prev = i > 0 ? rows[i - 1] : undefined
-              const dominio = primario.dominio ?? 'A definir'
-              const groupStart =
-                prev === undefined || (prev.primario.dominio ?? 'A definir') !== dominio
-              const color = domainColor(primario.dominio)
+              const groupStart = prev === undefined || prev.nivel !== row.nivel
+              const cor = domainColor(node.dominio)
               return (
                 <tr
                   key={row.key}
                   className={groupStart ? 'table-view__row--group-start' : undefined}
                 >
-                  <td className="table-view__cell--dominio">
-                    {groupStart ? (
-                      <span
-                        className="table-view__domain-chip"
-                        style={{ borderColor: color, color }}
+                  <td className="table-view__cell--nivel">
+                    <span className="table-view__nivel">{row.nivelTitulo}</span>
+                  </td>
+                  <td className="table-view__cell--nome">
+                    {onSelectNode ? (
+                      <button
+                        type="button"
+                        className="table-view__name-link"
+                        onClick={() => onSelectNode(node.id)}
+                        title="Ver no mapa"
                       >
-                        {domainLabel(primario.dominio)}
-                      </span>
+                        {node.nome}
+                      </button>
                     ) : (
-                      <span
-                        className="table-view__domain-tick"
-                        style={{ background: color }}
-                        title={domainLabel(primario.dominio)}
-                      />
+                      <span className="table-view__name">{node.nome}</span>
                     )}
                   </td>
-                  <td className="table-view__cell--origem">
-                    <ValueCell value={primario.origem} />
+                  <td className="table-view__cell--tipo">
+                    <span className="table-view__kind">{tipoComponenteDe(node)}</span>
                   </td>
-                  <td className="table-view__cell--sistema">
-                    <ValueCell value={primario.sistema} />
-                  </td>
-                  <td className="table-view__cell--fsec">
-                    <FsecCell
-                      fontes={row.fontesSecundarias}
-                      onSelectNode={onSelectNode}
-                    />
-                  </td>
-                  <td className="table-view__cell--nome">
-                    <ProductCell
-                      node={primario}
-                      chip={primario.nivel === 'ambos' ? NIVEL_LABEL.ambos : undefined}
-                      onSelectNode={onSelectNode}
-                    />
-                  </td>
-                  <td className="table-view__cell--nome">
-                    <ProductCell node={secundario} onSelectNode={onSelectNode} />
+                  <td className="table-view__cell--dominio">
+                    <span className="table-view__domain-chip" style={{ borderColor: cor, color: cor }}>
+                      {domainLabel(node.dominio)}
+                    </span>
                   </td>
                   <td className="table-view__cell--debito">
-                    {primario.debito ? (
-                      <span
-                        className={`table-view__chip table-view__chip--debito-${primario.debito}`}
-                      >
-                        {DEBITO_LABEL[primario.debito]}
+                    {node.debito ? (
+                      <span className={`table-view__chip table-view__chip--debito-${node.debito}`}>
+                        {DEBITO_LABEL[node.debito]}
                       </span>
                     ) : (
                       <span className="table-view__missing">⚠ a definir</span>
                     )}
                   </td>
                   <td className="table-view__cell--status">
-                    {primario.status ? (
-                      <span className={`table-view__status table-view__status--${primario.status}`}>
-                        {statusLabel(primario.status)}
+                    {node.status ? (
+                      <span className={`table-view__status table-view__status--${node.status}`}>
+                        {statusLabel(node.status)}
                       </span>
                     ) : (
                       <span className="table-view__missing">⚠ a definir</span>
                     )}
+                  </td>
+                  <td className="table-view__cell--owner">
+                    <ValueCell value={node.owner ?? undefined} />
+                  </td>
+                  <td className="table-view__cell--owner">
+                    <ValueCell value={node.centroDeCusto ?? undefined} />
+                  </td>
+                  <td className="table-view__cell--rel">
+                    <RelacaoCell itens={row.consome} onSelectNode={onSelectNode} />
+                  </td>
+                  <td className="table-view__cell--rel">
+                    <RelacaoCell itens={row.associacoes} onSelectNode={onSelectNode} />
                   </td>
                 </tr>
               )
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="table-view__empty">
-                  Nenhuma cadeia corresponde ao filtro.
+                <td colSpan={10} className="table-view__empty">
+                  Nenhum componente corresponde ao filtro.
                 </td>
               </tr>
             )}
@@ -298,7 +273,7 @@ export function TableView({ nodes, links, onSelectNode }: TableViewProps) {
       </div>
 
       <div className="table-view__footer">
-        {rows.length} de {chains.length} cadeias exibidas
+        {rows.length} de {componentes.length} componentes
       </div>
     </div>
   )

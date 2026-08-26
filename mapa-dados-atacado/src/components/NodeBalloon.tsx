@@ -1,13 +1,14 @@
-// Balão de detalhe ancorado no nó selecionado. Substitui o antigo DetailPanel
-// (drawer à direita) mantendo o mesmo conteúdo: chips, descrição, campos de
-// governança, corpo markdown, árvore de linhagem e listas de relações.
+// Balão de detalhe ancorado no nó selecionado. Um único layout para TODO
+// componente: chips (domínio, nível, tipo de componente, débito), campos de
+// governança, corpo markdown, árvore de linhagem e listas de relações — não há
+// variação por categoria de nó, porque não há categorias.
 // A ancoragem segue o nó a cada frame (pan/zoom/física) via getAnchor().
 import { useCallback, useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import type { GraphNodeData } from './graph-types'
-import { isDerivado, isDominio, isRaiz, nodeKind } from './graph-types'
-import type { LineageEntry, LineageSource } from './lineage'
-import { DEBITO_LABEL, NIVEL_LABEL, domainColor, nivelCustomColor } from './palette'
+import { debitoDe, linkLabel, tipoComponenteDe } from './graph-types'
+import type { LineageEntry } from './lineage'
+import { DEBITO_LABEL, domainColor } from './palette'
 import Markdown from './Markdown'
 
 export interface Connection {
@@ -24,27 +25,22 @@ export interface BalloonAnchor {
 
 interface NodeBalloonProps {
   node: GraphNodeData
-  /** Arestas de saída (este nó consome/produz o alvo). */
+  /** Arestas de saída (este componente consome / se associa ao alvo). */
   outgoing: Connection[]
-  /** Arestas de entrada (quem consome este nó). */
+  /** Arestas de entrada (quem consome ou cita este componente). */
   incoming: Connection[]
-  /** Dados ligados a um nó derivado (sistema/origem); vazio para dados. */
-  derivadoDados: GraphNodeData[]
-  /** Árvore de linhagem montante do dado (null para derivados/fantasmas). */
+  /** Árvore de linhagem montante; null quando o nó não está no grafo. */
   lineage: LineageEntry | null
   /** O nó já é o centro do modo foco (esconde o botão Focar). */
   isFocused: boolean
-  /** Título de um nível customizado pelo slug (chip do nó custom). */
+  /** Título do nível pelo slug (chip do nível). */
   nivelTituloDe(slug: string): string
   resolveWikiLink(target: string): string | null
   onNavigate(id: string): void
   /** Entra em modo foco neste nó (ou re-foca, se já em foco). */
   onFocus(id: string): void
   /** Abre o formulário de edição/cadastro do catálogo. Só vem definido no modo
-   *  edição (dev server com /api/catalogo): produtos com linha no CSV e
-   *  componentes derivados (domínio/origem/sistema/fonte secundária — sem
-   *  linha, o form abre como cadastro pré-preenchido). Raiz e fantasmas nunca
-   *  recebem o botão. */
+   *  edição (dev server com /api/catalogo). */
   onEdit?: () => void
   onClose(): void
   /** Âncora em coordenadas de tela; null se o nó não está no grafo atual. */
@@ -68,25 +64,22 @@ function ConnectionList({
   title,
   items,
   onNavigate,
-  showLabel,
 }: {
   title: string
   items: Connection[]
   onNavigate(id: string): void
-  showLabel: boolean
 }) {
   if (items.length === 0) return null
   return (
     <section className="connections">
       <h3>{title}</h3>
       <ul>
-        {items.map(({ node, label }) => (
+        {items.map(({ node }) => (
           <li key={node.id}>
             <button type="button" className="wikilink" onClick={() => onNavigate(node.id)}>
               {node.nome}
             </button>
-            {showLabel && label !== 'consome' && <span className="edge-label">{label}</span>}
-            {node.fantasma && <span className="edge-label">fantasma</span>}
+            {node.fantasma === true && <span className="edge-label">fantasma</span>}
           </li>
         ))}
       </ul>
@@ -94,42 +87,22 @@ function ConnectionList({
   )
 }
 
-/** Linha de fonte/origem na árvore: clicável se real, inerte se placeholder. */
-function LineageSourceRow({
-  source,
-  papel,
-  onNavigate,
-}: {
-  source: LineageSource
-  papel: 'fonte' | 'fonte secundária' | 'origem'
-  onNavigate(id: string): void
-}) {
-  return (
-    <li className="lineage__row">
-      <span className="lineage__papel">{papel}</span>
-      {source.placeholder ? (
-        <span className="lineage__placeholder">{source.node.nome}</span>
-      ) : (
-        <button type="button" className="wikilink" onClick={() => onNavigate(source.node.id)}>
-          {source.node.nome}
-        </button>
-      )}
-    </li>
-  )
-}
-
-/** Ramo recursivo da linhagem: o dado, sua fonte/origem e seus insumos. */
+/** Ramo recursivo da linhagem: o componente e tudo de que ele depende. O
+ *  rótulo da aresta só aparece quando não é o consumo padrão. */
 function LineageBranch({
   entry,
+  papel,
   isRoot = false,
   onNavigate,
 }: {
   entry: LineageEntry
+  papel?: string
   isRoot?: boolean
   onNavigate(id: string): void
 }) {
   return (
     <li className="lineage__row">
+      {papel !== undefined && <span className="lineage__papel">{papel}</span>}
       {isRoot ? (
         <span className="lineage__self">{entry.data.nome}</span>
       ) : (
@@ -137,27 +110,15 @@ function LineageBranch({
           {entry.data.nome}
         </button>
       )}
-      {(entry.fontesSecundarias.length > 0 ||
-        entry.sistema ||
-        entry.origem ||
-        entry.insumos.length > 0) && (
+      {entry.upstream.length > 0 && (
         <ul className="lineage__children">
-          {entry.fontesSecundarias.map((f) => (
-            <LineageSourceRow
-              key={f.id}
-              source={{ node: f, placeholder: false }}
-              papel="fonte secundária"
+          {entry.upstream.map(({ label, entry: filho }, i) => (
+            <LineageBranch
+              key={`${filho.data.id}-${i}`}
+              entry={filho}
+              papel={label === 'consome' ? undefined : label}
               onNavigate={onNavigate}
             />
-          ))}
-          {entry.sistema && (
-            <LineageSourceRow source={entry.sistema} papel="fonte" onNavigate={onNavigate} />
-          )}
-          {entry.origem && (
-            <LineageSourceRow source={entry.origem} papel="origem" onNavigate={onNavigate} />
-          )}
-          {entry.insumos.map((filho, i) => (
-            <LineageBranch key={`${filho.data.id}-${i}`} entry={filho} onNavigate={onNavigate} />
           ))}
         </ul>
       )}
@@ -165,72 +126,13 @@ function LineageBranch({
   )
 }
 
-/** Linha de ações comum a todos os tipos de nó: focar e editar/cadastrar. */
-function Actions({
-  node,
-  isFocused,
-  onFocus,
-  onEdit,
-}: Pick<NodeBalloonProps, 'node' | 'isFocused' | 'onFocus' | 'onEdit'>) {
-  if (isFocused && !onEdit) return null
-  return (
-    <div className="node-balloon__actions">
-      {!isFocused && (
-        <button type="button" className="node-balloon__focus" onClick={() => onFocus(node.id)}>
-          ⌖ Focar neste nó
-        </button>
-      )}
-      {onEdit && (
-        <button type="button" className="node-balloon__edit" onClick={onEdit}>
-          ✎ Editar
-        </button>
-      )}
-    </div>
-  )
-}
-
-/** Descrição, governança e observações (corpo markdown) de um componente
- *  cadastrado no catálogo (domínio/origem/sistema/fonte secundária com linha
- *  própria); derivados puros não têm esses campos e não mostram nada. */
-function CadastroInfo({
-  node,
-  resolveWikiLink,
-  onNavigate,
-  rota = false,
-}: Pick<NodeBalloonProps, 'node' | 'resolveWikiLink' | 'onNavigate'> & {
-  /** Linha de nível customizado que declara campos de dado: mostra a rota
-   *  (origem/sistema/status) junto da governança, como num produto. */
-  rota?: boolean
-}) {
-  return (
-    <>
-      {node.descricao && <p className="node-balloon__descricao">{node.descricao}</p>}
-      {node.cadastrado === true && (
-        <div className="fields">
-          {rota && <Field label="Origem">{node.origem ?? '—'}</Field>}
-          {rota && <Field label="Sistema">{node.sistema ?? '—'}</Field>}
-          {rota && node.status && <Field label="Status">{node.status}</Field>}
-          <Field label="Owner">{node.owner ? node.owner : <Missing />}</Field>
-          <Field label="Centro de custo">
-            {node.centroDeCusto ? node.centroDeCusto : <Missing />}
-          </Field>
-        </div>
-      )}
-      {node.corpo && (
-        <Markdown text={node.corpo} resolveWikiLink={resolveWikiLink} onNavigate={onNavigate} />
-      )}
-    </>
-  )
-}
-
 type BalloonContentProps = Omit<NodeBalloonProps, 'onClose' | 'getAnchor'>
 
-/** Corpo do balão — o mesmo conteúdo do antigo painel lateral, por tipo de nó. */
+/** Corpo do balão — o mesmo para qualquer componente. */
 function BalloonContent({
   node,
   outgoing,
   incoming,
-  derivadoDados,
   lineage,
   isFocused,
   nivelTituloDe,
@@ -239,232 +141,58 @@ function BalloonContent({
   onFocus,
   onEdit,
 }: BalloonContentProps) {
-  const debito = node.debito ?? 'avaliar'
-  const kind = nodeKind(node)
-
-  // Nó-raiz do domínio: descrição e a lista de produtos que agrega.
-  // Governança não se aplica (owner/CC = "—", nunca ⚠), sem débito/domínio.
-  if (isRaiz(node)) {
-    return (
-      <>
-        <header className="node-balloon__header">
-          <h2>{node.nome}</h2>
-          <div className="chips">
-            <span className="chip chip--neutral">{NIVEL_LABEL.raiz}</span>
-          </div>
-        </header>
-
-        <Actions node={node} isFocused={isFocused} onFocus={onFocus} onEdit={onEdit} />
-
-        {node.descricao && <p className="node-balloon__descricao">{node.descricao}</p>}
-
-        <div className="fields">
-          <Field label="Owner">—</Field>
-          <Field label="Centro de custo">—</Field>
-        </div>
-
-        <ConnectionList
-          title="Agrega →"
-          items={outgoing}
-          onNavigate={onNavigate}
-          showLabel={false}
-        />
-        {outgoing.length === 0 && <p className="ghost-note">Sem produtos mapeados.</p>}
-      </>
-    )
-  }
-
-  // Nó de domínio: chip na cor da área e os produtos finais que agrega
-  // (as arestas de saída "agrega"), clicáveis.
-  if (isDominio(node)) {
-    return (
-      <>
-        <header className="node-balloon__header">
-          <h2>{node.nome}</h2>
-          <div className="chips">
-            <span
-              className="chip"
-              style={{ borderColor: domainColor(node.nome), color: domainColor(node.nome) }}
-            >
-              Domínio
-            </span>
-          </div>
-        </header>
-
-        <Actions node={node} isFocused={isFocused} onFocus={onFocus} onEdit={onEdit} />
-        <CadastroInfo node={node} resolveWikiLink={resolveWikiLink} onNavigate={onNavigate} />
-
-        <ConnectionList
-          title="Produtos finais deste domínio"
-          items={outgoing}
-          onNavigate={onNavigate}
-          showLabel={false}
-        />
-        {outgoing.length === 0 && <p className="ghost-note">Sem produtos mapeados.</p>}
-      </>
-    )
-  }
-
-  // Fonte secundária (tabela UCS): quem ela alimenta (dados com aresta
-  // "vem de" para cá) e de onde ingere (a fonte/sistema — ou a origem,
-  // quando a fonte ainda é desconhecida), ambos clicáveis.
-  if (kind === 'fonte-secundaria') {
-    return (
-      <>
-        <header className="node-balloon__header">
-          <h2>{node.nome}</h2>
-          <div className="chips">
-            <span className="chip chip--neutral">Fonte secundária</span>
-          </div>
-        </header>
-
-        <Actions node={node} isFocused={isFocused} onFocus={onFocus} onEdit={onEdit} />
-        <CadastroInfo node={node} resolveWikiLink={resolveWikiLink} onNavigate={onNavigate} />
-
-        <ConnectionList
-          title="Alimenta →"
-          items={incoming}
-          onNavigate={onNavigate}
-          showLabel={false}
-        />
-        <ConnectionList
-          title="Ingere de →"
-          items={outgoing}
-          onNavigate={onNavigate}
-          showLabel={false}
-        />
-        {incoming.length === 0 && outgoing.length === 0 && (
-          <p className="ghost-note">Sem conexões mapeadas.</p>
-        )}
-      </>
-    )
-  }
-
-  // Linha de nível customizado: chip com o título do nível na cor derivada do
-  // slug. Nível customizado é nível de DADO — a linha que declara débito traz
-  // também os chips de domínio/débito, a rota e a linhagem, como um produto; a
-  // que só se identifica fica como componente do mapa. As conexões (consumo e
-  // associações "vem de") aparecem nas duas direções, clicáveis.
-  if (kind === 'nivel-custom') {
-    const slug = node.nivelCustom ?? ''
-    const cor = nivelCustomColor(slug)
-    const ehDado = node.debito !== undefined
-    return (
-      <>
-        <header className="node-balloon__header">
-          <h2>{node.nome}</h2>
-          <div className="chips">
-            {node.dominio && (
-              <span
-                className="chip"
-                style={{ borderColor: domainColor(node.dominio), color: domainColor(node.dominio) }}
-              >
-                {node.dominio}
-              </span>
-            )}
-            <span className="chip" style={{ borderColor: cor, color: cor }}>
-              {nivelTituloDe(slug)}
-            </span>
-            {ehDado && (
-              <span className={`chip chip--debito-${debito}`}>Débito: {DEBITO_LABEL[debito]}</span>
-            )}
-          </div>
-        </header>
-
-        <Actions node={node} isFocused={isFocused} onFocus={onFocus} onEdit={onEdit} />
-        <CadastroInfo
-          node={node}
-          resolveWikiLink={resolveWikiLink}
-          onNavigate={onNavigate}
-          rota={ehDado}
-        />
-
-        {lineage && lineage.insumos.length > 0 && (
-          <section className="connections lineage">
-            <h3>Linhagem</h3>
-            <ul className="lineage__tree">
-              <LineageBranch entry={lineage} isRoot onNavigate={onNavigate} />
-            </ul>
-          </section>
-        )}
-
-        <ConnectionList title="Consome / vem de →" items={outgoing} onNavigate={onNavigate} showLabel />
-        <ConnectionList title="← Consumido por" items={incoming} onNavigate={onNavigate} showLabel />
-        {outgoing.length === 0 && incoming.length === 0 && (
-          <p className="ghost-note">Sem conexões mapeadas.</p>
-        )}
-      </>
-    )
-  }
-
-  // Conteúdo simplificado para sistema/origem: nome, tipo e dados ligados.
-  if (isDerivado(node)) {
-    return (
-      <>
-        <header className="node-balloon__header">
-          <h2>{node.nome}</h2>
-          <div className="chips">
-            <span className="chip chip--neutral">{kind}</span>
-          </div>
-        </header>
-
-        <Actions node={node} isFocused={isFocused} onFocus={onFocus} onEdit={onEdit} />
-        <CadastroInfo node={node} resolveWikiLink={resolveWikiLink} onNavigate={onNavigate} />
-
-        <section className="connections">
-          <h3>{kind === 'sistema' ? 'Dados neste sistema' : 'Dados desta origem'}</h3>
-          {derivadoDados.length > 0 ? (
-            <ul>
-              {derivadoDados.map((dado) => (
-                <li key={dado.id}>
-                  <button type="button" className="wikilink" onClick={() => onNavigate(dado.id)}>
-                    {dado.nome}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="ghost-note">Nenhum dado mapeado.</p>
-          )}
-        </section>
-      </>
-    )
-  }
+  const debito = debitoDe(node)
+  const nivel = node.nivel ?? ''
+  // As duas relações de saída têm listas próprias: consumo de dado e
+  // associação declarada apontam para coisas diferentes.
+  const consome = outgoing.filter((c) => linkLabel({ label: c.label }) === 'consome')
+  const associacoes = outgoing.filter((c) => linkLabel({ label: c.label }) === 'vem de')
 
   return (
     <>
       <header className="node-balloon__header">
         <h2>{node.nome}</h2>
         <div className="chips">
+          {nivel !== '' && <span className="chip chip--nivel">{nivelTituloDe(nivel)}</span>}
+          <span className="chip chip--neutral">{tipoComponenteDe(node)}</span>
           {node.dominio && (
-            <span className="chip" style={{ borderColor: domainColor(node.dominio), color: domainColor(node.dominio) }}>
+            <span
+              className="chip"
+              style={{ borderColor: domainColor(node.dominio), color: domainColor(node.dominio) }}
+            >
               {node.dominio}
             </span>
           )}
-          {node.nivel ? (
-            <span className={`chip chip--nivel-${node.nivel}`}>{NIVEL_LABEL[node.nivel]}</span>
-          ) : (
-            node.tipo && <span className="chip chip--neutral">{node.tipo}</span>
-          )}
-          {!node.fantasma && (
+          {node.fantasma !== true && (
             <span className={`chip chip--debito-${debito}`}>Débito: {DEBITO_LABEL[debito]}</span>
           )}
         </div>
       </header>
 
-      <Actions node={node} isFocused={isFocused} onFocus={onFocus} onEdit={onEdit} />
+      {(!isFocused || onEdit) && (
+        <div className="node-balloon__actions">
+          {!isFocused && (
+            <button type="button" className="node-balloon__focus" onClick={() => onFocus(node.id)}>
+              ⌖ Focar neste nó
+            </button>
+          )}
+          {onEdit && (
+            <button type="button" className="node-balloon__edit" onClick={onEdit}>
+              ✎ Editar
+            </button>
+          )}
+        </div>
+      )}
 
-      {node.fantasma ? (
+      {node.fantasma === true ? (
         <p className="ghost-note">
-          Nó fantasma: é referenciado por outro dado, mas ainda não tem linha no catálogo.
+          Nó fantasma: é citado por outro componente, mas ainda não tem linha no catálogo.
         </p>
       ) : (
         <>
           {node.descricao && <p className="node-balloon__descricao">{node.descricao}</p>}
 
           <div className="fields">
-            <Field label="Origem">{node.origem ?? '—'}</Field>
-            <Field label="Sistema">{node.sistema ?? '—'}</Field>
             {node.status && <Field label="Status">{node.status}</Field>}
             <Field label="Owner">{node.owner ? node.owner : <Missing />}</Field>
             <Field label="Centro de custo">
@@ -478,7 +206,7 @@ function BalloonContent({
         </>
       )}
 
-      {lineage && (
+      {lineage && lineage.upstream.length > 0 && (
         <section className="connections lineage">
           <h3>Linhagem</h3>
           <ul className="lineage__tree">
@@ -487,13 +215,9 @@ function BalloonContent({
         </section>
       )}
 
-      <ConnectionList title="Consome →" items={outgoing} onNavigate={onNavigate} showLabel />
-      <ConnectionList
-        title="← Consumido por"
-        items={incoming}
-        onNavigate={onNavigate}
-        showLabel={false}
-      />
+      <ConnectionList title="Consome →" items={consome} onNavigate={onNavigate} />
+      <ConnectionList title="Associações →" items={associacoes} onNavigate={onNavigate} />
+      <ConnectionList title="← Consumido por" items={incoming} onNavigate={onNavigate} />
       {outgoing.length === 0 && incoming.length === 0 && (
         <p className="ghost-note">Sem conexões mapeadas.</p>
       )}

@@ -1,22 +1,18 @@
-// Contrato do formulário: trocar o "Tipo de componente" NUNCA apaga campo da
-// linha, e o que não couber no nível escolhido é avisado antes de salvar.
+// Contrato do formulário: os campos são os MESMOS em todos os níveis, então
+// trocar o "Nível/Camada" só troca a coluna do componente — nada é descartado,
+// nem os campos que o formulário não edita.
 import { describe, expect, it } from 'vitest'
-import type { CatalogoRow, NivelRow } from './catalog-api'
+import type { CatalogoRow } from './catalog-api'
 import type { RowFormState } from './catalog-form-row'
-import { avisoTroca, montarRow, usaCamposDeDado } from './catalog-form-row'
+import { montarRow } from './catalog-form-row'
 
-/** Estado do form carregado com uma linha de produto completa (o caso do
- *  GDAD: domínio, rota, débito e status preenchidos). */
-const estadoProduto = (extra: Partial<RowFormState> = {}): RowFormState => ({
+const estado = (extra: Partial<RowFormState> = {}): RowFormState => ({
   nome: 'GDAD',
-  tipo: 'primario',
-  custom: false,
+  nivel: 'primario',
+  tipoComponente: 'Tabela Delta',
   dominio: 'Resultado',
-  origem: 'resultado gerencial',
-  fonteSistema: 'Databricks (dado curado)',
-  fsec: ['Tabela UCS'],
   consome: ['PSDC'],
-  associacoes: [],
+  associacoes: ['Databricks'],
   descricao: 'resultado realizado',
   observacoes: 'corpo',
   debito: 'nao',
@@ -26,101 +22,57 @@ const estadoProduto = (extra: Partial<RowFormState> = {}): RowFormState => ({
   ...extra,
 })
 
-const paraNivel = (tipo: NivelRow, custom: boolean): CatalogoRow =>
-  montarRow(estadoProduto({ tipo, custom }))
+/** Linha original com colunas que o formulário não edita. */
+const base: CatalogoRow = {
+  nome: 'GDAD',
+  nivel: 'primario',
+  tipo_componente: 'Default',
+  dominio: 'Resultado',
+  consome: [],
+  associacoes: [],
+  descricao: '',
+  debito: '',
+  status: '',
+  owner: null,
+  centro_de_custo: null,
+  observacoes: '',
+}
 
-describe('montarRow — troca de tipo não apaga campo', () => {
-  it('produto → nível customizado mantém domínio, rota, consome, débito e status', () => {
-    const row = paraNivel('gold', true)
-    expect(row).toMatchObject({
-      nome: 'GDAD',
+describe('montarRow', () => {
+  it('grava nível e tipo de componente como campos independentes', () => {
+    expect(montarRow(estado({ nivel: 'gold' }))).toMatchObject({
       nivel: 'gold',
-      dominio: 'Resultado',
-      origem: 'resultado gerencial',
-      fonte_sistema: 'Databricks (dado curado)',
-      fontes_secundarias: ['Tabela UCS'],
-      consome: ['PSDC'],
-      debito: 'nao',
-      status: 'producao',
-      owner: 'Dados Atacado',
-      centro_de_custo: 'CC-1',
+      tipo_componente: 'Tabela Delta',
+    })
+    expect(montarRow(estado({ tipoComponente: 'Excel' })).tipo_componente).toBe('Excel')
+  })
+
+  it('trocar de nível preserva todo o resto da linha', () => {
+    const antes = montarRow(estado())
+    const depois = montarRow(estado({ nivel: 'origem' }))
+    expect(depois).toEqual({ ...antes, nivel: 'origem' })
+  })
+
+  it('colunas que o formulário não edita viajam intactas da linha original', () => {
+    expect(montarRow(estado({ nivel: 'gold' }), base)).toMatchObject({
+      nivel: 'gold',
     })
   })
 
-  it('produto → componente built-in guarda os campos de dado na linha', () => {
-    // O serializador zera só `debito` nessas linhas; o resto continua lá.
-    const row = paraNivel('dominio', false)
-    expect(row).toMatchObject({
-      nivel: 'dominio',
-      dominio: 'Resultado',
-      origem: 'resultado gerencial',
-      fonte_sistema: 'Databricks (dado curado)',
-      fontes_secundarias: ['Tabela UCS'],
-      consome: ['PSDC'],
-      status: 'producao',
-    })
-  })
-
-  it('em linha "fonte"/"fonte-secundaria" as associações vão para as colunas de rota', () => {
-    const fonte = montarRow(estadoProduto({ tipo: 'fonte', associacoes: ['RM', 'Cadastro'] }))
-    expect(fonte.origem).toBe('RM | Cadastro')
-    expect(fonte.associacoes).toEqual([])
-    const fsec = montarRow(estadoProduto({ tipo: 'fonte-secundaria', associacoes: ['ADAT'] }))
-    expect(fsec.fonte_sistema).toBe('ADAT')
-    expect(fsec.associacoes).toEqual([])
-  })
-
-  it('produto exige débito e status; fora dos produtos o vazio é preservado', () => {
-    expect(montarRow(estadoProduto({ debito: '', status: '' }))).toMatchObject({
+  it('débito e status vazios caem no default, em qualquer nível', () => {
+    expect(montarRow(estado({ debito: '', status: '' }))).toMatchObject({
       debito: 'avaliar',
       status: 'producao',
     })
-    expect(
-      montarRow(estadoProduto({ tipo: 'gold', custom: true, debito: '', status: '' })),
-    ).toMatchObject({ debito: '', status: '' })
-  })
-
-  it('nível customizado e produtos usam os campos de dado; componente built-in não', () => {
-    expect(usaCamposDeDado({ tipo: 'gold', custom: true })).toBe(true)
-    expect(usaCamposDeDado({ tipo: 'ambos', custom: false })).toBe(true)
-    expect(usaCamposDeDado({ tipo: 'fonte', custom: false })).toBe(false)
+    expect(montarRow(estado({ nivel: 'fonte', debito: '', status: '' }))).toMatchObject({
+      debito: 'avaliar',
+      status: 'producao',
+    })
   })
 
   it('auto-referência sai de consome e de associações', () => {
-    const row = montarRow(
-      estadoProduto({ tipo: 'gold', custom: true, consome: ['gdad', 'PSDC'], associacoes: ['GDAD'] }),
-    )
+    const row = montarRow(estado({ consome: ['gdad', 'PSDC'], associacoes: ['GDAD'] }))
     expect(row.consome).toEqual(['PSDC'])
     expect(row.associacoes).toEqual([])
-  })
-})
-
-describe('avisoTroca — o que o nível escolhido não usa', () => {
-  it('nível customizado usa tudo: nenhum aviso', () => {
-    expect(avisoTroca(estadoProduto({ tipo: 'gold', custom: true }))).toEqual({
-      mantidos: [],
-      perdidos: [],
-    })
-  })
-
-  it('componente built-in: campos de dado mantidos, débito descartado', () => {
-    expect(avisoTroca(estadoProduto({ tipo: 'origem' }))).toEqual({
-      mantidos: ['Domínio', 'Consome/Upstream', 'Status', 'Fontes secundárias'],
-      perdidos: ['Débito técnico'],
-    })
-  })
-
-  it('linha "fonte" avisa que a origem preenchida dá lugar às origens associadas', () => {
-    expect(avisoTroca(estadoProduto({ tipo: 'fonte' })).perdidos).toContain('Origem')
-    expect(avisoTroca(estadoProduto({ tipo: 'fonte-secundaria' })).perdidos).toContain(
-      'Fonte / sistema',
-    )
-  })
-
-  it('associações valem em qualquer nível: nunca são descartadas', () => {
-    expect(avisoTroca(estadoProduto({ associacoes: ['ADAT'] })).perdidos).toEqual([])
-    expect(
-      avisoTroca(estadoProduto({ tipo: 'gold', custom: true, associacoes: ['ADAT'] })).perdidos,
-    ).toEqual([])
   })
 })

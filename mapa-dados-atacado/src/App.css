@@ -494,19 +494,8 @@
   text-transform: capitalize;
 }
 
-/* Nível do produto (modelo executivo): primário neutro-azulado, final
-   destacado (é o "produto final" da cadeia), ambos com os dois tons. */
-.chip--nivel-primario {
-  border-color: #4a5a6a;
-  color: #9db4c8;
-}
-
-.chip--nivel-final {
-  border-color: #5c7a99;
-  color: #7fb4e8;
-}
-
-.chip--nivel-ambos {
+/* Nível/camada do componente: um tom só, porque nenhum nível é especial. */
+.chip--nivel {
   border-color: #5c7a99;
   color: #9db4c8;
 }
@@ -786,62 +775,68 @@
   flex-shrink: 0;
 }
 
-.legend__square {
-  width: 0.65rem;
-  height: 0.65rem;
-  border-radius: 2px;
+/* Amostras da seção "Forma = tipo de componente": as quatro silhuetas do
+   canvas, em cinza neutro — a cor é a outra dimensão da legenda. */
+.legend__shape {
+  width: 0.68rem;
+  height: 0.68rem;
   flex-shrink: 0;
+  background: #b0b0b0;
 }
 
-.legend__diamond {
+.legend__shape--circulo {
+  border-radius: 50%;
+}
+
+.legend__shape--quadrado {
+  border-radius: 1px;
+}
+
+.legend__shape--losango {
   width: 0.6rem;
   height: 0.6rem;
   transform: rotate(45deg);
   border-radius: 1px;
-  flex-shrink: 0;
-  margin: 0 0.05rem;
+  margin: 0 0.04rem;
 }
 
-/* Fonte secundária (tabela UCS): quadrado de cantos bem arredondados —
-   meio-termo entre o quadrado do sistema e o círculo do dado. */
-.legend__fsec {
-  width: 0.65rem;
-  height: 0.65rem;
+.legend__shape--arredondado {
   border-radius: 35%;
-  flex-shrink: 0;
 }
 
-/* Nó de domínio: quadrado arredondado; o gradiente resume as cores das áreas
-   (mesmas de DOMAIN_COLORS — cada nó usa a cor do seu domínio no canvas). */
-.legend__dominio {
-  width: 0.7rem;
-  height: 0.7rem;
-  border-radius: 3px;
-  flex-shrink: 0;
-  background: linear-gradient(135deg, #4a90d9, #9b59b6, #e67e22, #2e8b57, #b03a48);
+/* Cabeçalho de seção da legenda (cor / forma). */
+.legend__title {
+  margin-top: 0.15rem;
+  color: #8a8a8a;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
-/* Nó-raiz: hexágono de topo pontudo, como desenhado no canvas. */
-.legend__hex {
-  width: 0.75rem;
-  height: 0.85rem;
-  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
-  flex-shrink: 0;
+.legend__nota {
+  color: #7a7a7a;
+  font-style: italic;
 }
 
 .legend__divider {
-  margin-top: 0.35rem;
-  padding-top: 0.4rem;
+  margin-top: 0.45rem;
+  padding-top: 0.5rem;
   border-top: 1px solid #333;
 }
 
-/* Dica de interação no rodapé da legenda. */
+/* Dicas no rodapé da legenda. */
 .legend__hint {
   margin-top: 0.35rem;
   padding-top: 0.4rem;
   border-top: 1px solid #333;
   font-style: italic;
   color: #8a8a8a;
+}
+
+.legend__hint--last {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 
 .legend__dot--fantasma {
@@ -852,18 +847,6 @@
 .legend__dot--incompleto {
   background: transparent;
   border: 1.5px dashed #ffffff;
-}
-
-/* Produto secundário/final: miolo cheio + anel externo fino (gap da cor
-   de fundo entre eles), como desenhado no canvas. */
-.legend__dot--secundario {
-  width: 0.45rem;
-  height: 0.45rem;
-  background: #8a8a8a;
-  box-shadow:
-    0 0 0 2px #1e1e1e,
-    0 0 0 3px #8a8a8a;
-  margin: 0 0.15rem;
 }
 
 /* ---------- formulário de edição/cadastro do catálogo (modal) ---------- */
@@ -1346,13 +1329,6 @@
   border-color: #6a6a6a;
 }
 
-.niveis-modal__swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
 .niveis-modal__tag {
   margin-left: auto;
   font-size: 0.68rem;
@@ -1380,6 +1356,61 @@
 .niveis-modal__remove:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* Confirmação de remoção estrutural: a frase de efeito abre logo abaixo da
+   linha do nível, antes de qualquer POST. */
+.niveis-modal__confirma {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.3rem 0 0 0;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #6a4a1f;
+  background: rgba(230, 160, 60, 0.08);
+  color: #e0b070;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.niveis-modal__confirma-acoes {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.niveis-modal__confirma-ok,
+.niveis-modal__confirma-cancel {
+  border-radius: 6px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.74rem;
+  font-family: inherit;
+  cursor: pointer;
+  background: none;
+}
+
+.niveis-modal__confirma-ok {
+  border: 1px solid #cc092f;
+  color: #ff5a75;
+}
+
+.niveis-modal__confirma-ok:hover:not(:disabled) {
+  background: rgba(204, 9, 47, 0.15);
+}
+
+.niveis-modal__confirma-ok:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.niveis-modal__confirma-cancel {
+  border: 1px solid #3a3a3a;
+  color: #8a8a8a;
+}
+
+.niveis-modal__confirma-cancel:hover {
+  border-color: #6a6a6a;
+  color: #c0c0c0;
 }
 
 .niveis-modal__add {

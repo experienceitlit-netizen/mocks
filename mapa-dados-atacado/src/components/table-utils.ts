@@ -1,9 +1,8 @@
-// Helpers da visão de tabela (TableView). Derivação das cadeias (uma linha
-// por aresta "consome" primário→secundário, como na tabela executiva), regras
-// de ordenação, agrupamento por domínio e filtro sem acentos — puros, sem
-// React, para facilitar teste.
-import type { Debito, GraphLinkData, GraphNodeData } from './graph-types'
-import { isDerivado, isRaiz, nodeKind } from './graph-types'
+// Helpers da visão de tabela (TableView): uma linha POR COMPONENTE, com as
+// relações de saída resolvidas nos nós de destino. Puros, sem React, para
+// facilitar teste.
+import type { Debito, GraphLinkData, GraphNodeData, NivelDef } from './graph-types'
+import { isReal, linkLabel, nivelDe, ordemDoNivel, tituloDoNivel } from './graph-types'
 
 /** Ordem executiva dos domínios (mesma da tabela que originou o projeto). */
 export const DOMAIN_ORDER: readonly string[] = [
@@ -20,13 +19,19 @@ const DOMAIN_DISPLAY: Record<string, string> = {
   Regulatorio: 'Regulatório',
 }
 
+/** Domínio ausente OU vazio (coluna em branco no CSV) é "A definir". */
+function domainOrDefault(dominio: string | undefined): string {
+  const d = (dominio ?? '').trim()
+  return d === '' ? 'A definir' : d
+}
+
 export function domainLabel(dominio: string | undefined): string {
-  const d = dominio ?? 'A definir'
+  const d = domainOrDefault(dominio)
   return DOMAIN_DISPLAY[d] ?? d
 }
 
 export function domainRank(dominio: string | undefined): number {
-  const i = DOMAIN_ORDER.indexOf(dominio ?? 'A definir')
+  const i = DOMAIN_ORDER.indexOf(domainOrDefault(dominio))
   return i === -1 ? DOMAIN_ORDER.length : i
 }
 
@@ -58,12 +63,6 @@ function statusRank(status: string | undefined): number {
   return status !== undefined && status in STATUS_RANK ? STATUS_RANK[status] : 3
 }
 
-/** Linha da tabela = nó de dado real (nem derivado da linhagem, nem fantasma,
- *  nem o nó-raiz do domínio — que agrega produtos mas não é um). */
-export function isDataNode(node: GraphNodeData): boolean {
-  return !isDerivado(node) && !node.fantasma && !isRaiz(node)
-}
-
 /** Valor ainda pendente de mapeamento ("a confirmar", "a identificar"…). */
 export function isPendingValue(value: string | undefined): boolean {
   return value !== undefined && /^a (confirmar|identificar|detalhar|definir)\b/i.test(value)
@@ -73,154 +72,135 @@ export function isPendingValue(value: string | undefined): boolean {
 export function normalizeText(text: string): string {
   return text
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
 }
 
-/** Linha da tabela executiva: uma cadeia primário→secundário. Domínio,
- *  origem, fonte, débito e status vêm sempre do primário. */
-export interface ChainRow {
-  /** Chave estável para o React (par primário/secundário). */
+const COLLATOR = new Intl.Collator('pt-BR', { sensitivity: 'base' })
+
+/** Linha da tabela = um componente do catálogo. */
+export interface ComponenteRow {
+  /** Chave estável para o React (o próprio id do nó). */
   key: string
-  primario: GraphNodeData
-  /** null = primário sem produto final ("—" na coluna secundário). */
-  secundario: GraphNodeData | null
-  /** Fontes secundárias (tabelas UCS) do primário, via arestas "vem de"
-   *  dado→fsec; vazio = sem mapeamento ("—" na coluna). */
-  fontesSecundarias: GraphNodeData[]
+  node: GraphNodeData
+  /** Slug e título do nível do componente. */
+  nivel: string
+  nivelTitulo: string
+  /** Ordem do nível (ordenação da coluna Nível). */
+  nivelOrdem: number
+  /** Alvos das arestas "consome" saindo deste componente. */
+  consome: GraphNodeData[]
+  /** Alvos das arestas "vem de" saindo deste componente. */
+  associacoes: GraphNodeData[]
 }
 
-/** Fontes secundárias de cada dado (arestas "vem de" dado→fsec, como na
- *  linhagem); a ordem segue a declarada no frontmatter quando existir. */
-function fsecPorDado(
-  byId: ReadonlyMap<string, GraphNodeData>,
-  links: readonly GraphLinkData[],
-): Map<string, GraphNodeData[]> {
-  const map = new Map<string, GraphNodeData[]>()
-  for (const l of links) {
-    if ((l.label ?? 'consome') !== 'vem de') continue
-    const alvo = byId.get(l.target)
-    if (!alvo || nodeKind(alvo) !== 'fonte-secundaria') continue
-    if (!map.has(l.source)) map.set(l.source, [])
-    map.get(l.source)?.push(alvo)
-  }
-  for (const [id, fsecs] of map) {
-    const ordem = byId.get(id)?.fontesSecundarias
-    if (!ordem || ordem.length === 0) continue
-    const rank = (f: GraphNodeData) => {
-      const i = ordem.indexOf(f.nome)
-      return i === -1 ? ordem.length : i
-    }
-    fsecs.sort((a, b) => rank(a) - rank(b))
-  }
-  return map
-}
-
-/** Deriva as cadeias das arestas "consome" entre dados (consumidor → insumo):
- *  cada aresta vira uma linha (primário = insumo, secundário = consumidor);
- *  nós "ambos" viram linha consigo mesmos; dados que não aparecem em nenhuma
- *  linha (primários sem secundário) viram linha com secundário null. */
-export function buildChains(
+/** Uma linha por componente real (fantasmas ficam fora: não têm linha no
+ *  catálogo). As relações vêm das arestas de saída, resolvidas nos nós. */
+export function buildRows(
   nodes: readonly GraphNodeData[],
   links: readonly GraphLinkData[],
-): ChainRow[] {
+  niveis: readonly NivelDef[] = [],
+): ComponenteRow[] {
   const byId = new Map(nodes.map((n) => [n.id, n]))
-  const fsecs = fsecPorDado(byId, links)
-  const fsecDe = (n: GraphNodeData) => fsecs.get(n.id) ?? []
-  const rows: ChainRow[] = []
-  const cobertos = new Set<string>()
-
+  const consome = new Map<string, GraphNodeData[]>()
+  const assoc = new Map<string, GraphNodeData[]>()
   for (const l of links) {
-    if ((l.label ?? 'consome') !== 'consome') continue
-    const consumidor = byId.get(l.source)
-    const insumo = byId.get(l.target)
-    if (!consumidor || !insumo || !isDataNode(consumidor) || !isDataNode(insumo)) continue
-    rows.push({
-      key: `${insumo.id}→${consumidor.id}`,
-      primario: insumo,
-      secundario: consumidor,
-      fontesSecundarias: fsecDe(insumo),
-    })
-    cobertos.add(insumo.id)
-    cobertos.add(consumidor.id)
+    const alvo = byId.get(l.target)
+    if (!alvo) continue
+    const mapa = linkLabel(l) === 'vem de' ? assoc : consome
+    const lista = mapa.get(l.source)
+    if (lista) lista.push(alvo)
+    else mapa.set(l.source, [alvo])
   }
+  const porNome = (a: GraphNodeData, b: GraphNodeData) => COLLATOR.compare(a.nome, b.nome)
 
-  for (const n of nodes) {
-    if (!isDataNode(n)) continue
-    if (n.nivel === 'ambos') {
-      rows.push({ key: `${n.id}→${n.id}`, primario: n, secundario: n, fontesSecundarias: fsecDe(n) })
-      cobertos.add(n.id)
+  return nodes.filter(isReal).map((node) => {
+    const slug = nivelDe(node)
+    return {
+      key: node.id,
+      node,
+      nivel: slug,
+      nivelTitulo: tituloDoNivel(niveis, slug),
+      nivelOrdem: ordemDoNivel(niveis, slug),
+      consome: [...(consome.get(node.id) ?? [])].sort(porNome),
+      associacoes: [...(assoc.get(node.id) ?? [])].sort(porNome),
     }
-  }
-
-  for (const n of nodes) {
-    if (!isDataNode(n) || cobertos.has(n.id)) continue
-    rows.push({ key: n.id, primario: n, secundario: null, fontesSecundarias: fsecDe(n) })
-  }
-
-  return rows
+  })
 }
 
-/** Filtro rápido sobre a cadeia: nome/descrição/origem/sistema do primário,
- *  nomes das fontes secundárias e nome/descrição do secundário, insensível a
- *  acentos. */
-export function matchesFilter(row: ChainRow, query: string): boolean {
+/** Filtro rápido sobre a linha: nome, descrição, nível, domínio, governança e
+ *  os nomes das relações, insensível a acentos. */
+export function matchesFilter(row: ComponenteRow, query: string): boolean {
   const q = normalizeText(query.trim())
   if (q === '') return true
-  const { primario, secundario, fontesSecundarias } = row
+  const { node } = row
   const haystack = normalizeText(
     [
-      primario.nome,
-      primario.descricao ?? '',
-      primario.origem ?? '',
-      primario.sistema ?? '',
-      ...fontesSecundarias.map((f) => f.nome),
-      secundario?.nome ?? '',
-      secundario?.descricao ?? '',
+      node.nome,
+      node.descricao ?? '',
+      row.nivelTitulo,
+      node.tipoComponente ?? '',
+      node.dominio ?? '',
+      node.status ?? '',
+      node.owner ?? '',
+      node.centroDeCusto ?? '',
+      ...row.consome.map((n) => n.nome),
+      ...row.associacoes.map((n) => n.nome),
     ].join('\n'),
   )
   return haystack.includes(q)
 }
 
-export type SortKey = 'primario' | 'secundario' | 'dominio' | 'debito' | 'status'
+export type SortKey =
+  | 'nivel'
+  | 'nome'
+  | 'tipo'
+  | 'dominio'
+  | 'debito'
+  | 'status'
+  | 'owner'
+  | 'centroDeCusto'
 export type SortDir = 'asc' | 'desc'
 
-const COLLATOR = new Intl.Collator('pt-BR', { sensitivity: 'base' })
+/** Vazio vai sempre para o fim, em qualquer direção. */
+function compareTexto(a: string, b: string): number {
+  if (a === '' || b === '') return (a === '' ? 1 : 0) - (b === '' ? 1 : 0)
+  return COLLATOR.compare(a, b)
+}
 
-function compareBy(a: ChainRow, b: ChainRow, key: SortKey): number {
+function compareBy(a: ComponenteRow, b: ComponenteRow, key: SortKey): number {
   switch (key) {
-    case 'primario':
-      return COLLATOR.compare(a.primario.nome, b.primario.nome)
-    case 'secundario':
-      // Linhas sem secundário ("—") vão para o fim do grupo.
-      if (a.secundario === null || b.secundario === null) {
-        return (a.secundario === null ? 1 : 0) - (b.secundario === null ? 1 : 0)
-      }
-      return COLLATOR.compare(a.secundario.nome, b.secundario.nome)
+    case 'nivel':
+      return a.nivelOrdem - b.nivelOrdem || compareTexto(a.nivelTitulo, b.nivelTitulo)
+    case 'nome':
+      return COLLATOR.compare(a.node.nome, b.node.nome)
+    case 'tipo':
+      return compareTexto(a.node.tipoComponente ?? '', b.node.tipoComponente ?? '')
     case 'dominio':
-      return domainRank(a.primario.dominio) - domainRank(b.primario.dominio)
+      return domainRank(a.node.dominio) - domainRank(b.node.dominio)
     case 'debito':
-      return debitoRank(a.primario.debito) - debitoRank(b.primario.debito)
+      return debitoRank(a.node.debito) - debitoRank(b.node.debito)
     case 'status':
-      return statusRank(a.primario.status) - statusRank(b.primario.status)
+      return statusRank(a.node.status) - statusRank(b.node.status)
+    case 'owner':
+      return compareTexto(a.node.owner ?? '', b.node.owner ?? '')
+    case 'centroDeCusto':
+      return compareTexto(a.node.centroDeCusto ?? '', b.node.centroDeCusto ?? '')
   }
 }
 
-/** Cópia ordenada; desempata por domínio (ordem executiva) e nomes, para o
- *  agrupamento visual por domínio continuar coeso quando fizer sentido. */
-export function sortChains(
-  rows: readonly ChainRow[],
+/** Cópia ordenada; desempata por nível e nome para o resultado ser estável. */
+export function sortRows(
+  rows: readonly ComponenteRow[],
   key: SortKey,
   dir: SortDir,
-): ChainRow[] {
+): ComponenteRow[] {
   const sign = dir === 'desc' ? -1 : 1
   return [...rows].sort((a, b) => {
     const primary = compareBy(a, b, key)
     if (primary !== 0) return sign * primary
-    const byDomain = domainRank(a.primario.dominio) - domainRank(b.primario.dominio)
-    if (byDomain !== 0) return byDomain
-    const byPrimario = COLLATOR.compare(a.primario.nome, b.primario.nome)
-    if (byPrimario !== 0) return byPrimario
-    return COLLATOR.compare(a.secundario?.nome ?? '', b.secundario?.nome ?? '')
+    const byNivel = a.nivelOrdem - b.nivelOrdem
+    if (byNivel !== 0) return byNivel
+    return COLLATOR.compare(a.node.nome, b.node.nome)
   })
 }

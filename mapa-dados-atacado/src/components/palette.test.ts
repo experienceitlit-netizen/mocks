@@ -1,47 +1,47 @@
-// Cor dos nós: níveis customizados são níveis de DADO, então a linha que
-// declara débito entra na semântica dos produtos (e transferir um dado entre
-// níveis não muda a cor dele); a linha que só se identifica fica na cor do
-// nível.
+// Cor do nó = semântica de débito, igual para TODO componente: o nível não
+// entra na conta, então transferir uma linha de camada nunca muda a cor dela.
 import { describe, expect, it } from 'vitest'
 import type { GraphNodeData } from './graph-types'
 import {
   COLOR_AVALIAR,
   COLOR_CURADO,
   COLOR_DEBITO,
+  COLOR_FANTASMA,
   COLOR_LEGADO,
-  nivelCustomColor,
   nodeColor,
 } from './palette'
 
-const custom = (extra: Partial<GraphNodeData>): GraphNodeData => ({
-  id: 'niv-gold-x',
+const node = (extra: Partial<GraphNodeData>): GraphNodeData => ({
+  id: 'x',
   nome: 'X',
-  tipo: 'nivel-custom',
-  nivelCustom: 'gold',
-  derivado: true,
+  nivel: 'gold',
   ...extra,
 })
 
-describe('nodeColor em nós de nível customizado', () => {
-  it('componente simples (sem débito declarado) fica na cor do nível', () => {
-    expect(nodeColor(custom({}))).toBe(nivelCustomColor('gold'))
-    expect(nodeColor(custom({ nivelCustom: 'broze' }))).toBe(nivelCustomColor('broze'))
+describe('nodeColor', () => {
+  it('precedência: fantasma > débito sim > a avaliar', () => {
+    expect(nodeColor(node({ fantasma: true, debito: 'sim' }))).toBe(COLOR_FANTASMA)
+    expect(nodeColor(node({ debito: 'sim' }))).toBe(COLOR_DEBITO)
+    expect(nodeColor(node({ debito: 'avaliar' }))).toBe(COLOR_AVALIAR)
   })
 
-  it('com débito declarado vale a semântica dos dados: sim > avaliar > legado > curado', () => {
-    expect(nodeColor(custom({ debito: 'sim' }))).toBe(COLOR_DEBITO)
-    expect(nodeColor(custom({ debito: 'avaliar' }))).toBe(COLOR_AVALIAR)
-    expect(nodeColor(custom({ debito: 'nao', sistema: 'banco SQL legado (on-premise)' }))).toBe(
-      COLOR_LEGADO,
-    )
-    expect(nodeColor(custom({ debito: 'nao', sistema: 'Databricks (dado curado)' }))).toBe(
-      COLOR_CURADO,
+  it('débito não declarado conta como "a avaliar" — ausente ou "" do build', () => {
+    expect(nodeColor(node({}))).toBe(COLOR_AVALIAR)
+    expect(nodeColor(node({ debito: '' as unknown as GraphNodeData['debito'] }))).toBe(
+      COLOR_AVALIAR,
     )
   })
 
-  it('transferir o dado de nível não muda a cor: mesma linha, produto ou Gold', () => {
-    const campos = { debito: 'nao', sistema: 'Databricks (dado curado)' } as const
-    const produto: GraphNodeData = { id: 'gdad', nome: 'GDAD', nivel: 'primario', ...campos }
-    expect(nodeColor(custom({ nome: 'GDAD', ...campos }))).toBe(nodeColor(produto))
+  it('sem débito: rota legada/manual em âmbar, o resto em curado', () => {
+    expect(nodeColor(node({ debito: 'nao', descricao: 'planilha manual' }))).toBe(COLOR_LEGADO)
+    expect(nodeColor(node({ debito: 'nao', nome: 'Base legado' }))).toBe(COLOR_LEGADO)
+    expect(nodeColor(node({ debito: 'nao', descricao: 'dado curado' }))).toBe(COLOR_CURADO)
+  })
+
+  it('o nível não muda a cor: mesma linha, em qualquer camada', () => {
+    const campos = { debito: 'nao', descricao: 'dado curado' } as const
+    expect(nodeColor(node({ nivel: 'gold', ...campos }))).toBe(
+      nodeColor(node({ nivel: 'primario', ...campos })),
+    )
   })
 })
