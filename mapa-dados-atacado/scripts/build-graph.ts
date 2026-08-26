@@ -1,5 +1,5 @@
-// Build do grafo: lê catalogo.csv (uma linha por dado) e niveis.csv (níveis
-// customizados), monta os nós/arestas e emite src/data/graph.json. Lógica
+// Build do grafo: lê catalogo.csv (uma linha por COMPONENTE) e niveis.csv (os
+// níveis da cadeia), monta os nós/arestas e emite src/data/graph.json. Lógica
 // pura em ./graph-lib.ts.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -23,16 +23,15 @@ for (const w of warnings) {
 mkdirSync(dirname(saida), { recursive: true })
 writeFileSync(saida, JSON.stringify(graph, null, 2) + '\n')
 
+// Um nó por linha do catálogo: o resumo conta por NÍVEL, na ordem da cadeia.
 const fantasmas = graph.nodes.filter((n) => n.fantasma === true).length
-const dominios = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'dominio').length
-const sistemas = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'sistema').length
-const fsecs = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'fonte-secundaria').length
-const origens = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'origem').length
-const customs = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'nivel-custom').length
+const porNivel = graph.niveis
+  .map((nivel) => ({ nivel, quantos: graph.nodes.filter((n) => n.nivel === nivel.slug).length }))
+  .filter(({ quantos }) => quantos > 0)
+  .map(({ nivel, quantos }) => `${quantos} ${nivel.titulo.toLowerCase()}`)
 console.log(
   `[build-graph] ${relative(raiz, saida)}: ${graph.nodes.length} nós` +
-    ` (${dominios} domínios, ${sistemas} sistemas, ${fsecs} fontes secundárias, ${origens} origens` +
-    (customs > 0 ? `, ${customs} de nível custom` : '') +
+    (porNivel.length > 0 ? ` (${porNivel.join(', ')})` : '') +
     (fantasmas > 0 ? `, ${fantasmas} fantasma${fantasmas > 1 ? 's' : ''}` : '') +
-    `), ${graph.links.length} arestas, ${graph.niveis.length} níveis, ${warnings.length} aviso(s)`,
+    `, ${graph.links.length} arestas, ${graph.niveis.length} níveis, ${warnings.length} aviso(s)`,
 )

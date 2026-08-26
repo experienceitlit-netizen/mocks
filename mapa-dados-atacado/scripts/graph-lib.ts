@@ -1,76 +1,55 @@
 // Funções puras do build do grafo — separadas do CLI para serem testáveis.
-// Fonte única: catalogo.csv (separador ";", uma linha por dado).
+// Fonte única: catalogo.csv (separador ";", uma linha por COMPONENTE).
+//
+// MODELO: todo nó do grafo é um COMPONENTE que pertence a um NÍVEL. Não existe
+// produto, insumo, domínio ou raiz como categoria de código — o que separa um
+// nó de outro é só o nível dele, e níveis são dados (niveis.csv), não tipos.
+// Disso vem a regra central do build: NENHUM nó é derivado de campo. Todo nó
+// vem de uma LINHA do catálogo, e toda aresta vem de uma referência declarada
+// (`consome` ou `associacoes`). Nada é inferido.
 
+/** Tipos de componente aceitos na coluna `tipo_componente`. Célula vazia =
+ *  "Default"; valor fora da lista vira warning no build e erro no POST. */
+export const TIPOS_COMPONENTE = ['Tabela SQL', 'Tabela Delta', 'Excel', 'Default'] as const
+
+export type TipoComponente = (typeof TIPOS_COMPONENTE)[number]
+
+/** Valor assumido quando a coluna está vazia (ou ausente, em CSV legado). */
+export const TIPO_COMPONENTE_DEFAULT: TipoComponente = 'Default'
+
+const TIPOS_COMPONENTE_SET = new Set<string>(TIPOS_COMPONENTE)
+
+/** Mensagem de valores válidos de `tipo_componente`, para warnings e erros. */
+const TIPOS_COMPONENTE_MSG = TIPOS_COMPONENTE.map((t) => `"${t}"`).join(', ')
+
+/**
+ * Nó do grafo: um componente do catálogo. Todos os nós têm a mesma forma, seja
+ * qual for o nível — quem quiser tratar um nível de um jeito próprio (cor,
+ * coluna, ícone) faz isso pelo campo `nivel`, na UI.
+ */
 export interface GraphNode {
+  /** `<slug do nível>-<slug do nome>`: mesma regra em todos os níveis. */
   id: string
   nome: string
-  tipo: string
-  /** raiz | primario | final | ambos ("secundario" é apelido de "final" no parse) */
+  /** slug de um nível ativo (built-in ou cadastrado no niveis.csv). */
   nivel: string
+  tipoComponente: TipoComponente
   dominio: string
   debito: string
+  status: string
   owner: string | null
   centroDeCusto: string | null
   descricao: string
-  /** null = não se aplica (produtos finais derivam a rota dos primários que consomem) */
-  sistema: string | null
-  origem: string | null
-  status: string
-  incompleto: boolean
-  fantasma?: boolean
-  derivado?: undefined
-  cadastrado?: undefined
-  /** Tabelas UCS onde a fonte é ingerida antes de virar produto (opcional):
-   *  presença substitui a aresta direta dado→sistema por dado→fsec→sistema. */
-  fontesSecundarias?: string[]
   /** Coluna "observacoes" do CSV: texto livre em markdown; ausente se vazia.
    *  [[Wikilinks]] no texto viram links de navegação no balão, mas NÃO geram
-   *  arestas — arestas de consumo vêm só da coluna "consome". */
+   *  arestas — arestas vêm só de `consome` e `associacoes`. */
   corpo?: string
-}
-
-/** Nó de infraestrutura materializado pelo build: `fonte_sistema`/`origem`/
- *  `fontes_secundarias` dos produtos, o domínio dos produtos finais agregados
- *  pela raiz, ou um componente cadastrado no catálogo (linha de nivel
- *  dominio/origem/fonte/fonte-secundaria ou de um nível customizado, tipo
- *  "nivel-custom"). Componente cadastrado cujo slug coincide com um nó
- *  derivado do mesmo tipo FUNDE com ele (mesmo id), ganha `cadastrado: true`
- *  e carrega os campos da linha.
- *
- *  Nível customizado é NÍVEL DE DADO: a linha aceita os mesmos campos de um
- *  produto e o nó os carrega (os últimos sete campos), o que dá a ele a mesma
- *  semântica de cor/borda e as mesmas arestas de rota. Linha preenchida só com
- *  nome/descrição continua sendo um componente simples — os campos de dado
- *  ficam ausentes do JSON. */
-export interface DerivedNode {
-  id: string
-  nome: string
-  tipo: 'sistema' | 'origem' | 'dominio' | 'fonte-secundaria' | 'nivel-custom'
-  derivado: true
-  /** Gap de governança (owner/centro de custo vazios): só nós de nível
-   *  customizado podem ser incompletos — os demais derivados não têm dono. */
+  /** Gap de governança: owner OU centro de custo vazio. Regra única para todos
+   *  os níveis — nenhum nível é dispensado dela. */
   incompleto: boolean
-  fantasma?: undefined
-  /** Só em nós tipo "nivel-custom": slug do nível customizado (niveis.csv). */
-  nivelCustom?: string
-  /** true quando o componente tem linha própria no catalogo.csv; os quatro
-   *  campos seguintes só existem em nós cadastrados (corpo só se não vazio). */
-  cadastrado?: true
-  descricao?: string
-  owner?: string | null
-  centroDeCusto?: string | null
-  corpo?: string
-  /** Campos de dado de uma linha de nível customizado; ausentes quando a
-   *  célula está vazia (componente simples). */
-  dominio?: string
-  debito?: string
-  status?: string
-  sistema?: string | null
-  origem?: string | null
-  fontesSecundarias?: string[]
+  /** Nó citado em `consome` sem linha própria no catálogo. */
+  fantasma?: true
 }
-
-export type AnyNode = GraphNode | DerivedNode
 
 export interface GraphLink {
   source: string
@@ -82,22 +61,52 @@ export interface Graph {
   /** TODOS os níveis da cadeia (built-ins + customizados), ordenados por
    *  `ordem` asc — a UI monta colunas/faixas/selects a partir daqui. */
   niveis: NivelInfo[]
-  nodes: AnyNode[]
+  nodes: GraphNode[]
   links: GraphLink[]
 }
 
+/** Linha do catálogo já interpretada: o nó que ela materializa mais as
+ *  referências que ela declara, ainda não resolvidas. */
 export interface ParsedRow {
   node: GraphNode
-  /** nomes (ou ids) da coluna "consome", ainda não resolvidos */
+  /** nomes (ou ids) da coluna "consome" */
   consome: string[]
-  /** nomes da coluna "associacoes" (vale em qualquer nível), não resolvidos */
+  /** nomes (ou ids) da coluna "associacoes" */
   associacoes: string[]
 }
 
+export interface CatalogoParseResult {
+  rows: ParsedRow[]
+  warnings: string[]
+}
+
+export interface BuildResult {
+  graph: Graph
+  warnings: string[]
+}
+
 // ---------------------------------------------------------------------------
-// Níveis da cadeia: os sete built-in são fixos no código; níveis customizados
-// (ex.: Bronze/Prata/Ouro de uma arquitetura medallion) vivem em niveis.csv
-// (colunas titulo;ordem) e entram entre os built-in pela ordem numérica.
+// Níveis da cadeia: os sete built-in (raiz → domínio → final → primário →
+// fonte secundária → fonte → origem) são o modelo padrão, e o niveis.csv
+// (colunas titulo;ordem;slug) pode renomear, reordenar e REMOVER qualquer um
+// deles, além de acrescentar níveis próprios (ex.: Bronze/Prata/Ouro de uma
+// arquitetura medallion).
+//
+// Os built-in não são especiais no build: são só a lista que vale quando o
+// niveis.csv não diz outra coisa. Todo nível — built-in ou cadastrado — é
+// tratado pelo mesmo caminho.
+//
+// A coluna `slug` é a chave semântica do nível: vazia, o slug é derivado do
+// título (nível novo); preenchida, amarra a linha a um nível já existente e
+// sobrevive a renomeações — trocar o título de "Produto final" não mexe em
+// nenhuma linha do catalogo.csv, porque o slug segue sendo `final`.
+//
+// O arquivo tem dois modos, decididos pelo próprio conteúdo:
+// - LEGADO (nenhuma linha traz slug de built-in): os sete built-in valem, e as
+//   linhas do arquivo são níveis customizados que entram entre eles pela ordem
+//   numérica. É o formato de duas colunas de sempre.
+// - EXPLÍCITO (alguma linha traz slug de built-in): o arquivo passa a ser a
+//   lista COMPLETA de níveis — built-in que não estiver listado está REMOVIDO.
 // ---------------------------------------------------------------------------
 
 /** Linha do niveis.csv na forma bruta (formato trocado com GET/POST
@@ -106,10 +115,13 @@ export interface ParsedRow {
 export interface NivelRow {
   titulo: string
   ordem: number
+  /** Chave semântica: ausente/vazia = derivar do título (nível novo);
+   *  preenchida = esta linha É aquele nível, com o título que ela disser. */
+  slug?: string
 }
 
 /** Nível resolvido: slug(titulo) é o id (valor aceito na coluna `nivel` do
- *  catalogo.csv para linhas de componente daquele nível). */
+ *  catalogo.csv). */
 export interface NivelDef {
   slug: string
   titulo: string
@@ -134,15 +146,22 @@ export const NIVEIS_BUILTIN: readonly NivelDef[] = [
   { slug: 'origem', titulo: 'Origem', ordem: 60 },
 ]
 
-/** Colunas do niveis.csv, na ordem canônica do cabeçalho. */
-export const COLUNAS_NIVEIS = ['titulo', 'ordem'] as const
+/** Colunas do niveis.csv, na ordem canônica do cabeçalho. A 3ª (slug) é
+ *  opcional na LEITURA — arquivo legado de duas colunas parseia sem warning —
+ *  mas o serializador sempre escreve as três. */
+export const COLUNAS_NIVEIS = ['titulo', 'ordem', 'slug'] as const
 
-/** Slugs que um nível custom não pode usar: os built-in mais os valores de
- *  nivel de produto/apelido que já têm significado na coluna `nivel`. */
-const SLUGS_RESERVADOS = new Set<string>([...NIVEIS_BUILTIN.map((n) => n.slug), 'ambos', 'secundario'])
-const ORDENS_BUILTIN = new Map<number, string>(NIVEIS_BUILTIN.map((n) => [n.ordem, n.titulo]))
+/** Colunas do niveis.csv que podem faltar do cabeçalho sem warning. */
+const COLUNAS_NIVEIS_OPCIONAIS = new Set<string>(['slug'])
 
-/** Bloco `niveis` do graph.json: built-ins + customs, ordenado por ordem. */
+const SLUGS_BUILTIN = new Set<string>(NIVEIS_BUILTIN.map((n) => n.slug))
+
+/** Os sete built-in, sem nenhum nível customizado: é o que vale quando o
+ *  niveis.csv não existe, está vazio ou está no formato legado sem customs. */
+export const NIVEIS_PADRAO: readonly NivelInfo[] = NIVEIS_BUILTIN.map((n) => ({ ...n, builtin: true }))
+
+/** Bloco `niveis` do graph.json a partir só dos CUSTOMS (modo legado):
+ *  built-ins + customs, ordenado por ordem. */
 export function montarNiveis(customs: NivelDef[]): NivelInfo[] {
   return [
     ...NIVEIS_BUILTIN.map((n) => ({ ...n, builtin: true })),
@@ -150,9 +169,22 @@ export function montarNiveis(customs: NivelDef[]): NivelInfo[] {
   ].sort((a, b) => a.ordem - b.ordem)
 }
 
+/** Slug efetivo de uma linha: o da coluna `slug` quando preenchida (chave
+ *  semântica, imune a renomeação), senão derivado do título. */
+export function slugDoNivel(row: NivelRow): string {
+  const explicito = (row.slug ?? '').trim()
+  return explicito !== '' ? explicito : slugify(row.titulo)
+}
+
+/** Arquivo em modo EXPLÍCITO: alguma linha amarra um built-in pelo slug, o que
+ *  torna o arquivo a lista completa (built-in ausente = removido). */
+export function modoExplicito(rows: readonly NivelRow[]): boolean {
+  return rows.some((r) => SLUGS_BUILTIN.has((r.slug ?? '').trim()))
+}
+
 /** NivelRow (bruta) → NivelDef (com slug), sem validar. */
 export function defsDeNiveis(rows: NivelRow[]): NivelDef[] {
-  return rows.map((r) => ({ slug: slugify(r.titulo), titulo: r.titulo.trim(), ordem: r.ordem }))
+  return rows.map((r) => ({ slug: slugDoNivel(r), titulo: r.titulo.trim(), ordem: r.ordem }))
 }
 
 /**
@@ -173,30 +205,64 @@ export function parseNiveisRows(texto: string): NivelRow[] {
 
   return registros.slice(1).map((registro) => {
     const ordemTexto = celula(registro, 'ordem')
-    return {
+    const slug = celula(registro, 'slug')
+    const row: NivelRow = {
       titulo: celula(registro, 'titulo'),
       ordem: ordemTexto === '' ? Number.NaN : Number(ordemTexto),
     }
+    // Coluna ausente ou vazia não vira campo: slug só existe quando declarado.
+    if (slug !== '') row.slug = slug
+    return row
   })
 }
 
 /**
- * Serializa o niveis.csv canônico: BOM UTF-8 + cabeçalho titulo;ordem +
+ * Serializa o niveis.csv canônico: BOM UTF-8 + cabeçalho titulo;ordem;slug +
  * separador ";", registros em \r\n e aspas mínimas. Round-trip garantido para
  * títulos trimados e ordens em forma canônica de Number (42.5 → "42.5").
  */
 export function serializarNiveis(rows: NivelRow[]): string {
-  const linhas = rows.map((r) => `${celulaCsv(r.titulo)};${celulaCsv(String(r.ordem))}`)
+  const linhas = rows.map(
+    (r) => `${celulaCsv(r.titulo)};${celulaCsv(String(r.ordem))};${celulaCsv((r.slug ?? '').trim())}`,
+  )
   return '\uFEFF' + [COLUNAS_NIVEIS.join(';'), ...linhas].join('\r\n') + '\r\n'
 }
 
-/** Erros de UMA linha do niveis.csv contra os built-in e os customs já
- *  aceitos (mapas por slug e por ordem). Registra a linha nos mapas se ok. */
+/** Nível que já ocupa um slug ou uma ordem: outra linha do arquivo ou um
+ *  built-in IMPLÍCITO (modo legado, em que os sete valem sem estar listados). */
+interface Ocupante {
+  titulo: string
+  linha: number
+  implicito: boolean
+}
+
+/** Mapas de ocupação iniciais para validar/carregar um arquivo: em modo legado
+ *  os sete built-in já ocupam seus slugs e ordens; em modo explícito o arquivo
+ *  é a lista completa e nada está ocupado de antemão. */
+function ocupacaoInicial(rows: readonly NivelRow[]): {
+  porSlug: Map<string, Ocupante>
+  porOrdem: Map<number, Ocupante>
+  explicito: boolean
+} {
+  const explicito = modoExplicito(rows)
+  const porSlug = new Map<string, Ocupante>()
+  const porOrdem = new Map<number, Ocupante>()
+  if (!explicito) {
+    for (const n of NIVEIS_BUILTIN) {
+      porSlug.set(n.slug, { titulo: n.titulo, linha: 0, implicito: true })
+      porOrdem.set(n.ordem, { titulo: n.titulo, linha: 0, implicito: true })
+    }
+  }
+  return { porSlug, porOrdem, explicito }
+}
+
+/** Erros de UMA linha do niveis.csv contra o que já está ocupado (mapas por
+ *  slug e por ordem). Registra a linha nos mapas se ok. */
 function checarNivel(
   row: NivelRow,
   linha: number,
-  porSlug: Map<string, { titulo: string; linha: number }>,
-  porOrdem: Map<number, { titulo: string; linha: number }>,
+  porSlug: Map<string, Ocupante>,
+  porOrdem: Map<number, Ocupante>,
 ): string[] {
   const errors: string[] = []
   const titulo = row.titulo.trim()
@@ -204,229 +270,203 @@ function checarNivel(
     errors.push(`linha ${linha}: "titulo" é obrigatório`)
     return errors
   }
-  const slug = slugify(titulo)
-  if (slug === '') {
-    errors.push(`linha ${linha} ("${titulo}"): titulo inválido — precisa conter letras ou números`)
-  } else if (SLUGS_RESERVADOS.has(slug)) {
-    const builtin = NIVEIS_BUILTIN.find((n) => n.slug === slug)
-    errors.push(
-      builtin !== undefined
-        ? `linha ${linha} ("${titulo}"): título colide com o nível built-in "${builtin.titulo}"`
-        : `linha ${linha} ("${titulo}"): título reservado — "${slug}" já tem significado na coluna nivel do catálogo`,
-    )
+
+  const explicito = (row.slug ?? '').trim()
+  let slug = ''
+  if (explicito !== '') {
+    if (slugify(explicito) !== explicito) {
+      errors.push(
+        `linha ${linha} ("${titulo}"): slug "${explicito}" inválido — use minúsculas sem acentos, separadas por "-"`,
+      )
+    } else {
+      slug = explicito
+    }
   } else {
+    const derivado = slugify(titulo)
+    if (derivado === '') {
+      errors.push(`linha ${linha} ("${titulo}"): titulo inválido — precisa conter letras ou números`)
+    } else {
+      slug = derivado
+    }
+  }
+
+  if (slug !== '') {
     const anterior = porSlug.get(slug)
     if (anterior !== undefined) {
       errors.push(
-        `linha ${linha} ("${titulo}"): título duplicado — colide com "${anterior.titulo}" (linha ${anterior.linha})`,
+        anterior.implicito
+          ? `linha ${linha} ("${titulo}"): título colide com o nível built-in "${anterior.titulo}"`
+          : `linha ${linha} ("${titulo}"): título duplicado — colide com "${anterior.titulo}" (linha ${anterior.linha})`,
       )
     }
   }
 
   if (!Number.isFinite(row.ordem)) {
     errors.push(`linha ${linha} ("${titulo}"): ordem inválida — use um número (decimais aceitos)`)
-  } else if (ORDENS_BUILTIN.has(row.ordem)) {
-    errors.push(
-      `linha ${linha} ("${titulo}"): ordem ${row.ordem} colide com o nível built-in "${ORDENS_BUILTIN.get(row.ordem)}" — use um valor intermediário`,
-    )
   } else {
     const anterior = porOrdem.get(row.ordem)
     if (anterior !== undefined) {
       errors.push(
-        `linha ${linha} ("${titulo}"): ordem ${row.ordem} duplicada — colide com "${anterior.titulo}" (linha ${anterior.linha})`,
+        anterior.implicito
+          ? `linha ${linha} ("${titulo}"): ordem ${row.ordem} colide com o nível built-in "${anterior.titulo}" — use um valor intermediário`
+          : `linha ${linha} ("${titulo}"): ordem ${row.ordem} duplicada — colide com "${anterior.titulo}" (linha ${anterior.linha})`,
       )
     }
   }
 
   if (errors.length === 0) {
-    porSlug.set(slug, { titulo, linha })
-    porOrdem.set(row.ordem, { titulo, linha })
+    porSlug.set(slug, { titulo, linha, implicito: false })
+    porOrdem.set(row.ordem, { titulo, linha, implicito: false })
   }
   return errors
 }
 
 /**
  * Valida linhas brutas antes de gravar o niveis.csv (POST /api/niveis).
- * Erros (impedem a gravação): titulo vazio ou sem letras/números, título
- * duplicado por slug (entre customs E contra os built-in — não pode custom
- * "Origem"), ordem não-numérica, ordem igual à de um built-in ou repetida
- * entre customs. "linha N" conta o cabeçalho do CSV como linha 1.
+ * Erros (impedem a gravação): titulo vazio ou sem letras/números, slug fora do
+ * kebab-case, título duplicado por slug, ordem não-numérica ou repetida. Em
+ * modo legado os sete built-in contam como ocupados (não pode custom "Origem",
+ * nem ordem 40); em modo explícito o arquivo é a lista completa e só disputa
+ * consigo mesmo. "linha N" conta o cabeçalho do CSV como linha 1.
  */
 export function validarNiveis(rows: NivelRow[]): ValidacaoCatalogo {
   const errors: string[] = []
-  const porSlug = new Map<string, { titulo: string; linha: number }>()
-  const porOrdem = new Map<number, { titulo: string; linha: number }>()
+  const { porSlug, porOrdem } = ocupacaoInicial(rows)
   rows.forEach((row, i) => errors.push(...checarNivel(row, i + 2, porSlug, porOrdem)))
   return { errors, warnings: [] }
 }
 
 /**
- * Carrega o niveis.csv para o build de forma tolerante: linha inválida vira
- * warning e é descartada (o arquivo gravado pela API é sempre válido; isto
- * protege contra edição manual quebrada sem derrubar o build).
+ * Linhas brutas → lista COMPLETA de níveis (built-ins e customs), aplicando o
+ * modo do arquivo. Tolerante: linha inválida vira warning e é descartada (o
+ * arquivo gravado pela API é sempre válido; isto protege contra edição manual
+ * quebrada sem derrubar o build).
  */
-export function carregarNiveis(texto: string): { niveis: NivelDef[]; warnings: string[] } {
+function resolverLinhas(rows: NivelRow[]): { niveis: NivelInfo[]; warnings: string[] } {
   const warnings: string[] = []
-  const registros = parseCsv(texto)
-  if (registros.length === 0) return { niveis: [], warnings }
-
-  const cabecalho = registros[0].map((c) => c.trim())
-  for (const col of COLUNAS_NIVEIS) {
-    if (!cabecalho.includes(col)) warnings.push(`niveis.csv: coluna obrigatória "${col}" ausente do cabeçalho`)
-  }
-
-  const niveis: NivelDef[] = []
-  const porSlug = new Map<string, { titulo: string; linha: number }>()
-  const porOrdem = new Map<number, { titulo: string; linha: number }>()
-  parseNiveisRows(texto).forEach((row, i) => {
+  const { porSlug, porOrdem, explicito } = ocupacaoInicial(rows)
+  const doArquivo: NivelInfo[] = []
+  rows.forEach((row, i) => {
     const errosLinha = checarNivel(row, i + 2, porSlug, porOrdem)
     if (errosLinha.length > 0) {
       warnings.push(...errosLinha.map((e) => `niveis.csv ${e} — nível ignorado`))
       return
     }
-    niveis.push({ slug: slugify(row.titulo), titulo: row.titulo.trim(), ordem: row.ordem })
+    const slug = slugDoNivel(row)
+    doArquivo.push({
+      slug,
+      titulo: row.titulo.trim(),
+      ordem: row.ordem,
+      builtin: SLUGS_BUILTIN.has(slug),
+    })
   })
+  // Modo legado: o arquivo só traz customs, que se encaixam entre os built-in.
+  const niveis = explicito ? doArquivo.sort((a, b) => a.ordem - b.ordem) : montarNiveis(doArquivo)
   return { niveis, warnings }
 }
 
+/** Lista completa de níveis de linhas JÁ validadas (POST /api/niveis). */
+export function resolverNiveis(rows: NivelRow[]): NivelInfo[] {
+  return resolverLinhas(rows).niveis
+}
+
 /**
- * Erros de remoção de nível em uso: toda linha do catálogo cujo `nivel` não é
- * produto nem componente built-in precisa de um nível custom correspondente na
- * lista nova — remover (ou renomear) um nível ainda usado é erro.
+ * Carrega o niveis.csv para o build: devolve a lista COMPLETA de níveis
+ * (built-ins + customs), já ordenada. Arquivo ausente, vazio ou em modo legado
+ * sem customs = os sete built-in de sempre.
+ */
+export function carregarNiveis(texto: string): { niveis: NivelInfo[]; warnings: string[] } {
+  const warnings: string[] = []
+  const registros = parseCsv(texto)
+  if (registros.length === 0) return { niveis: [...NIVEIS_PADRAO], warnings }
+
+  const cabecalho = registros[0].map((c) => c.trim())
+  for (const col of COLUNAS_NIVEIS) {
+    if (!cabecalho.includes(col) && !COLUNAS_NIVEIS_OPCIONAIS.has(col)) {
+      warnings.push(`niveis.csv: coluna obrigatória "${col}" ausente do cabeçalho`)
+    }
+  }
+
+  const resolvido = resolverLinhas(parseNiveisRows(texto))
+  return { niveis: resolvido.niveis, warnings: [...warnings, ...resolvido.warnings] }
+}
+
+/** Quantos nomes de linha a mensagem de "nível em uso" cita antes de resumir. */
+const MAX_NOMES_EM_USO = 5
+
+/**
+ * Erros de remoção de nível em uso: toda linha do catálogo precisa de um nível
+ * correspondente na lista nova — remover um nível que ainda tem linhas é erro
+ * (e vale para built-in também, que aqui não é diferente de nenhum outro).
+ * Renomear não entra: o slug é a chave, e quem mantém o slug mantém as linhas.
  */
 export function validarNiveisContraCatalogo(rows: NivelRow[], catalogo: CatalogoRow[]): string[] {
-  const slugsNovos = new Set(rows.map((r) => slugify(r.titulo)))
+  const slugs = new Set(resolverNiveis(rows).map((n) => n.slug))
   const usosPorNivel = new Map<string, string[]>()
   for (const row of catalogo) {
-    const nivel = normalizarNivel(row.nivel)
-    if (NIVEIS_PRODUTO.has(nivel) || NIVEIS_COMPONENTE.has(nivel) || slugsNovos.has(nivel)) continue
+    const nivel = row.nivel.trim()
+    if (slugs.has(nivel)) continue
     const usos = usosPorNivel.get(nivel) ?? []
     usos.push(row.nome)
     usosPorNivel.set(nivel, usos)
   }
-  return [...usosPorNivel.entries()].map(
-    ([nivel, nomes]) =>
-      `nível custom "${nivel}" está em uso por ${nomes.length} linha(s) do catálogo` +
-      ` (${nomes.map((n) => `"${n}"`).join(', ')}) — mova essas linhas para outro nível antes de removê-lo`,
-  )
+  return [...usosPorNivel.entries()].map(([nivel, nomes]) => {
+    const citados = nomes.slice(0, MAX_NOMES_EM_USO).map((n) => `"${n}"`).join(', ')
+    const resto = nomes.length > MAX_NOMES_EM_USO ? ` e mais ${nomes.length - MAX_NOMES_EM_USO}` : ''
+    return (
+      `nível "${nivel}" está em uso por ${nomes.length} linha(s) do catálogo` +
+      ` (${citados}${resto}) — mova essas linhas para outro nível antes de removê-lo`
+    )
+  })
 }
 
-/** Linha de componente do catálogo (nivel dominio/origem/fonte/fonte-secundaria)
- *  já interpretada: usa nome, descricao, owner, centro_de_custo e observacoes;
- *  as demais colunas da linha são ignoradas silenciosamente. `associacoes` vem
- *  da coluna "origem" (linha fonte: origens associadas) ou "fonte_sistema"
- *  (linha fonte-secundaria: fontes associadas), lista " | " com 0..n nomes. */
-export interface ComponenteRow {
-  nivel: NivelComponente
-  nome: string
-  descricao: string
-  owner: string | null
-  centroDeCusto: string | null
-  corpo?: string
-  associacoes: string[]
-}
-
-/** Linha de NÍVEL CUSTOM (nivel = slug de um nível do niveis.csv). Nível
- *  customizado é nível de DADO: a linha aceita todos os campos de um produto
- *  (dominio, origem, fonte_sistema, fontes_secundarias, consome, debito,
- *  status, owner, centro_de_custo) MAIS a coluna `associacoes` (lista " | ")
- *  — que aponta para qualquer outra linha do catálogo, resolvida por nome.
- *  Preencher só nome/descrição continua valendo: a linha vira um componente
- *  simples, sem rota nem semântica de débito. */
-export interface ComponenteCustomRow {
-  /** slug do nível custom (valor da coluna nivel) */
-  nivel: string
-  nome: string
-  descricao: string
-  owner: string | null
-  centroDeCusto: string | null
-  corpo?: string
-  associacoes: string[]
-  /** Campos de dado ("" / null / [] quando a célula está vazia). */
-  dominio: string
-  debito: string
-  status: string
-  sistema: string | null
-  origem: string | null
-  fontesSecundarias: string[]
-  consome: string[]
-}
-
-export interface CatalogoParseResult {
-  rows: ParsedRow[]
-  componentes: ComponenteRow[]
-  componentesCustom: ComponenteCustomRow[]
-  warnings: string[]
-}
-
-export interface BuildResult {
-  graph: Graph
-  warnings: string[]
-}
-
-/** Níveis de produto (linhas de dado, como sempre foram). */
-export type NivelProduto = 'primario' | 'final' | 'ambos'
-/** Níveis de componente: a linha cadastra um nó de infraestrutura do mapa. */
-export type NivelComponente = 'dominio' | 'origem' | 'fonte' | 'fonte-secundaria'
-export type Nivel = NivelProduto | NivelComponente
 export type Debito = 'sim' | 'nao' | 'avaliar'
 
-/** "secundario" é apelido aceito de "final" (sem warning): o parse e o
- *  serializador sempre canonizam para "final". */
-export function normalizarNivel(nivel: string): string {
-  return nivel === 'secundario' ? 'final' : nivel
-}
-
-/** Linha do catalogo.csv na forma bruta: um campo por coluna, sem nada
- *  derivado (id, tipo, incompleto etc. são calculados só no build). Células
- *  vazias de origem/fonte_sistema/owner/centro_de_custo viram null; as
- *  listas ("A | B") viram arrays. É o formato trocado com a API do dev
- *  server (GET/POST /api/catalogo).
+/**
+ * Linha do catalogo.csv na forma bruta: um campo por coluna, sem nada derivado
+ * (id, incompleto etc. são calculados só no build). Células vazias de
+ * owner/centro_de_custo/origem/fonte_sistema viram null; as listas ("A | B")
+ * viram arrays. É o formato trocado com a API do dev server
+ * (GET/POST /api/catalogo).
  *
- *  Semântica por tipo de linha (mesmas 13 colunas para todos):
- *  - nivel primario|final|ambos (produto): todos os campos como sempre;
- *    debito obrigatório (sim|nao|avaliar).
- *  - nivel dominio|origem (componente): usa nome, descricao, owner,
- *    centro_de_custo e observacoes; demais colunas ignoradas silenciosamente
- *    (deixe vazias — debito fica "").
- *  - nivel fonte (componente): idem, e a coluna `origem` vira lista " | " de
- *    0..n origens associadas (continua string no JSON: "A | B").
- *  - nivel fonte-secundaria (componente): idem, e a coluna `fonte_sistema`
- *    vira lista " | " de 0..n fontes associadas (string "A | B").
- *  - nivel <slug de nível custom> (componente): usa nome, descricao, owner,
- *    centro_de_custo, observacoes e a coluna `associacoes` (lista " | " de
- *    componentes de qualquer nível não-produto). Produtos e componentes
- *    built-in IGNORAM `associacoes`. */
+ * As MESMAS colunas valem em qualquer nível: o que a linha significa é dado
+ * pelo `nivel` dela, não por um formato de linha diferente.
+ */
 export interface CatalogoRow {
   nome: string
-  /** Nivel built-in OU slug de um nível custom do niveis.csv. */
-  nivel: Nivel | string
+  /** slug de um nível ativo (built-in ou cadastrado no niveis.csv). */
+  nivel: string
+  /** "" = {@link TIPO_COMPONENTE_DEFAULT}; fora de {@link TIPOS_COMPONENTE} é
+   *  erro no POST e warning no build. */
+  tipo_componente: string
   dominio: string
-  origem: string | null
-  fonte_sistema: string | null
-  fontes_secundarias: string[]
   consome: string[]
   descricao: string
-  /** "" só em linhas de componente (coluna ignorada nelas) */
+  /** Opcional em qualquer nível: "" ou um dos três valores. */
   debito: Debito | ''
   status: string
   owner: string | null
   centro_de_custo: string | null
   observacoes: string
-  /** Só linhas de componente de nível custom usam; vazia nas demais. */
   associacoes: string[]
 }
 
-/** Colunas do catalogo.csv, na ordem canônica do cabeçalho. A 14ª coluna
- *  (associacoes) é opcional na LEITURA — arquivo legado com 13 colunas parseia
- *  sem warning — mas o serializador sempre escreve as 14. */
+/**
+ * Colunas do catalogo.csv, na ordem canônica do cabeçalho.
+ *
+ * `tipo_componente` e `associacoes` são opcionais na LEITURA (CSV legado sem
+ * elas parseia sem warning), mas o serializador sempre escreve as 12.
+ *
+ * As colunas `origem`, `fonte_sistema` e `fontes_secundarias` existiram
+ * enquanto fonte e origem eram campos de um produto; viraram níveis próprios e
+ * saíram do arquivo. Um CSV que ainda as traga é lido normalmente — elas são
+ * ignoradas e não voltam na regravação.
+ */
 export const COLUNAS = [
   'nome',
   'nivel',
+  'tipo_componente',
   'dominio',
-  'origem',
-  'fonte_sistema',
-  'fontes_secundarias',
   'consome',
   'descricao',
   'debito',
@@ -438,27 +478,17 @@ export const COLUNAS = [
 ] as const
 
 /** Colunas que podem faltar do cabeçalho sem warning (legado). */
-const COLUNAS_OPCIONAIS = new Set<string>(['associacoes'])
+const COLUNAS_OPCIONAIS = new Set<string>(['tipo_componente', 'associacoes'])
+
+/** Colunas de versões anteriores do catálogo: um arquivo que ainda as traga é
+ *  lido sem reclamação (elas são ignoradas e não voltam na regravação). */
+const COLUNAS_OBSOLETAS = new Set<string>(['origem', 'fonte_sistema', 'fontes_secundarias'])
 
 type Coluna = (typeof COLUNAS)[number]
 
-const NIVEIS_PRODUTO = new Set<string>(['primario', 'final', 'ambos'])
-const NIVEIS_COMPONENTE = new Set<string>(['dominio', 'origem', 'fonte', 'fonte-secundaria'])
-/** Níveis em que a lista de associações mora nas colunas de rota (`origem` em
- *  'fonte', `fonte_sistema` em 'fonte-secundaria') em vez de `associacoes`. */
-const ASSOC_NA_ROTA = new Set<string>(['fonte', 'fonte-secundaria'])
-const NIVEL_DEFAULT = 'primario'
-const NIVEIS_MSG = 'use dominio, origem, fonte, fonte-secundaria, primario, final ou ambos'
-
-/** Mensagem de nivel válido, citando também os níveis custom quando houver. */
-function nivelsMsg(niveisCustom: NivelDef[]): string {
-  return niveisCustom.length === 0
-    ? NIVEIS_MSG
-    : `${NIVEIS_MSG} — ou um nível customizado: ${niveisCustom.map((n) => n.slug).join(', ')}`
-}
 const DEBITOS_VALIDOS = new Set(['sim', 'nao', 'avaliar'])
 
-/** Slug kebab-case sem acentos, usado como id dos nós (id = slug do nome). */
+/** Slug kebab-case sem acentos, usado nos ids dos nós e dos níveis. */
 export function slugify(nome: string): string {
   return nome
     .normalize('NFD')
@@ -466,6 +496,19 @@ export function slugify(nome: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
+}
+
+/**
+ * Id do nó que uma linha materializa: `<slug do nível>-<slug do nome>`, sem
+ * exceção para nível nenhum. É o que permite o MESMO nome existir em níveis
+ * diferentes ("Resultado" produto final e "Resultado" silver são dois
+ * componentes, com ids `final-resultado` e `silver-resultado`).
+ *
+ * O slug do nível já vem em kebab-case (validado em {@link checarNivel}), e é
+ * usado como está.
+ */
+export function idDaLinha(nivel: string, nome: string): string {
+  return `${nivel.trim()}-${slugify(nome)}`
 }
 
 /** Chave de comparação de nomes: sem acentos, minúscula e trimada (a pontuação
@@ -476,6 +519,18 @@ export function chaveNome(texto: string): string {
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .trim()
+}
+
+/** Texto da coluna `tipo_componente` → valor canônico. Vazio = Default; fora
+ *  da lista = Default + motivo do warning (null = sem warning). */
+export function normalizarTipoComponente(bruto: string): {
+  tipo: TipoComponente
+  invalido: string | null
+} {
+  const texto = bruto.trim()
+  if (texto === '') return { tipo: TIPO_COMPONENTE_DEFAULT, invalido: null }
+  if (TIPOS_COMPONENTE_SET.has(texto)) return { tipo: texto as TipoComponente, invalido: null }
+  return { tipo: TIPO_COMPONENTE_DEFAULT, invalido: texto }
 }
 
 /**
@@ -539,19 +594,32 @@ function splitLista(celula: string): string[] {
     .filter((s) => s !== '')
 }
 
+/** Mensagem com os níveis aceitos na coluna `nivel`, na ordem da cadeia. */
+function nivelsMsg(niveis: readonly NivelInfo[]): string {
+  return niveis.length === 0
+    ? 'nenhum nível está cadastrado'
+    : `use um destes: ${niveis.map((n) => n.slug).join(', ')}`
+}
+
 /**
  * Parseia o catalogo.csv: cabeçalho por nome de coluna (ordem livre) + uma
- * linha por dado ou por componente (nivel dominio/origem/fonte/fonte-secundaria
- * ou slug de um nível custom de `niveisCustom`). Warnings legíveis para coluna
- * faltando/desconhecida, linha sem nome e nivel inválido; "linha N" conta o
+ * linha por COMPONENTE, seja qual for o nível. `niveis` é a lista COMPLETA de
+ * níveis ativos: linha cujo nível não existe (ou foi removido) vira warning e
+ * é ignorada — o nó não teria onde existir no mapa.
+ *
+ * Warnings legíveis para coluna faltando/desconhecida, linha sem nome, nível
+ * ausente ou inexistente e tipo_componente fora da lista; "linha N" conta o
  * cabeçalho como linha 1.
  */
-export function parseCatalogo(texto: string, niveisCustom: NivelDef[] = []): CatalogoParseResult {
+export function parseCatalogo(
+  texto: string,
+  niveis: readonly NivelInfo[] = NIVEIS_PADRAO,
+): CatalogoParseResult {
   const warnings: string[] = []
   const registros = parseCsv(texto)
   if (registros.length === 0) {
-    warnings.push('catalogo.csv: arquivo vazio — nenhum dado no catálogo')
-    return { rows: [], componentes: [], componentesCustom: [], warnings }
+    warnings.push('catalogo.csv: arquivo vazio — nenhum componente no catálogo')
+    return { rows: [], warnings }
   }
 
   const cabecalho = registros[0].map((c) => c.trim())
@@ -562,15 +630,13 @@ export function parseCatalogo(texto: string, niveisCustom: NivelDef[] = []): Cat
     }
   }
   for (const col of cabecalho) {
-    if (!(COLUNAS as readonly string[]).includes(col)) {
+    if (!(COLUNAS as readonly string[]).includes(col) && !COLUNAS_OBSOLETAS.has(col)) {
       warnings.push(`catalogo.csv: coluna desconhecida "${col}" ignorada`)
     }
   }
 
-  const customPorSlug = new Map(niveisCustom.map((n) => [n.slug, n]))
+  const ativos = new Set(niveis.map((n) => n.slug))
   const rows: ParsedRow[] = []
-  const componentes: ComponenteRow[] = []
-  const componentesCustom: ComponenteCustomRow[] = []
   for (let r = 1; r < registros.length; r++) {
     const registro = registros[r]
     const linha = r + 1
@@ -590,78 +656,45 @@ export function parseCatalogo(texto: string, niveisCustom: NivelDef[] = []): Cat
       continue
     }
 
-    let nivel = normalizarNivel(celula('nivel'))
-    if (NIVEIS_COMPONENTE.has(nivel)) {
-      const nivelComp = nivel as NivelComponente
-      const componente: ComponenteRow = {
-        nivel: nivelComp,
-        nome,
-        descricao: celula('descricao'),
-        owner: textoOuNull('owner'),
-        centroDeCusto: textoOuNull('centro_de_custo'),
-        associacoes:
-          nivelComp === 'fonte'
-            ? splitLista(celula('origem'))
-            : nivelComp === 'fonte-secundaria'
-              ? splitLista(celula('fonte_sistema'))
-              : [],
-      }
-      const corpoComp = celula('observacoes')
-      if (corpoComp !== '') componente.corpo = corpoComp
-      componentes.push(componente)
+    // Nenhum nível é assumido: sem nível não dá para saber que componente é
+    // esse nem onde ele vive.
+    const nivel = celula('nivel')
+    if (nivel === '') {
+      warnings.push(`catalogo.csv linha ${linha} ("${nome}"): célula "nivel" vazia — linha ignorada`)
       continue
     }
-    if (customPorSlug.has(nivel)) {
-      const componente: ComponenteCustomRow = {
-        nivel,
-        nome,
-        descricao: celula('descricao'),
-        owner: textoOuNull('owner'),
-        centroDeCusto: textoOuNull('centro_de_custo'),
-        associacoes: splitLista(celula('associacoes')),
-        dominio: celula('dominio'),
-        debito: celula('debito'),
-        status: celula('status'),
-        sistema: textoOuNull('fonte_sistema'),
-        origem: textoOuNull('origem'),
-        fontesSecundarias: splitLista(celula('fontes_secundarias')),
-        consome: splitLista(celula('consome')),
-      }
-      const corpoComp = celula('observacoes')
-      if (corpoComp !== '') componente.corpo = corpoComp
-      componentesCustom.push(componente)
-      continue
-    }
-    if (!NIVEIS_PRODUTO.has(nivel)) {
+    if (!ativos.has(nivel)) {
       warnings.push(
-        `catalogo.csv linha ${linha} ("${nome}"): nivel "${nivel}" inválido` +
-          ` (${nivelsMsg(niveisCustom)}) — assumindo "${NIVEL_DEFAULT}"`,
+        `catalogo.csv linha ${linha} ("${nome}"): nível "${nivel}" não existe na cadeia` +
+          ` (${nivelsMsg(niveis)}) — linha ignorada`,
       )
-      nivel = NIVEL_DEFAULT
+      continue
+    }
+
+    const { tipo, invalido } = normalizarTipoComponente(celula('tipo_componente'))
+    if (invalido !== null) {
+      warnings.push(
+        `catalogo.csv linha ${linha} ("${nome}"): tipo_componente "${invalido}" desconhecido` +
+          ` (use ${TIPOS_COMPONENTE_MSG}) — assumindo "${TIPO_COMPONENTE_DEFAULT}"`,
+      )
     }
 
     const owner = textoOuNull('owner')
     const centroDeCusto = textoOuNull('centro_de_custo')
 
     const node: GraphNode = {
-      id: slugify(nome),
+      id: idDaLinha(nivel, nome),
       nome,
-      // tipo é derivado do nivel: primário = insumo, o resto = produto final.
-      tipo: nivel === 'primario' ? 'insumo' : 'produto',
       nivel,
-      dominio: celula('dominio') || 'A definir',
+      tipoComponente: tipo,
+      dominio: celula('dominio'),
       debito: celula('debito'),
+      status: celula('status'),
       owner,
       centroDeCusto,
       descricao: celula('descricao'),
-      sistema: textoOuNull('fonte_sistema'),
-      origem: textoOuNull('origem'),
-      status: celula('status'),
       incompleto: owner === null || centroDeCusto === null,
     }
-
-    const fsecs = splitLista(celula('fontes_secundarias'))
-    if (fsecs.length > 0) node.fontesSecundarias = fsecs
 
     const corpo = celula('observacoes')
     if (corpo !== '') node.corpo = corpo
@@ -673,15 +706,14 @@ export function parseCatalogo(texto: string, niveisCustom: NivelDef[] = []): Cat
     })
   }
 
-  return { rows, componentes, componentesCustom, warnings }
+  return { rows, warnings }
 }
 
 /**
  * Lê o catalogo.csv na forma bruta ({@link CatalogoRow}), preservando a ordem
- * das linhas do arquivo. Não valida nada além do formato CSV: nivel/debito
- * saem como estão no arquivo (a validação é papel de {@link validarCatalogo}),
- * exceto o apelido "secundario", canonizado para "final"; células são
- * trimadas, como em parseCatalogo.
+ * das linhas do arquivo. Não valida nada além do formato CSV: nivel, debito e
+ * tipo_componente saem como estão no arquivo (a validação é papel de
+ * {@link validarCatalogo}); células são trimadas, como em parseCatalogo.
  */
 export function parseCatalogoRows(texto: string): CatalogoRow[] {
   const registros = parseCsv(texto)
@@ -701,14 +733,12 @@ export function parseCatalogoRows(texto: string): CatalogoRow[] {
     }
     return {
       nome: celula('nome'),
-      nivel: normalizarNivel(celula('nivel')) as Nivel,
+      nivel: celula('nivel'),
+      tipo_componente: celula('tipo_componente'),
       dominio: celula('dominio'),
-      origem: textoOuNull('origem'),
-      fonte_sistema: textoOuNull('fonte_sistema'),
-      fontes_secundarias: splitLista(celula('fontes_secundarias')),
       consome: splitLista(celula('consome')),
       descricao: celula('descricao'),
-      debito: celula('debito') as Debito,
+      debito: celula('debito') as Debito | '',
       status: celula('status'),
       owner: textoOuNull('owner'),
       centro_de_custo: textoOuNull('centro_de_custo'),
@@ -728,28 +758,22 @@ function celulaCsv(valor: string): string {
  * Serializa linhas brutas de volta ao formato canônico do catalogo.csv:
  * BOM UTF-8 + cabeçalho na ordem de COLUNAS + separador ";", registros
  * terminados em \r\n (quebras internas às células ficam como estiverem no
- * valor), listas com " | ", null vira célula vazia e aspas mínimas. Em linhas
- * Todas as colunas valem em qualquer nível (o formulário é o mesmo para
- * todos): o débito de um componente é gravado como veio. `associacoes`
- * vale em qualquer nível, exceto 'fonte' e 'fonte-secundaria', onde a lista de
- * associações mora nas colunas `origem`/`fonte_sistema` — nessas duas a coluna
- * sai canonizada para "".
+ * valor), listas com " | ", null vira célula vazia e aspas mínimas. Todas as
+ * colunas valem em qualquer nível — nada é canonizado por nível, porque nível
+ * não muda a forma da linha.
+ *
  * Round-trip garantido: parseCatalogoRows(serializarCatalogo(rows)) devolve
- * rows (para valores já trimados, como os que saem do próprio parse; em
- * componentes, com debito lido de volta como "") e
- * serializarCatalogo(parseCatalogoRows(csv)) reproduz o arquivo byte a byte.
+ * rows (para valores já trimados, como os que saem do próprio parse) e
+ * serializarCatalogo(parseCatalogoRows(csv)) reproduz um arquivo canônico byte
+ * a byte.
  */
 export function serializarCatalogo(rows: CatalogoRow[]): string {
   const linhas = rows.map((row) => {
-    const nivel = normalizarNivel(row.nivel)
-
     const celulas: Record<Coluna, string> = {
       nome: row.nome,
-      nivel,
+      nivel: row.nivel,
+      tipo_componente: row.tipo_componente,
       dominio: row.dominio,
-      origem: row.origem ?? '',
-      fonte_sistema: row.fonte_sistema ?? '',
-      fontes_secundarias: row.fontes_secundarias.join(' | '),
       consome: row.consome.join(' | '),
       descricao: row.descricao,
       debito: row.debito,
@@ -757,7 +781,7 @@ export function serializarCatalogo(rows: CatalogoRow[]): string {
       owner: row.owner ?? '',
       centro_de_custo: row.centro_de_custo ?? '',
       observacoes: row.observacoes,
-      associacoes: ASSOC_NA_ROTA.has(nivel) ? '' : row.associacoes.join(' | '),
+      associacoes: row.associacoes.join(' | '),
     }
     return COLUNAS.map((c) => celulaCsv(celulas[c])).join(';')
   })
@@ -771,29 +795,27 @@ export interface ValidacaoCatalogo {
 
 /**
  * Valida linhas brutas antes de gravar o catálogo (POST /api/catalogo).
- * Erros (impedem a gravação): nome vazio, nome duplicado (mesmo slug —
- * cobre diferenças só de caixa/acento; global entre produtos, POR NÍVEL entre
- * componentes — produto e componente, ou componentes de níveis diferentes,
- * podem repetir o nome), nome de produto reservado ao nó-raiz, nivel fora dos
- * valores válidos ("secundario" é aceito como apelido de "final") e, só em
- * produtos, debito fora de sim/nao/avaliar (em componentes built-in a coluna é
- * ignorada). Linhas cujo nivel é slug de um nível custom (`niveisCustom`) têm
- * namespace de nome próprio por nível e aceitam debito vazio (componente
- * simples) ou um dos três valores (linha de dado). Warnings (não impedem):
- * "consome" de produto ou de linha de nível custom que não resolve por nome
- * nem id de NENHUMA linha do catálogo — o build criará um nó fantasma.
+ *
+ * Erros (impedem a gravação): nome vazio; nivel vazio ou fora dos níveis
+ * ativos; tipo_componente fora de {@link TIPOS_COMPONENTE}; debito preenchido
+ * com algo que não seja sim/nao/avaliar; nome duplicado DENTRO do mesmo nível
+ * (mesmo slug — cobre diferenças só de caixa/acento). O mesmo nome em níveis
+ * diferentes é permitido: são componentes diferentes.
+ *
+ * Warnings (não impedem): `consome` que não resolve contra nenhuma linha — o
+ * build criará um nó fantasma — e `associacoes` que não resolve, que o build
+ * simplesmente ignora.
+ *
  * "linha N" conta o cabeçalho do CSV como linha 1.
  */
-export function validarCatalogo(rows: CatalogoRow[], niveisCustom: NivelDef[] = []): ValidacaoCatalogo {
+export function validarCatalogo(
+  rows: CatalogoRow[],
+  niveis: readonly NivelInfo[] = NIVEIS_PADRAO,
+): ValidacaoCatalogo {
   const errors: string[] = []
   const warnings: string[] = []
-  const raiz = criarRaiz()
+  const ativos = new Set(niveis.map((n) => n.slug))
   const porChave = new Map<string, { nome: string; linha: number }>()
-  const slugsCustom = new Set(niveisCustom.map((n) => n.slug))
-
-  /** Componente built-in: as colunas de dado não têm significado na linha. */
-  const ehComponenteBuiltin = (row: CatalogoRow): boolean =>
-    NIVEIS_COMPONENTE.has(normalizarNivel(row.nivel))
 
   rows.forEach((row, i) => {
     const linha = i + 2
@@ -802,52 +824,62 @@ export function validarCatalogo(rows: CatalogoRow[], niveisCustom: NivelDef[] = 
       errors.push(`linha ${linha}: "nome" é obrigatório`)
       return
     }
-    const nivel = normalizarNivel(row.nivel)
-    const custom = slugsCustom.has(nivel)
-    const componente = NIVEIS_COMPONENTE.has(nivel) || custom
-    const slug = slugify(nome)
-    if (!componente && slug === raiz.id) {
-      errors.push(`linha ${linha} ("${nome}"): nome reservado ao nó-raiz "${raiz.nome}"`)
+    const nivel = row.nivel.trim()
+    if (nivel === '') {
+      errors.push(`linha ${linha} ("${nome}"): "nivel" é obrigatório (${nivelsMsg(niveis)})`)
+    } else if (!ativos.has(nivel)) {
+      errors.push(`linha ${linha} ("${nome}"): nivel "${row.nivel}" inválido (${nivelsMsg(niveis)})`)
+    }
+    // Namespace de nome é POR NÍVEL: o que identifica um componente é o par
+    // (nível, nome), que é exatamente o id dele.
+    const chave = `${nivel}\u0000${slugify(nome)}`
+    const anterior = porChave.get(chave)
+    if (anterior !== undefined) {
+      errors.push(
+        `linha ${linha} ("${nome}"): nome duplicado no nível "${nivel}" — colide com "${anterior.nome}" (linha ${anterior.linha})`,
+      )
     } else {
-      // produtos dividem um namespace global; componentes, um por nível.
-      const chave = componente ? `${nivel}\u0000${slug}` : slug
-      const anterior = porChave.get(chave)
-      if (anterior !== undefined) {
-        errors.push(
-          `linha ${linha} ("${nome}"): nome duplicado — colide com "${anterior.nome}" (linha ${anterior.linha})`,
-        )
-      } else {
-        porChave.set(chave, { nome, linha })
-      }
+      porChave.set(chave, { nome, linha })
     }
-    if (!componente && !NIVEIS_PRODUTO.has(nivel)) {
-      errors.push(`linha ${linha} ("${nome}"): nivel "${row.nivel}" inválido (${nivelsMsg(niveisCustom)})`)
+    const tipo = row.tipo_componente.trim()
+    if (tipo !== '' && !TIPOS_COMPONENTE_SET.has(tipo)) {
+      errors.push(
+        `linha ${linha} ("${nome}"): tipo_componente "${row.tipo_componente}" inválido (use ${TIPOS_COMPONENTE_MSG})`,
+      )
     }
-    if (!componente && !DEBITOS_VALIDOS.has(row.debito)) {
-      errors.push(`linha ${linha} ("${nome}"): debito "${row.debito}" inválido (use sim, nao ou avaliar)`)
-    }
-    // Nível custom é linha de dado: aceita débito, mas só os valores válidos
-    // (vazio = componente simples, sem semântica de débito).
-    if (custom && row.debito !== '' && !DEBITOS_VALIDOS.has(row.debito)) {
-      errors.push(`linha ${linha} ("${nome}"): debito "${row.debito}" inválido (use sim, nao, avaliar ou deixe vazio)`)
+    // Débito e status são opcionais em qualquer nível; preenchido, o débito
+    // precisa ser um dos três valores.
+    if (row.debito !== '' && !DEBITOS_VALIDOS.has(row.debito)) {
+      errors.push(
+        `linha ${linha} ("${nome}"): debito "${row.debito}" inválido (use sim, nao, avaliar ou deixe vazio)`,
+      )
     }
   })
 
-  // "consome" resolve como no build: por nome OU id de QUALQUER linha do
-  // catálogo, sem distinguir caixa nem acentos.
-  const conhecidos = new Set<string>([raiz.id, chaveNome(raiz.nome)])
+  // Referências resolvem como no build: por id OU por nome de QUALQUER linha,
+  // sem distinguir caixa nem acentos.
+  const conhecidos = new Set<string>()
   for (const row of rows) {
     const nome = row.nome.trim()
     if (nome === '') continue
     conhecidos.add(chaveNome(nome))
-    conhecidos.add(slugify(nome))
+    conhecidos.add(idDaLinha(row.nivel, nome))
   }
+  const conhece = (alvo: string): boolean =>
+    conhecidos.has(chaveNome(alvo)) || conhecidos.has(alvo.trim())
   for (const row of rows) {
-    // Componente built-in ignora a coluna consome (como as demais de dado).
-    if (ehComponenteBuiltin(row)) continue
     for (const alvo of row.consome) {
-      if (!conhecidos.has(chaveNome(alvo)) && !conhecidos.has(slugify(alvo))) {
-        warnings.push(`"${row.nome}": consome "${alvo}", que não existe no catálogo — o build criará um nó fantasma`)
+      if (!conhece(alvo)) {
+        warnings.push(
+          `"${row.nome}": consome "${alvo}", que não existe no catálogo — o build criará um nó fantasma`,
+        )
+      }
+    }
+    for (const alvo of row.associacoes) {
+      if (!conhece(alvo)) {
+        warnings.push(
+          `"${row.nome}": associação "${alvo}" não existe no catálogo — o build vai ignorá-la`,
+        )
       }
     }
   }
@@ -856,39 +888,35 @@ export function validarCatalogo(rows: CatalogoRow[], niveisCustom: NivelDef[] = 
 }
 
 // ---------------------------------------------------------------------------
-// Resolução de referências entre linhas (`consome`, `fontes_secundarias`,
-// `associacoes`): toda referência aponta para QUALQUER linha do catálogo —
-// produto, componente built-in ou linha de nível customizado — mais a raiz e
-// os nós derivados dos campos dos produtos. Transferir um dado de nível muda
-// só o id/coluna dele; quem o referencia continua achando pelo nome.
+// Resolução de referências entre linhas (`consome`, `associacoes`): toda
+// referência aponta para QUALQUER linha do catálogo, de qualquer nível. Mudar
+// um componente de nível muda só o id dele; quem o referencia continua achando
+// pelo nome.
 // ---------------------------------------------------------------------------
 
 /** Candidato de uma referência: id do nó final e o nível a que ele pertence
- *  (usado só para desempatar nomes ambíguos pela ordem das colunas). */
+ *  (usado só para desempatar nomes homônimos pela ordem da cadeia). */
 export interface AlvoRef {
   id: string
   nome: string
-  /** slug do nível (built-in, custom ou o nível semântico de um derivado) */
   nivel: string
 }
 
 export interface IndiceAlvos {
   /** Acrescenta alvos (id repetido é ignorado: o primeiro vence). */
   adicionar(alvos: readonly AlvoRef[]): void
-  /** Resolve por id (literal ou em forma de slug) e, sem casar, por nome sem
-   *  distinguir caixa nem acentos. `candidatos` traz todos os homônimos —
-   *  vence o de menor ordem de nível (empate: menor id). */
+  /** Resolve por id e, sem casar, por nome sem distinguir caixa nem acentos.
+   *  `candidatos` traz todos os homônimos — vence o de menor ordem de nível
+   *  (empate: menor id). */
   resolver(texto: string, excluirId?: string): { alvo: AlvoRef | null; candidatos: AlvoRef[] }
 }
 
 export function criarIndiceAlvos(
-  niveisCustom: NivelDef[],
+  niveis: readonly NivelInfo[] = NIVEIS_PADRAO,
   alvos: readonly AlvoRef[] = [],
 ): IndiceAlvos {
-  const ordemPorSlug = new Map(montarNiveis(niveisCustom).map((n) => [n.slug, n.ordem]))
-  // "ambos" é produto primário e final ao mesmo tempo; conta como primário.
-  const ordemDe = (nivel: string): number =>
-    ordemPorSlug.get(nivel === 'ambos' ? 'primario' : nivel) ?? Number.MAX_VALUE
+  const ordemPorSlug = new Map(niveis.map((n) => [n.slug, n.ordem]))
+  const ordemDe = (nivel: string): number => ordemPorSlug.get(nivel) ?? Number.MAX_VALUE
   const porId = new Map<string, AlvoRef>()
   const porNome = new Map<string, AlvoRef[]>()
 
@@ -911,7 +939,7 @@ export function criarIndiceAlvos(
     adicionar,
     resolver(texto, excluirId) {
       const bruto = texto.trim()
-      const exato = porId.get(bruto) ?? porId.get(slugify(bruto))
+      const exato = porId.get(bruto)
       if (exato !== undefined && exato.id !== excluirId) return { alvo: exato, candidatos: [exato] }
       const candidatos = (porNome.get(chaveNome(bruto)) ?? []).filter((a) => a.id !== excluirId)
       return { alvo: candidatos[0] ?? null, candidatos }
@@ -919,430 +947,52 @@ export function criarIndiceAlvos(
   }
 }
 
-/** Valores de sistema/origem que significam "ainda não sabemos" — não viram nó. */
-const VALORES_DESCONHECIDOS = new Set(['', 'a confirmar', 'a identificar', 'a detalhar'])
-
-function valorConhecido(valor: string | null | undefined): string | null {
-  if (valor === null || valor === undefined) return null
-  const texto = valor.trim()
-  return VALORES_DESCONHECIDOS.has(texto.toLowerCase()) ? null : texto
-}
-
-/** Nó que tem rota própria: produto ou linha de nível customizado. */
-export interface NoComRota {
-  id: string
-  sistema?: string | null
-  origem?: string | null
-  fontesSecundarias?: string[]
-}
-
 /**
- * Materializa `fonte_sistema`, `origem` e `fontes_secundarias` dos dados como
- * nós derivados, criando a linhagem dado → [fonte secundária →] sistema → origem:
- * - dedup por chave normalizada (trim + lowercase) do texto original;
- * - valores desconhecidos ("a confirmar" etc.) não geram nó nem aresta;
- * - sistema desconhecido com origem conhecida liga dado → origem direto;
- * - `fontes_secundarias` (tabelas UCS) SUBSTITUI a aresta direta dado→sistema
- *   por dado→fsec ("vem de") + fsec→sistema ("vem de"); com sistema
- *   desconhecido, fsec→origem direto ("origina de");
- * - cada nome de `fontes_secundarias` passa antes por `resolverFonteSecundaria`:
- *   se ele já é uma linha do catálogo (inclusive de nível customizado), a rota
- *   usa aquele nó em vez de materializar um fsec-* paralelo.
+ * Nó fantasma: alvo de `consome` que não tem linha no catálogo. Fica no mapa
+ * (é justamente o buraco que o mapa precisa mostrar) no nível do fim da
+ * cadeia — de onde vem o que ainda não foi catalogado.
  */
-export function derivarSistemasOrigens(
-  dados: readonly NoComRota[],
-  resolverFonteSecundaria: (nome: string) => string | null = () => null,
-): { nodes: DerivedNode[]; links: GraphLink[] } {
-  const sistemas = new Map<string, DerivedNode>()
-  const origens = new Map<string, DerivedNode>()
-  const fontesSecundarias = new Map<string, DerivedNode>()
-  const links: GraphLink[] = []
-  const arestasVistas = new Set<string>()
-
-  const noDerivado = (
-    mapa: Map<string, DerivedNode>,
-    prefixo: 'sys' | 'org' | 'fsec',
-    tipo: DerivedNode['tipo'],
-    texto: string,
-  ): DerivedNode => {
-    const chave = texto.toLowerCase()
-    let no = mapa.get(chave)
-    if (no === undefined) {
-      no = { id: `${prefixo}-${slugify(texto)}`, nome: texto, tipo, derivado: true, incompleto: false }
-      mapa.set(chave, no)
-    }
-    return no
-  }
-
-  const addLink = (source: string, target: string, label: string): void => {
-    const chave = `${source}\u0000${target}\u0000${label}`
-    if (arestasVistas.has(chave)) return
-    arestasVistas.add(chave)
-    links.push({ source, target, label })
-  }
-
-  for (const dado of dados) {
-    const sistema = valorConhecido(dado.sistema)
-    const origem = valorConhecido(dado.origem)
-    const fsecs = (dado.fontesSecundarias ?? []).map((nome) => {
-      const texto = nome.trim()
-      return (
-        resolverFonteSecundaria(texto) ??
-        noDerivado(fontesSecundarias, 'fsec', 'fonte-secundaria', texto).id
-      )
-    })
-    // O dado que declara ingestão via UCS não liga direto na fonte: a rota
-    // passa pelas tabelas UCS (o débito técnico da fonte permanece no dado).
-    const cabecas = fsecs.length > 0 ? fsecs : [dado.id]
-    for (const f of fsecs) addLink(dado.id, f, 'vem de')
-    if (sistema !== null) {
-      const noSistema = noDerivado(sistemas, 'sys', 'sistema', sistema)
-      for (const cabeca of cabecas) addLink(cabeca, noSistema.id, 'vem de')
-      if (origem !== null) {
-        const noOrigem = noDerivado(origens, 'org', 'origem', origem)
-        addLink(noSistema.id, noOrigem.id, 'origina de')
-      }
-    } else if (origem !== null) {
-      const noOrigem = noDerivado(origens, 'org', 'origem', origem)
-      for (const cabeca of cabecas) addLink(cabeca, noOrigem.id, 'origina de')
-    }
-  }
-
-  return { nodes: [...sistemas.values(), ...fontesSecundarias.values(), ...origens.values()], links }
-}
-
-/** O catálogo guarda domínios sem acento; o nó derivado exibe com. */
-const DOMINIO_DISPLAY: Record<string, string> = {
-  Regulatorio: 'Regulatório',
-}
-
-/**
- * Insere o nível de domínio entre a raiz e os produtos finais: cada aresta
- * "agrega" raiz→produto vira raiz→dom-<slug do domínio> e dom-<slug>→produto
- * (ambas "agrega", deduplicadas). As demais arestas passam intactas.
- * Devolve os nós de domínio derivados e a lista de arestas já reescrita.
- */
-export function derivarDominios(
-  dados: GraphNode[],
-  links: GraphLink[],
-): { nodes: DerivedNode[]; links: GraphLink[] } {
-  const porId = new Map(dados.map((n) => [n.id, n]))
-  const dominios = new Map<string, DerivedNode>()
-  const saida: GraphLink[] = []
-  const arestasVistas = new Set<string>()
-
-  const addAgrega = (source: string, target: string): void => {
-    const chave = `${source} ${target}`
-    if (arestasVistas.has(chave)) return
-    arestasVistas.add(chave)
-    saida.push({ source, target, label: 'agrega' })
-  }
-
-  for (const l of links) {
-    if (l.label !== 'agrega') {
-      saida.push(l)
-      continue
-    }
-    const dominio = porId.get(l.target)?.dominio ?? 'A definir'
-    const id = `dom-${slugify(dominio)}`
-    if (!dominios.has(id)) {
-      dominios.set(id, {
-        id,
-        nome: DOMINIO_DISPLAY[dominio] ?? dominio,
-        tipo: 'dominio',
-        derivado: true,
-        incompleto: false,
-      })
-    }
-    addAgrega(l.source, id)
-    addAgrega(id, l.target)
-  }
-
-  return { nodes: [...dominios.values()], links: saida }
-}
-
-/** Prefixo de id e tipo de nó de cada nível de componente cadastrável. */
-const COMPONENTE_SPEC: Record<NivelComponente, { prefixo: string; tipo: DerivedNode['tipo'] }> = {
-  dominio: { prefixo: 'dom', tipo: 'dominio' },
-  origem: { prefixo: 'org', tipo: 'origem' },
-  fonte: { prefixo: 'sys', tipo: 'sistema' },
-  'fonte-secundaria': { prefixo: 'fsec', tipo: 'fonte-secundaria' },
-}
-
-/**
- * Funde os componentes cadastrados no catálogo com os nós derivados dos
- * produtos:
- * - componente cujo id (prefixo + slug do nome) bate com um nó derivado do
- *   mesmo tipo vira UM nó só: mantém id e nome derivados e ganha
- *   `cadastrado: true` + descricao/owner/centroDeCusto (corpo só se não vazio);
- * - componente sem produto que o referencie vira nó novo (pode ficar isolado);
- * - componente duplicado (mesmo slug DENTRO do nível) gera warning e a linha
- *   repetida é ignorada;
- * - associações: linha fonte → arestas sys→org "origina de" por origem
- *   listada; linha fonte-secundaria → fsec→sys "vem de" por fonte listada;
- *   alvo não cadastrado vira nó derivado do tipo alvo (sem fantasma). Arestas
- *   deduplicadas contra as já derivadas dos produtos.
- */
-export function aplicarComponentes(
-  componentes: ComponenteRow[],
-  derivados: DerivedNode[],
-  links: GraphLink[],
-): { nodes: DerivedNode[]; links: GraphLink[]; warnings: string[] } {
-  const warnings: string[] = []
-  const porId = new Map(derivados.map((n) => [n.id, n]))
-  const saida = [...links]
-  const arestasVistas = new Set(links.map((l) => `${l.source}\u0000${l.target}\u0000${l.label}`))
-
-  const addLink = (source: string, target: string, label: string): void => {
-    const chave = `${source}\u0000${target}\u0000${label}`
-    if (arestasVistas.has(chave)) return
-    arestasVistas.add(chave)
-    saida.push({ source, target, label })
-  }
-
-  const garantirNo = (nivel: NivelComponente, nome: string): DerivedNode => {
-    const { prefixo, tipo } = COMPONENTE_SPEC[nivel]
-    const id = `${prefixo}-${slugify(nome)}`
-    let no = porId.get(id)
-    if (no === undefined) {
-      const display = tipo === 'dominio' ? (DOMINIO_DISPLAY[nome] ?? nome) : nome
-      no = { id, nome: display, tipo, derivado: true, incompleto: false }
-      porId.set(id, no)
-    }
-    return no
-  }
-
-  // Ordena por id (estável: entre duplicatas, a primeira linha do arquivo
-  // vence), como nos produtos, para saída independente da ordem das linhas.
-  const ordenados = [...componentes]
-    .map((c) => ({ c, id: `${COMPONENTE_SPEC[c.nivel].prefixo}-${slugify(c.nome)}` }))
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-  const aceitos: { c: ComponenteRow; id: string }[] = []
-
-  for (const item of ordenados) {
-    if (aceitos.some((a) => a.id === item.id)) {
-      warnings.push(
-        `componente duplicado "${item.c.nome}" (id "${item.id}") — a linha repetida foi ignorada`,
-      )
-      continue
-    }
-    aceitos.push(item)
-    const no = garantirNo(item.c.nivel, item.c.nome)
-    no.cadastrado = true
-    no.descricao = item.c.descricao
-    no.owner = item.c.owner
-    no.centroDeCusto = item.c.centroDeCusto
-    if (item.c.corpo !== undefined) no.corpo = item.c.corpo
-  }
-
-  // Associações depois de todos os cadastros: o alvo pode ser outra linha
-  // componente e deve fundir com ela, não criar um nó paralelo.
-  for (const { c } of aceitos) {
-    if (c.nivel === 'fonte') {
-      const noSistema = garantirNo('fonte', c.nome)
-      for (const nomeOrigem of c.associacoes) {
-        addLink(noSistema.id, garantirNo('origem', nomeOrigem).id, 'origina de')
-      }
-    } else if (c.nivel === 'fonte-secundaria') {
-      const noFsec = garantirNo('fonte-secundaria', c.nome)
-      for (const nomeFonte of c.associacoes) {
-        addLink(noFsec.id, garantirNo('fonte', nomeFonte).id, 'vem de')
-      }
-    }
-  }
-
-  return { nodes: [...porId.values()], links: saida, warnings }
-}
-
-/** Nível semântico de um nó derivado, para ordenar candidatos de referência
- *  (tipo "sistema" vive no nível built-in "fonte"). */
-function slugNivelDoDerivado(no: DerivedNode): string {
-  if (no.tipo === 'sistema') return 'fonte'
-  if (no.tipo === 'nivel-custom') return no.nivelCustom ?? ''
-  return no.tipo
-}
-
-/** Nós derivados como alvos de referência: sistemas, origens, domínios e
- *  tabelas UCS materializados dos campos dos produtos também podem ser
- *  citados em `associacoes`, mesmo sem linha própria no catálogo. */
-export function alvosDeDerivados(derivados: readonly DerivedNode[]): AlvoRef[] {
-  return derivados.map((n) => ({ id: n.id, nome: n.nome, nivel: slugNivelDoDerivado(n) }))
-}
-
-/** Linha de nível custom aceita no build, com o nó que ela materializou. */
-export interface CustomAceito {
-  row: ComponenteCustomRow
-  node: DerivedNode
-}
-
-/**
- * Materializa as linhas de NÍVEL CUSTOM (nivel = slug de um nível do
- * niveis.csv) como nós `niv-<slugNivel>-<slugNome>` de tipo "nivel-custom".
- * Duplicada (mesmo slug DENTRO do nível) gera warning e é ignorada, como nos
- * demais componentes. Os campos de dado da linha (domínio, débito, status,
- * rota, fontes secundárias) entram no nó só quando preenchidos: a linha que
- * traz apenas nome/descrição continua sendo um componente simples.
- */
-export function criarNosCustom(componentes: ComponenteCustomRow[]): {
-  aceitos: CustomAceito[]
-  warnings: string[]
-} {
-  const warnings: string[] = []
-  // Ordena por id (estável: entre duplicatas, a primeira linha do arquivo
-  // vence), como nos demais componentes, para saída independente da ordem.
-  const ordenados = [...componentes]
-    .map((c) => ({ c, id: `niv-${c.nivel}-${slugify(c.nome)}` }))
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-  const aceitos: CustomAceito[] = []
-  const vistos = new Set<string>()
-
-  for (const { c, id } of ordenados) {
-    if (vistos.has(id)) {
-      warnings.push(`componente duplicado "${c.nome}" (id "${id}") — a linha repetida foi ignorada`)
-      continue
-    }
-    vistos.add(id)
-    const node: DerivedNode = {
-      id,
-      nome: c.nome,
-      tipo: 'nivel-custom',
-      nivelCustom: c.nivel,
-      derivado: true,
-      incompleto: c.owner === null || c.centroDeCusto === null,
-      cadastrado: true,
-      descricao: c.descricao,
-      owner: c.owner,
-      centroDeCusto: c.centroDeCusto,
-    }
-    if (c.corpo !== undefined) node.corpo = c.corpo
-    if (c.dominio !== '') node.dominio = c.dominio
-    if (c.debito !== '') node.debito = c.debito
-    if (c.status !== '') node.status = c.status
-    if (c.sistema !== null) node.sistema = c.sistema
-    if (c.origem !== null) node.origem = c.origem
-    if (c.fontesSecundarias.length > 0) node.fontesSecundarias = c.fontesSecundarias
-    aceitos.push({ row: c, node })
-  }
-
-  return { aceitos, warnings }
-}
-
-/**
- * Resolve a coluna `associacoes` das linhas de nível custom em arestas
- * custom → alvo, label "vem de" (deduplicadas):
- * - cada nome resolve por id ou nome (case/acento-insensitive) contra
- *   QUALQUER linha do catálogo — produto, componente ou outro nível custom —
- *   e contra os nós derivados dos campos dos produtos;
- * - nome ambíguo → warning e vence o do nível de menor ordem;
- * - inexistente → warning, SEM criar nó nem aresta (não dá para adivinhar o
- *   nível a que o nome pertenceria).
- */
-export function aplicarAssociacoesCustom(
-  aceitos: readonly { row: { nome: string; associacoes: string[] }; node: { id: string } }[],
-  indice: IndiceAlvos,
-  links: GraphLink[],
-): { links: GraphLink[]; warnings: string[] } {
-  const warnings: string[] = []
-  const saida = [...links]
-  const arestasVistas = new Set(links.map((l) => `${l.source} ${l.target} ${l.label}`))
-
-  for (const { row, node } of aceitos) {
-    for (const nomeAlvo of row.associacoes) {
-      const { alvo, candidatos } = indice.resolver(nomeAlvo, node.id)
-      if (alvo === null) {
-        warnings.push(
-          `"${row.nome}": associação "${nomeAlvo}" não corresponde a nenhum componente do mapa — ignorada (nenhum nó criado)`,
-        )
-        continue
-      }
-      if (candidatos.length > 1) {
-        warnings.push(
-          `"${row.nome}": associação "${nomeAlvo}" é ambígua (${candidatos.length} componentes) — usando "${alvo.nome}" (${alvo.nivel})`,
-        )
-      }
-      const chave = `${node.id} ${alvo.id} vem de`
-      if (arestasVistas.has(chave)) continue
-      arestasVistas.add(chave)
-      saida.push({ source: node.id, target: alvo.id, label: 'vem de' })
-    }
-  }
-
-  return { links: saida, warnings }
-}
-
-function nodeFantasma(nomeAlvo: string): GraphNode {
+function nodeFantasma(nomeAlvo: string, nivel: string): GraphNode {
   return {
-    id: slugify(nomeAlvo) || nomeAlvo.toLowerCase(),
+    id: idDaLinha(nivel, nomeAlvo),
     nome: nomeAlvo,
-    tipo: 'desconhecido',
-    nivel: NIVEL_DEFAULT,
-    dominio: 'A definir',
+    nivel,
+    tipoComponente: TIPO_COMPONENTE_DEFAULT,
+    dominio: '',
     debito: 'avaliar',
+    status: 'investigacao',
     owner: null,
     centroDeCusto: null,
     descricao: 'Nó fantasma: referenciado na coluna "consome", mas sem linha no catálogo.',
-    sistema: 'desconhecido',
-    origem: 'desconhecida',
-    status: 'investigacao',
     incompleto: true,
     fantasma: true,
   }
 }
 
 /**
- * Nó-raiz do portfólio, criado automaticamente pelo build (não tem linha no
- * catalogo.csv). Agrega todos os dados de nivel final/ambos; owner e
- * centro de custo não se aplicam (nunca renderiza incompleto).
- */
-export function criarRaiz(): GraphNode {
-  return {
-    id: 'atacado-dados',
-    nome: 'Atacado — Dados',
-    tipo: 'dominio',
-    nivel: 'raiz',
-    dominio: 'Atacado',
-    debito: 'nao',
-    owner: null,
-    centroDeCusto: null,
-    descricao: 'Portfólio de dados da Diretoria Comercial Atacado — ponto de entrada do mapa',
-    sistema: null,
-    origem: null,
-    status: 'producao',
-    incompleto: false,
-    corpo:
-      'Portfólio de dados da Diretoria Comercial Atacado — ponto de entrada do mapa. ' +
-      'Agrega todos os produtos finais do catálogo, as visões consumidas diretamente pelas ' +
-      'equipes comerciais e de gestão. Não é um dado em si: é o nó-raiz que organiza a ' +
-      'navegação do portfólio.\n\n' +
-      'Agrega [[Account|agrega]], [[Faturamento|agrega]], [[Segmentação e Encarteiramento|agrega]], ' +
-      '[[Setorização|agrega]], [[Localização|agrega]], [[Evolução do Resultado|agrega]], ' +
-      '[[Evolução do Resultado por produto|agrega]], [[RAR 12M|agrega]], [[Estoque (carteira)|agrega]], ' +
-      '[[Resultado|agrega]], [[Endividamento de mercado|agrega]], [[Rating|agrega]] e ' +
-      '[[Restritivos e tipos|agrega]].',
-  }
-}
-
-/**
  * Monta o grafo a partir do texto do catalogo.csv.
- * - id = slug(nome) nos produtos e niv-<nivel>-<slug do nome> nas linhas de
- *   nível customizado; nome duplicado (mesmo id) vira warning e é ignorado;
- * - a raiz "Atacado — Dados" é criada automaticamente e agrega todos os
- *   dados de nivel final/ambos;
- * - a coluna "consome" (de produtos e de linhas de nível custom) resolve
- *   contra QUALQUER linha do catálogo, por nome ou id, sem distinguir caixa
- *   nem acentos; alvo inexistente vira warning + nó fantasma;
- * - linhas de componente (dominio/origem/fonte/fonte-secundaria) fundem com
- *   os nós derivados dos produtos ({@link aplicarComponentes}); linhas de
- *   nível custom viram nós "nivel-custom" ({@link criarNosCustom}) com a mesma
- *   rota (fonte/origem/fontes secundárias) de um produto;
+ *
+ * - um nó por LINHA do catálogo, em qualquer nível — nada é derivado de campo;
+ * - id = `<slug do nível>-<slug do nome>`; duas linhas com o mesmo id (mesmo
+ *   nome no mesmo nível) viram warning e a repetida é ignorada;
+ * - `consome` vira aresta "consome" e `associacoes` vira aresta "vem de";
+ *   ambas resolvem contra QUALQUER linha, por id ou por nome (sem distinguir
+ *   caixa nem acentos). Nome homônimo em vários níveis → warning, e vence o
+ *   nível de menor ordem;
+ * - `consome` que não resolve vira nó fantasma (+ warning); `associacoes` que
+ *   não resolve vira só warning, sem criar nó — não dá para adivinhar em que
+ *   nível ele existiria;
  * - saída determinística (nodes por id, links por source/target/label).
+ *
+ * `niveis` é a lista COMPLETA de níveis ativos (built-ins + customs). Linha de
+ * um nível que não está na lista é ignorada com warning: sem nível, o
+ * componente não teria lugar no mapa.
  */
-export function buildGraph(csv: string, niveisCustom: NivelDef[] = []): BuildResult {
-  const { rows, componentes, componentesCustom, warnings } = parseCatalogo(csv, niveisCustom)
+export function buildGraph(csv: string, niveis: readonly NivelInfo[] = NIVEIS_PADRAO): BuildResult {
+  const { rows, warnings } = parseCatalogo(csv, niveis)
 
-  const raiz = criarRaiz()
-  const nodes: GraphNode[] = [raiz]
-  const porId = new Map<string, GraphNode>([[raiz.id, raiz]])
+  const nodes: GraphNode[] = []
+  const porId = new Map<string, GraphNode>()
   const aceitas: ParsedRow[] = []
 
   // Ordena por id (estável: entre duplicatas, a primeira linha do arquivo
@@ -1351,7 +1001,9 @@ export function buildGraph(csv: string, niveisCustom: NivelDef[] = []): BuildRes
 
   for (const p of ordenadas) {
     if (porId.has(p.node.id)) {
-      warnings.push(`nome duplicado "${p.node.nome}" (id "${p.node.id}") — a linha repetida foi ignorada`)
+      warnings.push(
+        `nome duplicado "${p.node.nome}" no nível "${p.node.nivel}" (id "${p.node.id}") — a linha repetida foi ignorada`,
+      )
       continue
     }
     nodes.push(p.node)
@@ -1359,101 +1011,92 @@ export function buildGraph(csv: string, niveisCustom: NivelDef[] = []): BuildRes
     aceitas.push(p)
   }
 
-  const custom = criarNosCustom(componentesCustom)
-  warnings.push(...custom.warnings)
-  const nosCustom = custom.aceitos.map((a) => a.node)
+  const indice = criarIndiceAlvos(
+    niveis,
+    aceitas.map((p) => ({ id: p.node.id, nome: p.node.nome, nivel: p.node.nivel })),
+  )
 
-  // Índice de resolução de referências: raiz + produtos + linhas de nível
-  // custom + componentes built-in (cujo id é previsível sem construir o nó).
-  const indice = criarIndiceAlvos(niveisCustom, [
-    { id: raiz.id, nome: raiz.nome, nivel: 'raiz' },
-    ...aceitas.map((p) => ({ id: p.node.id, nome: p.node.nome, nivel: p.node.nivel })),
-    ...custom.aceitos.map((a) => ({ id: a.node.id, nome: a.node.nome, nivel: a.row.nivel })),
-    ...componentes.map((c) => ({
-      id: `${COMPONENTE_SPEC[c.nivel].prefixo}-${slugify(c.nome)}`,
-      nome: c.nome,
-      nivel: c.nivel,
-    })),
-  ])
+  // Fantasma nasce no fim da cadeia: é a ponta de onde vem o que ainda não foi
+  // catalogado. Sem nível nenhum ativo não há linhas — nem fantasmas.
+  const nivelFantasma = [...niveis].sort((a, b) => a.ordem - b.ordem).at(-1)?.slug ?? ''
 
   const links: GraphLink[] = []
-  const fantasmas = new Map<string, GraphNode>()
+  const fantasmas: GraphNode[] = []
+  // Um fantasma por nome referenciado, seja qual for o número de consumidores.
+  const idFantasmaPorNome = new Map<string, string>()
 
-  // "consome" de produtos e de linhas de nível custom (componente built-in
-  // ignora a coluna). Ordenado por id: warnings independem da ordem do CSV.
-  const consumidores = [
-    ...aceitas.map((p) => ({ id: p.node.id, nome: p.node.nome, consome: p.consome })),
-    ...custom.aceitos.map((a) => ({ id: a.node.id, nome: a.node.nome, consome: a.row.consome })),
-  ].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-
-  for (const consumidor of consumidores) {
-    for (const nomeAlvo of consumidor.consome) {
+  for (const p of aceitas) {
+    for (const nomeAlvo of p.consome) {
       const { alvo, candidatos } = indice.resolver(nomeAlvo)
       if (alvo === null) {
         const chave = chaveNome(nomeAlvo)
-        let fantasma = fantasmas.get(chave)
-        if (fantasma === undefined) {
-          fantasma = nodeFantasma(nomeAlvo)
-          fantasmas.set(chave, fantasma)
+        let id = idFantasmaPorNome.get(chave)
+        if (id === undefined) {
+          const fantasma = nodeFantasma(nomeAlvo, nivelFantasma)
           warnings.push(
-            `consome quebrado: "${nomeAlvo}" em "${consumidor.nome}" não corresponde a nenhuma linha do catálogo — criado nó fantasma "${fantasma.id}"`,
+            `consome quebrado: "${nomeAlvo}" em "${p.node.nome}" não corresponde a nenhuma linha do catálogo — criado nó fantasma "${fantasma.id}"`,
           )
+          // Nome com pontuação diferente pode slugificar igual ao de uma linha
+          // já aceita: nesse caso a aresta aponta para ela, sem duplicar o nó.
+          if (!porId.has(fantasma.id)) {
+            porId.set(fantasma.id, fantasma)
+            fantasmas.push(fantasma)
+          }
+          id = fantasma.id
+          idFantasmaPorNome.set(chave, id)
         }
-        links.push({ source: consumidor.id, target: fantasma.id, label: 'consome' })
+        links.push({ source: p.node.id, target: id, label: 'consome' })
         continue
       }
       if (candidatos.length > 1) {
         warnings.push(
-          `"${consumidor.nome}": consome "${nomeAlvo}", nome de ${candidatos.length} linhas do catálogo — usando "${alvo.nome}" (${alvo.nivel})`,
+          `"${p.node.nome}": consome "${nomeAlvo}", nome de ${candidatos.length} linhas do catálogo — usando "${alvo.nome}" (${alvo.nivel})`,
         )
       }
-      links.push({ source: consumidor.id, target: alvo.id, label: 'consome' })
+      links.push({ source: p.node.id, target: alvo.id, label: 'consome' })
     }
   }
 
-  // A raiz agrega automaticamente todos os produtos finais do catálogo.
-  for (const n of nodes) {
-    if (n.nivel === 'final' || n.nivel === 'ambos') {
-      links.push({ source: raiz.id, target: n.id, label: 'agrega' })
+  for (const p of aceitas) {
+    for (const nomeAlvo of p.associacoes) {
+      const { alvo, candidatos } = indice.resolver(nomeAlvo, p.node.id)
+      if (alvo === null) {
+        warnings.push(
+          `"${p.node.nome}": associação "${nomeAlvo}" não corresponde a nenhum componente do mapa — ignorada (nenhum nó criado)`,
+        )
+        continue
+      }
+      if (candidatos.length > 1) {
+        warnings.push(
+          `"${p.node.nome}": associação "${nomeAlvo}" é ambígua (${candidatos.length} componentes) — usando "${alvo.nome}" (${alvo.nivel})`,
+        )
+      }
+      links.push({ source: p.node.id, target: alvo.id, label: 'vem de' })
     }
   }
 
-  const dominios = derivarDominios([...nodes, ...fantasmas.values()], links)
-  // Nome de fonte secundária que já é linha do catálogo aponta para a linha —
-  // é o que mantém a rota intacta quando uma tabela UCS muda de nível.
-  const derivados = derivarSistemasOrigens(
-    [...nodes, ...nosCustom],
-    (nome) => indice.resolver(nome).alvo?.id ?? null,
-  )
-  const comps = aplicarComponentes(
-    componentes,
-    [...dominios.nodes, ...derivados.nodes],
-    [...dominios.links, ...derivados.links],
-  )
-  warnings.push(...comps.warnings)
-  // Sistemas/origens/domínios derivados dos campos dos produtos também são
-  // alvos válidos de associação, mesmo sem linha própria no catálogo.
-  indice.adicionar(alvosDeDerivados(comps.nodes))
-  // A coluna `associacoes` vale em qualquer nível (o formulário a oferece em
-  // todos): além das linhas de nível custom, as de produto que a preencherem.
-  const assocProdutos = aceitas
-    .filter((p) => p.associacoes.length > 0)
-    .map((p) => ({ row: { nome: p.node.nome, associacoes: p.associacoes }, node: p.node }))
-  const assoc = aplicarAssociacoesCustom(
-    [...custom.aceitos, ...assocProdutos],
-    indice,
-    comps.links,
-  )
-  warnings.push(...assoc.warnings)
-  const todosNodes: AnyNode[] = [...nodes, ...fantasmas.values(), ...comps.nodes, ...nosCustom]
-  const todosLinks = assoc.links
-
+  const todosNodes = [...nodes, ...fantasmas]
   todosNodes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+
+  const vistas = new Set<string>()
+  const todosLinks = links.filter((l) => {
+    const chave = `${l.source}\u0000${l.target}\u0000${l.label}`
+    if (vistas.has(chave)) return false
+    vistas.add(chave)
+    return true
+  })
   todosLinks.sort((a, b) => {
     const ka = `${a.source}\u0000${a.target}\u0000${a.label}`
     const kb = `${b.source}\u0000${b.target}\u0000${b.label}`
     return ka < kb ? -1 : ka > kb ? 1 : 0
   })
 
-  return { graph: { niveis: montarNiveis(niveisCustom), nodes: todosNodes, links: todosLinks }, warnings }
+  return {
+    graph: {
+      niveis: [...niveis].sort((a, b) => a.ordem - b.ordem),
+      nodes: todosNodes,
+      links: todosLinks,
+    },
+    warnings,
+  }
 }

@@ -2,10 +2,13 @@
 //   GET  /api/catalogo → {"rows": CatalogoRow[]} lido do catalogo.csv na hora
 //   POST /api/catalogo {"rows": CatalogoRow[]} → valida, grava o catalogo.csv
 //        e regenera src/data/graph.json (mesmo formato do npm run data).
-//   GET  /api/niveis → {"rows": NivelRow[]} (SÓ os níveis customizados) lido
-//        do niveis.csv na hora; os built-in são fixos no código.
-//   POST /api/niveis {"rows": NivelRow[]} → valida (inclusive remoção de
-//        nível em uso no catálogo), grava o niveis.csv e regenera o graph.json.
+//   GET  /api/niveis → {"rows": [{slug, titulo, ordem, builtin}]} com TODOS os
+//        níveis da cadeia (built-in e customizados), resolvidos do niveis.csv.
+//   POST /api/niveis {"rows": [{slug?, titulo, ordem}]} → a lista COMPLETA de
+//        níveis: valida (inclusive remoção de nível em uso no catálogo), grava
+//        as três colunas do niveis.csv e regenera o graph.json. Nível que não
+//        vier na lista é removido; `slug` amarra a linha a um nível existente
+//        (é o que faz renomear um built-in não mexer no catalogo.csv).
 // O build estático/standalone não passa por aqui — os CSVs seguem sendo a fonte.
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -14,10 +17,8 @@ import type { Plugin } from 'vite'
 import {
   buildGraph,
   carregarNiveis,
-  defsDeNiveis,
-  normalizarNivel,
   parseCatalogoRows,
-  parseNiveisRows,
+  resolverNiveis,
   serializarCatalogo,
   serializarNiveis,
   validarCatalogo,
@@ -25,7 +26,6 @@ import {
   validarNiveisContraCatalogo,
   type CatalogoRow,
   type Debito,
-  type Nivel,
   type NivelRow,
 } from './graph-lib.ts'
 
@@ -70,15 +70,12 @@ export function rowsDoBody(body: unknown): { rows: CatalogoRow[]; errors: string
     }
     const row: CatalogoRow = {
       nome: texto('nome'),
-      // "secundario" é apelido de "final" — canonizado já na entrada.
-      nivel: normalizarNivel(texto('nivel')) as Nivel,
+      nivel: texto('nivel'),
+      tipo_componente: texto('tipo_componente'),
       dominio: texto('dominio'),
-      origem: textoOuNull('origem'),
-      fonte_sistema: textoOuNull('fonte_sistema'),
-      fontes_secundarias: lista('fontes_secundarias'),
       consome: lista('consome'),
       descricao: texto('descricao'),
-      debito: texto('debito') as Debito,
+      debito: texto('debito') as Debito | '',
       status: texto('status'),
       owner: textoOuNull('owner'),
       centro_de_custo: textoOuNull('centro_de_custo'),
@@ -90,9 +87,10 @@ export function rowsDoBody(body: unknown): { rows: CatalogoRow[]; errors: string
   return { rows, errors }
 }
 
-/** Valida a FORMA do body do POST /api/niveis ({"rows": [{titulo, ordem}]})
- *  e materializa NivelRow[]; a validação de conteúdo (título/ordem únicos) é
- *  do validarNiveis. `ordem` aceita number ou string numérica ("42.5"). */
+/** Valida a FORMA do body do POST /api/niveis ({"rows": [{slug?, titulo,
+ *  ordem}]}) e materializa NivelRow[]; a validação de conteúdo (título/ordem
+ *  únicos) é do validarNiveis. `ordem` aceita number ou string numérica
+ *  ("42.5"); `slug` é opcional (ausente/vazio = derivar do título). */
 export function niveisDoBody(body: unknown): { rows: NivelRow[]; errors: string[] } {
   const errors: string[] = []
   if (typeof body !== 'object' || body === null || !Array.isArray((body as { rows?: unknown }).rows)) {
@@ -122,7 +120,16 @@ export function niveisDoBody(body: unknown): { rows: NivelRow[]; errors: string[
       errors.push(`rows[${i}].ordem: deve ser number (ou string numérica)`)
       ok = false
     }
-    if (ok) rows.push({ titulo: (titulo as string).trim(), ordem })
+    const slug = registro.slug ?? ''
+    if (typeof slug !== 'string') {
+      errors.push(`rows[${i}].slug: deve ser string`)
+      ok = false
+    }
+    if (!ok) return
+    const row: NivelRow = { titulo: (titulo as string).trim(), ordem }
+    // Slug vazio não vira campo: é o que marca "nível novo" (derivar do título).
+    if ((slug as string).trim() !== '') row.slug = (slug as string).trim()
+    rows.push(row)
   })
   return { rows, errors }
 }
@@ -179,7 +186,10 @@ export function catalogoApiPlugin(): Plugin {
       server.middlewares.use('/api/niveis', (req, res) => {
         void (async () => {
           if (req.method === 'GET') {
-            responderJson(res, 200, { rows: parseNiveisRows(await lerNiveisTexto()) })
+            // A UI edita a lista COMPLETA: built-in e custom chegam iguais,
+            // com o slug (chave semântica) e a flag de origem.
+            const { niveis, warnings } = carregarNiveis(await lerNiveisTexto())
+            responderJson(res, 200, { rows: niveis, warnings })
             return
           }
 
@@ -227,7 +237,7 @@ export function catalogoApiPlugin(): Plugin {
           }
 
           const csvNiveis = serializarNiveis(rows)
-          const { graph, warnings: warningsBuild } = buildGraph(csvCatalogo, defsDeNiveis(rows))
+          const { graph, warnings: warningsBuild } = buildGraph(csvCatalogo, resolverNiveis(rows))
           await writeFile(caminhoNiveis, csvNiveis)
           await gravarGraph(graph)
 

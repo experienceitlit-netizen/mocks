@@ -1,16 +1,17 @@
-// Modal "≣ Níveis" (só no modo edição): gerencia os níveis da cadeia.
-// Built-ins são fixos (listados em cinza, sem edição); customizados vêm de
-// GET /api/niveis e são editáveis (título/ordem), adicionáveis e removíveis.
-// Toda mudança vai por POST /api/niveis com o conjunto COMPLETO de customs
-// (mesma disciplina do catálogo): adicionar/remover postam na hora; edições
-// de título/ordem acumulam e vão juntas no "Salvar alterações". A API recusa
-// remoção de nível em uso — o erro aparece no próprio modal.
-import { useEffect, useMemo, useRef, useState } from 'react'
+// Modal "≣ Níveis" (só no modo edição): gerencia os níveis. TODOS os níveis são
+// editáveis e removíveis — os que vieram com o modelo inclusive. O que amarra
+// um nível ao catálogo é o `slug`, não o título: renomear um nível não mexe em
+// nenhuma linha do catalogo.csv.
+// Toda mudança vai por POST /api/niveis com a lista COMPLETA (mesma disciplina
+// do catálogo): adicionar/remover postam na hora; edições de título/ordem
+// acumulam e vão juntas no "Salvar alterações". Remover pede confirmação (o
+// nível deixa de ser uma coluna do mapa) e a API recusa remoção de nível em
+// uso — o erro aparece no próprio modal.
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import type { NivelCustomRow } from './catalog-api'
+import type { NivelApiRow } from './catalog-api'
 import { fetchNiveis, saveNiveis } from './catalog-api'
 import type { NivelDef } from './graph-types'
-import { nivelCustomColor } from './palette'
 
 function norm(s: string): string {
   return s
@@ -20,16 +21,24 @@ function norm(s: string): string {
     .trim()
 }
 
-/** Slug provável de um título (para o swatch de cor do modal): igual ao
- *  slugify do backend nos casos comuns; quando o nível já está no graph.json,
- *  o slug oficial do bloco `niveis` tem precedência. */
-function slugLocal(titulo: string): string {
-  return norm(titulo).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+/** Linha do modal: o nível como a API o devolve, com slug e origem resolvidos. */
+interface Linha {
+  slug: string
+  titulo: string
+  ordem: number
+  builtin: boolean
 }
 
+const comoLinha = (r: NivelApiRow): Linha => ({
+  slug: r.slug ?? '',
+  titulo: r.titulo,
+  ordem: r.ordem,
+  builtin: r.builtin === true,
+})
+
 interface NiveisModalProps {
-  /** Bloco `niveis` do graph.json atual (built-ins + customs já buildados):
-   *  fonte dos built-ins listados e dos slugs oficiais para as cores. */
+  /** Bloco `niveis` do graph.json atual: fallback de leitura quando a API não
+   *  responde (build estático) — a edição vem sempre de /api/niveis. */
   niveis: readonly NivelDef[]
   /** Save confirmado: o App re-busca o que depende do catálogo (o graph.json
    *  novo chega por HMR, como no formulário de componentes). */
@@ -38,14 +47,16 @@ interface NiveisModalProps {
 }
 
 export default function NiveisModal({ niveis, onSaved, onClose }: NiveisModalProps) {
-  // null = GET ainda em voo; [] = sem customs. `apiOff` cobre a integração em
-  // andamento: sem /api/niveis o modal lista os níveis e desliga as ações.
-  const [customs, setCustoms] = useState<NivelCustomRow[] | null>(null)
+  // null = GET ainda em voo. `apiOff` cobre o build sem API: o modal lista os
+  // níveis do graph.json e desliga as ações.
+  const [linhas, setLinhas] = useState<Linha[] | null>(null)
   const [apiOff, setApiOff] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [okMsg, setOkMsg] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // Slug do nível cuja remoção estrutural aguarda confirmação.
+  const [confirmar, setConfirmar] = useState<string | null>(null)
   const [novoTitulo, setNovoTitulo] = useState('')
   const [novaOrdem, setNovaOrdem] = useState('')
   const okTimer = useRef(0)
@@ -57,10 +68,11 @@ export default function NiveisModal({ niveis, onSaved, onClose }: NiveisModalPro
       if (!alive) return
       if (rows === null) {
         setApiOff(true)
-        // Fallback de leitura: os customs que o graph.json já conhece.
-        setCustoms(niveis.filter((n) => !n.builtin).map((n) => ({ titulo: n.titulo, ordem: n.ordem })))
+        setLinhas(
+          [...niveis].sort((a, b) => a.ordem - b.ordem).map((n) => ({ ...n, builtin: n.builtin })),
+        )
       } else {
-        setCustoms(rows)
+        setLinhas(rows.map(comoLinha))
       }
     })
     return () => {
@@ -70,24 +82,22 @@ export default function NiveisModal({ niveis, onSaved, onClose }: NiveisModalPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const builtins = useMemo(
-    () => niveis.filter((n) => n.builtin).sort((a, b) => a.ordem - b.ordem),
-    [niveis],
-  )
+  /** Lista completa como a API a espera: o slug preserva a identidade de cada
+   *  nível (vazio só no que acabou de ser criado). */
+  const payload = (rows: Linha[]): NivelApiRow[] =>
+    rows.map((r) => (r.slug === '' ? { titulo: r.titulo.trim(), ordem: r.ordem } : { slug: r.slug, titulo: r.titulo.trim(), ordem: r.ordem }))
 
-  /** Slug oficial (graph.json) ou provável de um custom, para a cor. */
-  const slugDe = (titulo: string): string =>
-    niveis.find((n) => !n.builtin && norm(n.titulo) === norm(titulo))?.slug ?? slugLocal(titulo)
-
-  const post = async (next: NivelCustomRow[], aposOk: () => void) => {
+  const post = async (next: Linha[], aposOk: () => void) => {
     setErrors([])
     setOkMsg(null)
     setSaving(true)
     try {
-      const res = await saveNiveis(next)
+      const res = await saveNiveis(payload(next))
       if (res.ok) {
-        setCustoms((await fetchNiveis()) ?? next)
+        const recarregado = await fetchNiveis()
+        setLinhas(recarregado === null ? next : recarregado.map(comoLinha))
         setDirty(false)
+        setConfirmar(null)
         aposOk()
         onSaved()
         setOkMsg('✓ Níveis salvos. O mapa foi atualizado.')
@@ -105,7 +115,7 @@ export default function NiveisModal({ niveis, onSaved, onClose }: NiveisModalPro
 
   const adicionar = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (customs === null || saving || apiOff) return
+    if (linhas === null || saving || apiOff) return
     const titulo = novoTitulo.trim()
     const ordem = Number(novaOrdem)
     const locais: string[] = []
@@ -113,41 +123,58 @@ export default function NiveisModal({ niveis, onSaved, onClose }: NiveisModalPro
     if (novaOrdem.trim() === '' || !Number.isInteger(ordem)) {
       locais.push('Ordem deve ser um número inteiro.')
     }
-    const todos = [...builtins.map((n) => n.titulo), ...customs.map((c) => c.titulo)]
-    if (titulo && todos.some((t) => norm(t) === norm(titulo))) {
+    if (titulo && linhas.some((l) => norm(l.titulo) === norm(titulo))) {
       locais.push(`Já existe um nível chamado "${titulo}".`)
     }
     if (locais.length > 0) {
       setErrors(locais)
       return
     }
-    void post([...customs, { titulo, ordem }], () => {
+    // Slug vazio = nível novo: o backend deriva do título.
+    void post([...linhas, { slug: '', titulo, ordem, builtin: false }], () => {
       setNovoTitulo('')
       setNovaOrdem('')
     })
   }
 
   const remover = (idx: number) => {
-    if (customs === null || saving || apiOff) return
-    void post(customs.filter((_, i) => i !== idx), () => {})
+    if (linhas === null || saving || apiOff) return
+    const alvo = linhas[idx]
+    // Remoção só depois da frase de efeito — um clique confirma.
+    if (confirmar !== alvo.slug) {
+      setErrors([])
+      setConfirmar(alvo.slug)
+      return
+    }
+    void post(
+      linhas.filter((_, i) => i !== idx),
+      () => {},
+    )
   }
 
-  const editar = (idx: number, patch: Partial<NivelCustomRow>) => {
-    if (customs === null) return
-    setCustoms(customs.map((c, i) => (i === idx ? { ...c, ...patch } : c)))
+  const editar = (idx: number, patch: Partial<Linha>) => {
+    if (linhas === null) return
+    setLinhas(linhas.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
     setDirty(true)
   }
 
   const salvarEdicoes = () => {
-    if (customs === null || saving || apiOff) return
-    const locais = customs.flatMap((c) =>
-      c.titulo.trim() === '' ? ['Título de nível não pode ficar vazio.'] : [],
-    )
+    if (linhas === null || saving || apiOff) return
+    const locais: string[] = []
+    if (linhas.some((l) => l.titulo.trim() === '')) {
+      locais.push('Título de nível não pode ficar vazio.')
+    }
+    const vistos = new Set<string>()
+    for (const l of linhas) {
+      const chave = norm(l.titulo)
+      if (chave !== '' && vistos.has(chave)) locais.push(`Título repetido: "${l.titulo.trim()}".`)
+      vistos.add(chave)
+    }
     if (locais.length > 0) {
-      setErrors(locais)
+      setErrors([...new Set(locais)])
       return
     }
-    void post(customs.map((c) => ({ titulo: c.titulo.trim(), ordem: c.ordem })), () => {})
+    void post(linhas, () => {})
   }
 
   return (
@@ -168,47 +195,64 @@ export default function NiveisModal({ niveis, onSaved, onClose }: NiveisModalPro
           )}
 
           <ul className="niveis-modal__list">
-            {builtins.map((n) => (
-              <li key={n.slug} className="niveis-modal__row niveis-modal__row--builtin">
-                <span className="niveis-modal__ordem">{n.ordem}</span>
-                <span className="niveis-modal__titulo">{n.titulo}</span>
-                <span className="niveis-modal__tag">fixo</span>
-              </li>
-            ))}
-            {customs === null ? (
+            {linhas === null ? (
               <li className="niveis-modal__row niveis-modal__row--builtin">carregando…</li>
             ) : (
-              customs.map((c, i) => (
-                <li key={i} className="niveis-modal__row">
-                  <input
-                    type="number"
-                    className="niveis-modal__ordem-input"
-                    aria-label={`Ordem de ${c.titulo}`}
-                    value={Number.isNaN(c.ordem) ? '' : c.ordem}
-                    disabled={apiOff}
-                    onChange={(e) => editar(i, { ordem: Number(e.target.value) })}
-                  />
-                  <span
-                    className="niveis-modal__swatch"
-                    style={{ background: nivelCustomColor(slugDe(c.titulo)) }}
-                  />
-                  <input
-                    type="text"
-                    className="niveis-modal__titulo-input"
-                    aria-label="Título do nível"
-                    value={c.titulo}
-                    disabled={apiOff}
-                    onChange={(e) => editar(i, { titulo: e.target.value })}
-                  />
-                  <button
-                    type="button"
-                    className="niveis-modal__remove"
-                    aria-label={`Remover nível ${c.titulo}`}
-                    disabled={saving || apiOff}
-                    onClick={() => remover(i)}
-                  >
-                    remover
-                  </button>
+              linhas.map((l, i) => (
+                <li key={l.slug === '' ? `novo-${i}` : l.slug}>
+                  <div className="niveis-modal__row">
+                    <input
+                      type="number"
+                      className="niveis-modal__ordem-input"
+                      aria-label={l.slug === '' ? 'Ordem do nível' : `Ordem do nível ${l.slug}`}
+                      value={Number.isNaN(l.ordem) ? '' : l.ordem}
+                      disabled={apiOff}
+                      onChange={(e) => editar(i, { ordem: Number(e.target.value) })}
+                    />
+                    <input
+                      type="text"
+                      className="niveis-modal__titulo-input"
+                      aria-label={l.slug === '' ? 'Título do nível' : `Título do nível ${l.slug}`}
+                      value={l.titulo}
+                      disabled={apiOff}
+                      onChange={(e) => editar(i, { titulo: e.target.value })}
+                    />
+                    {l.builtin && <span className="niveis-modal__tag">padrão</span>}
+                    <button
+                      type="button"
+                      className="niveis-modal__remove"
+                      aria-label={`Remover nível ${l.titulo}`}
+                      disabled={saving || apiOff}
+                      onClick={() => remover(i)}
+                    >
+                      remover
+                    </button>
+                  </div>
+                  {confirmar === l.slug && (
+                    <div className="niveis-modal__confirma" role="alert">
+                      <span>
+                        Ao remover <strong>{l.titulo}</strong>, a coluna correspondente some do
+                        mapa. Só é possível quando nenhum componente está nesse nível.
+                      </span>
+                      <div className="niveis-modal__confirma-acoes">
+                        <button
+                          type="button"
+                          className="niveis-modal__confirma-ok"
+                          disabled={saving}
+                          onClick={() => remover(i)}
+                        >
+                          Remover mesmo assim
+                        </button>
+                        <button
+                          type="button"
+                          className="niveis-modal__confirma-cancel"
+                          onClick={() => setConfirmar(null)}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </li>
               ))
             )}
@@ -254,14 +298,14 @@ export default function NiveisModal({ niveis, onSaved, onClose }: NiveisModalPro
               <button
                 type="submit"
                 className="niveis-modal__add-btn"
-                disabled={saving || apiOff || customs === null}
+                disabled={saving || apiOff || linhas === null}
               >
                 Adicionar
               </button>
             </div>
             <p className="niveis-modal__hint">
-              Ordem = posição entre os níveis existentes — ex.: 42 entra entre Fonte secundária
-              (40) e Fonte (50).
+              Ordem = posição da coluna, da esquerda para a direita. Renomear um nível não mexe no
+              catálogo; remover só é possível quando nenhuma linha está nele.
             </p>
           </form>
 

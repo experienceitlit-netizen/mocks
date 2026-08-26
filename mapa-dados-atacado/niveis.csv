@@ -1,4 +1,10 @@
-﻿titulo;ordem
-Broze;45
-Silver;44
-Gold;43
+﻿titulo;ordem;slug
+Consumidores;0;raiz
+Domínio;10;dominio
+Produto final;20;final
+Produto primário;30;primario
+Gold;43;gold
+Silver;44;silver
+Broze;45;broze
+Fonte (sistema);50;fonte
+Origem;60;origem

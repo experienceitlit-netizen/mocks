@@ -16,10 +16,8 @@ import { rowsDoBody } from './vite-plugin-catalogo.ts'
 const row = (extra: Partial<CatalogoRow>): CatalogoRow => ({
   nome: 'X',
   nivel: 'primario',
+  tipo_componente: '',
   dominio: 'Risco',
-  origem: 'o',
-  fonte_sistema: 's',
-  fontes_secundarias: [],
   consome: [],
   descricao: 'd',
   debito: 'nao',
@@ -42,10 +40,9 @@ describe('serializarCatalogo — round-trip', () => {
       row({
         nome: 'Custo de Capital (KE)',
         nivel: 'final',
-        origem: null,
-        fonte_sistema: null,
+        tipo_componente: 'Tabela Delta',
         consome: ['GDAD', 'Capital Regulatório'],
-        fontes_secundarias: ['Tabela A - UCS', 'Tabela B - UCS'],
+        associacoes: ['Tabela A - UCS', 'Tabela B - UCS'],
         descricao: 'ponto e vírgula; no meio',
         debito: 'avaliar',
         observacoes: 'Primeira linha com "aspas".\n\nSegunda linha; com ponto e vírgula.',
@@ -55,40 +52,36 @@ describe('serializarCatalogo — round-trip', () => {
     expect(parseCatalogoRows(serializarCatalogo(rows))).toEqual(rows)
   })
 
-  it('apelido "secundario" canoniza para "final" nos dois sentidos, sem warning', () => {
-    const csv = serializarCatalogo([row({ nome: 'A', nivel: 'secundario' as CatalogoRow['nivel'] })])
-    expect(csv).toContain('\r\nA;final;')
-    const [lida] = parseCatalogoRows(csv.replace(';final;', ';secundario;'))
-    expect(lida.nivel).toBe('final')
-    expect(validarCatalogo([row({ nome: 'A', nivel: 'secundario' as CatalogoRow['nivel'] })])).toEqual({
-      errors: [],
-      warnings: [],
+  it('as colunas legadas (origem/fonte_sistema/fontes_secundarias) sobrevivem ao round-trip', () => {
+    // O build as ignora, mas são dado do usuário: a API não pode comê-las.
+    const legado = row({
+      nome: 'Com legado',
     })
+    expect(parseCatalogoRows(serializarCatalogo([legado]))).toEqual([legado])
   })
 
-  it('componente com os defaults do form valida sem warning e mantém o débito gravado', () => {
-    const comp = row({
-      nome: 'Origem Teste',
-      nivel: 'origem',
-      dominio: '',
-      origem: null,
-      fonte_sistema: null,
-      debito: 'avaliar',
-      status: '',
-    })
-    expect(validarCatalogo([comp])).toEqual({ errors: [], warnings: [] })
-    const csv = serializarCatalogo([comp])
-    // O formulário é o mesmo em todos os níveis: o débito escolhido fica na
-    // linha (round-trip fiel), mesmo num componente.
-    expect(csv).toContain('\r\nOrigem Teste;origem;;;;;;d;avaliar;;;;;\r\n')
-    expect(parseCatalogoRows(csv)[0]).toEqual(comp)
+  it('a MESMA linha vale em qualquer nível: nada é canonizado por nível', () => {
+    // Antes, `associacoes` era zerada em fonte/fonte-secundaria (a lista morava
+    // nas colunas de rota). Agora a linha é a mesma em todo nível.
+    const rows = ['fonte', 'fonte-secundaria', 'origem', 'raiz'].map((nivel) =>
+      row({ nome: `N-${nivel}`, nivel, associacoes: ['Alvo'] }),
+    )
+    expect(parseCatalogoRows(serializarCatalogo(rows))).toEqual(rows)
   })
 
-  it('formato canônico: BOM, cabeçalho padrão, ";", CRLF e aspas mínimas', () => {
+  it('formato canônico: BOM, cabeçalho de 12 colunas, ";", CRLF e aspas mínimas', () => {
     const csv = serializarCatalogo([row({ nome: 'A', observacoes: 'sem aspas necessárias' })])
-    expect(csv.startsWith('\uFEFF' + 'nome;nivel;dominio;origem;fonte_sistema;')).toBe(true)
+    expect(csv.startsWith('\uFEFF' + 'nome;nivel;tipo_componente;dominio;consome;')).toBe(true)
+    expect(csv.split('\r\n')[0].split(';')).toHaveLength(12)
     expect(csv.endsWith('\r\n')).toBe(true)
-    expect(csv).toContain('\r\nA;primario;Risco;o;s;;;d;nao;producao;;;sem aspas necessárias;\r\n')
+    expect(csv).toContain('\r\nA;primario;;Risco;;d;nao;producao;;;sem aspas necessárias;\r\n')
+  })
+
+  it('CSV legado (sem tipo_componente) parseia: a coluna vem vazia', () => {
+    const legado =
+      '\uFEFFnome;nivel;dominio;origem;fonte_sistema;fontes_secundarias;consome;descricao;debito;status;owner;centro_de_custo;observacoes;associacoes\r\n' +
+      'Alfa;primario;Risco;o;s;;;d;nao;producao;;;;\r\n'
+    expect(parseCatalogoRows(legado)[0].tipo_componente).toBe('')
   })
 })
 
@@ -100,71 +93,104 @@ describe('validarCatalogo', () => {
     expect(validarCatalogo(parseCatalogoRows(original), niveis)).toEqual({ errors: [], warnings: [] })
   })
 
-  it('nome duplicado (case-insensitive) é erro, apontando as duas linhas', () => {
+  it('nome duplicado no MESMO nível (case-insensitive) é erro, apontando as duas linhas', () => {
     const { errors } = validarCatalogo([row({ nome: 'Alfa' }), row({ nome: 'ALFA' })])
-    expect(errors).toEqual(['linha 3 ("ALFA"): nome duplicado — colide com "Alfa" (linha 2)'])
-  })
-
-  it('nome vazio e nome reservado ao nó-raiz são erros', () => {
-    const { errors } = validarCatalogo([row({ nome: '  ' }), row({ nome: 'Atacado — Dados' })])
     expect(errors).toEqual([
-      'linha 2: "nome" é obrigatório',
-      'linha 3 ("Atacado — Dados"): nome reservado ao nó-raiz "Atacado — Dados"',
+      'linha 3 ("ALFA"): nome duplicado no nível "primario" — colide com "Alfa" (linha 2)',
     ])
   })
 
-  it('nivel e debito fora dos valores válidos são erros', () => {
-    const { errors } = validarCatalogo([row({ nome: 'Alfa', nivel: 'raiz' as CatalogoRow['nivel'], debito: 'talvez' as CatalogoRow['debito'] })])
-    expect(errors).toEqual([
-      'linha 2 ("Alfa"): nivel "raiz" inválido (use dominio, origem, fonte, fonte-secundaria, primario, final ou ambos)',
-      'linha 2 ("Alfa"): debito "talvez" inválido (use sim, nao ou avaliar)',
-    ])
+  it('o mesmo nome em níveis diferentes é permitido — são componentes diferentes', () => {
+    expect(
+      validarCatalogo([
+        row({ nome: 'Resultado', nivel: 'final' }),
+        row({ nome: 'Resultado', nivel: 'primario' }),
+        row({ nome: 'Resultado', nivel: 'dominio', debito: '' }),
+      ]),
+    ).toEqual({ errors: [], warnings: [] })
   })
 
-  it('componentes: debito ignorado; nome duplicado só colide DENTRO do mesmo nível', () => {
-    const { errors, warnings } = validarCatalogo([
-      row({ nome: 'Databricks', nivel: 'fonte', debito: '', origem: 'área de risco | cadastro corporativo' }),
-      row({ nome: 'Databricks', nivel: 'fonte-secundaria', debito: '', fonte_sistema: 'Outra Fonte' }),
-      row({ nome: 'Databricks', nivel: 'primario' }),
-      row({ nome: 'Risco', nivel: 'dominio', debito: '' }),
-    ])
-    expect(errors).toEqual([])
-    expect(warnings).toEqual([])
-  })
-
-  it('dois componentes do mesmo nível com o mesmo slug são erro', () => {
+  it('nome vazio é erro; nenhum nome é reservado a nível nenhum', () => {
     const { errors } = validarCatalogo([
-      row({ nome: 'Área de Risco', nivel: 'origem', debito: '' }),
-      row({ nome: 'area de risco', nivel: 'origem', debito: '' }),
+      row({ nome: '  ' }),
+      row({ nome: 'Atacado — Dados', nivel: 'raiz', debito: '' }),
+      row({ nome: 'Atacado — Dados', nivel: 'primario' }),
     ])
+    expect(errors).toEqual(['linha 2: "nome" é obrigatório'])
+  })
+
+  it('nivel inexistente é erro e a mensagem lista os níveis da cadeia', () => {
+    const { errors } = validarCatalogo([row({ nome: 'Alfa', nivel: 'inexistente' })])
     expect(errors).toEqual([
-      'linha 3 ("area de risco"): nome duplicado — colide com "Área de Risco" (linha 2)',
+      'linha 2 ("Alfa"): nivel "inexistente" inválido (use um destes: raiz, dominio, final, primario, fonte-secundaria, fonte, origem)',
     ])
   })
 
-  it('consome de componente built-in é ignorado; o componente é alvo válido de consome', () => {
-    const { errors, warnings } = validarCatalogo([
-      row({ nome: 'Databricks', nivel: 'fonte', debito: '', consome: ['Não Existe'] }),
-      row({ nome: 'Alfa', consome: ['Databricks'] }),
+  it('nivel vazio é erro', () => {
+    const { errors } = validarCatalogo([row({ nome: 'Alfa', nivel: '' })])
+    expect(errors[0]).toContain('linha 2 ("Alfa"): "nivel" é obrigatório')
+  })
+
+  it('debito e status são opcionais em QUALQUER nível; débito inválido é erro', () => {
+    expect(validarCatalogo([row({ nome: 'Alfa', debito: '', status: '' })])).toEqual({
+      errors: [],
+      warnings: [],
+    })
+    const { errors } = validarCatalogo([
+      row({ nome: 'Alfa', debito: 'talvez' as CatalogoRow['debito'] }),
     ])
-    expect(errors).toEqual([])
-    expect(warnings).toEqual([])
+    expect(errors).toEqual([
+      'linha 2 ("Alfa"): debito "talvez" inválido (use sim, nao, avaliar ou deixe vazio)',
+    ])
+  })
+
+  it('tipo_componente fora da lista é erro; os quatro valores e o vazio passam', () => {
+    const { errors } = validarCatalogo([row({ nome: 'Alfa', tipo_componente: 'Parquet' })])
+    expect(errors).toEqual([
+      'linha 2 ("Alfa"): tipo_componente "Parquet" inválido (use "Tabela SQL", "Tabela Delta", "Excel", "Default")',
+    ])
+    for (const tipo of ['Tabela SQL', 'Tabela Delta', 'Excel', 'Default', '']) {
+      expect(validarCatalogo([row({ nome: 'Alfa', tipo_componente: tipo })]).errors).toEqual([])
+    }
   })
 
   it('consome inexistente é WARNING (vira fantasma), não erro; resolve por nome ou id', () => {
     const { errors, warnings } = validarCatalogo([
-      row({ nome: 'Alfa', consome: ['beta', 'rar-12m', 'Não Existe'] }),
+      row({ nome: 'Alfa', consome: ['beta', 'final-rar-12m', 'Não Existe'] }),
       row({ nome: 'Beta' }),
       row({ nome: 'RAR 12M', nivel: 'final' }),
     ])
     expect(errors).toEqual([])
-    expect(warnings).toEqual(['"Alfa": consome "Não Existe", que não existe no catálogo — o build criará um nó fantasma'])
+    expect(warnings).toEqual([
+      '"Alfa": consome "Não Existe", que não existe no catálogo — o build criará um nó fantasma',
+    ])
+  })
+
+  it('associação inexistente é warning próprio (o build a ignora, sem criar nó)', () => {
+    const { errors, warnings } = validarCatalogo([
+      row({ nome: 'Alfa', associacoes: ['Beta', 'Não Existe'] }),
+      row({ nome: 'Beta', nivel: 'fonte', debito: '' }),
+    ])
+    expect(errors).toEqual([])
+    expect(warnings).toEqual([
+      '"Alfa": associação "Não Existe" não existe no catálogo — o build vai ignorá-la',
+    ])
+  })
+
+  it('consome/associacoes valem em qualquer nível, cruzando a cadeia livremente', () => {
+    expect(
+      validarCatalogo([
+        row({ nome: 'Fonte X', nivel: 'fonte', debito: '', consome: ['Origem Y'] }),
+        row({ nome: 'Origem Y', nivel: 'origem', debito: '', associacoes: ['Raiz Z'] }),
+        row({ nome: 'Raiz Z', nivel: 'raiz', debito: '' }),
+      ]),
+    ).toEqual({ errors: [], warnings: [] })
   })
 })
 
 describe('rowsDoBody (forma do body do POST)', () => {
   it('aceita {"rows": [...]} completo e preserva os campos', () => {
-    const original = row({ nome: 'Alfa', consome: ['Beta'] })
+    const original = row({ nome: 'Alfa', tipo_componente: 'Excel', consome: ['Beta'] })
     const { rows, errors } = rowsDoBody({ rows: [original] })
     expect(errors).toEqual([])
     expect(rows).toEqual([original])
@@ -173,13 +199,19 @@ describe('rowsDoBody (forma do body do POST)', () => {
   it('campos ausentes ganham defaults (string vazia, null, lista vazia)', () => {
     const { rows, errors } = rowsDoBody({ rows: [{ nome: 'Alfa', nivel: 'primario', debito: 'nao' }] })
     expect(errors).toEqual([])
-    expect(rows[0]).toMatchObject({ dominio: '', origem: null, owner: null, consome: [], fontes_secundarias: [], observacoes: '' })
+    expect(rows[0]).toMatchObject({
+      tipo_componente: '',
+      dominio: '',
+      owner: null,
+      consome: [],
+      observacoes: '',
+    })
   })
 
-  it('nivel "secundario" no body é canonizado para "final"', () => {
-    const { rows, errors } = rowsDoBody({ rows: [{ nome: 'Alfa', nivel: 'secundario', debito: 'nao' }] })
+  it('nivel chega como veio: não há apelido de nível nenhum', () => {
+    const { rows, errors } = rowsDoBody({ rows: [{ nome: 'Alfa', nivel: 'silver', debito: 'nao' }] })
     expect(errors).toEqual([])
-    expect(rows[0].nivel).toBe('final')
+    expect(rows[0].nivel).toBe('silver')
   })
 
   it('body sem "rows" ou com campo de tipo errado é rejeitado', () => {
@@ -187,5 +219,10 @@ describe('rowsDoBody (forma do body do POST)', () => {
     const { rows, errors } = rowsDoBody({ rows: [{ nome: 42 }, { nome: 'Ok', consome: 'GDAD' }] })
     expect(errors).toEqual(['rows[0].nome: deve ser string', 'rows[1].consome: deve ser uma lista de strings'])
     expect(rows).toEqual([])
+  })
+
+  it('tipo_componente não-string é rejeitado na forma do body', () => {
+    const { errors } = rowsDoBody({ rows: [{ nome: 'Alfa', tipo_componente: 7 }] })
+    expect(errors).toEqual(['rows[0].tipo_componente: deve ser string'])
   })
 })
