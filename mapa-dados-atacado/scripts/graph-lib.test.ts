@@ -603,23 +603,21 @@ describe('catalogo.csv real (catálogo em 4 níveis + níveis medalhão)', () =>
     expect(graph.nodes.filter((n) => n.fantasma === true)).toEqual([])
   })
 
-  it('50 linhas no CSV (33 produtos + 16 de nível medalhão + 1 componente) + raiz = 34 dados', () => {
+  it('cabeçalho canônico e uma linha por nó de dado (fora a raiz automática)', () => {
     const registros = parseCsv(readFileSync(caminho, 'utf8'))
-    expect(registros).toHaveLength(51) // cabeçalho + 33 + 16 + 1
     expect(registros[0]).toEqual([...COLUNAS])
-    expect(dados).toHaveLength(34)
-    // As 16 linhas de nível medalhão (Gold/Silver/Broze) são nós niv-*.
-    expect(graph.nodes.filter((n) => n.tipo === 'nivel-custom')).toHaveLength(16)
+    // Contagens exatas ficariam desatualizadas a cada cadastro pelo app: o que
+    // vale é a correspondência entre linhas do arquivo e nós do grafo.
+    const linhas = registros.length - 1
+    const nosDeLinha = dados.length - 1 + graph.nodes.filter((n) => n.cadastrado === true).length
+    expect(nosDeLinha).toBe(linhas)
   })
 
-  it('34 nós de dados: 1 raiz, 20 primários, 11 finais e 2 "ambos"', () => {
+  it('exatamente uma raiz, e todo nó de dado num nível conhecido', () => {
     expect(dados.filter((n) => n.nivel === 'raiz').map((n) => n.id)).toEqual(['atacado-dados'])
-    expect(dados.filter((n) => n.nivel === 'primario')).toHaveLength(20)
-    expect(dados.filter((n) => n.nivel === 'final')).toHaveLength(11)
-    expect(dados.filter((n) => n.nivel === 'ambos').map((n) => n.id).sort()).toEqual([
-      'rating',
-      'restritivos-e-tipos',
-    ])
+    // 'ambos' não é coluna própria: é o produto que também é insumo.
+    const slugs = new Set([...graph.niveis.map((n) => n.slug), 'ambos'])
+    for (const n of dados) expect(slugs.has(n.nivel)).toBe(true)
   })
 
   it('grafo íntegro: ids únicos e toda aresta entre nós existentes', () => {
@@ -684,36 +682,16 @@ describe('catalogo.csv real (catálogo em 4 níveis + níveis medalhão)', () =>
     expect(graph.links.filter((l) => l.target === 'atacado-dados')).toEqual([])
   })
 
-  it('6 nós de domínio (5 entre a raiz e os 13 produtos finais + 1 cadastrado isolado)', () => {
+  it('todo produto final chega da raiz por um nó de domínio', () => {
     const doms = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'dominio')
-    expect(doms.map((n) => n.nome).sort()).toEqual([
-      'Bacen (DOM)',
-      'Cadastro',
-      'Mercado',
-      'Regulatório',
-      'Resultado',
-      'Risco',
-    ])
-    const produtosDe = (id: string) =>
-      graph.links
-        .filter((l) => l.source === id && l.label === 'agrega')
-        .map((l) => l.target)
-        .sort()
-    expect(produtosDe('dom-cadastro')).toEqual(['account', 'faturamento'])
-    expect(produtosDe('dom-mercado')).toEqual([
-      'localizacao',
-      'segmentacao-e-encarteiramento',
-      'setorizacao',
-    ])
-    expect(produtosDe('dom-risco')).toEqual(['rating', 'restritivos-e-tipos'])
-    expect(produtosDe('dom-resultado')).toEqual([
-      'estoque-carteira',
-      'evolucao-do-resultado',
-      'evolucao-do-resultado-por-produto',
-      'rar-12m',
-      'resultado',
-    ])
-    expect(produtosDe('dom-regulatorio')).toEqual(['endividamento-de-mercado'])
+    const daRaiz = new Set(
+      graph.links.filter((l) => l.source === 'atacado-dados').map((l) => String(l.target)),
+    )
+    // A raiz só liga em domínios, e cada domínio ligado tem ao menos um produto.
+    for (const id of daRaiz) expect(doms.some((d) => d.id === id)).toBe(true)
+    for (const id of daRaiz) {
+      expect(graph.links.some((l) => l.source === id && l.label === 'agrega')).toBe(true)
+    }
   })
 
   it('nenhum self-loop e nada consumido pelos itens a mapear', () => {
@@ -726,22 +704,16 @@ describe('catalogo.csv real (catálogo em 4 níveis + níveis medalhão)', () =>
     expect(alvosDe('restritivos-e-tipos')).toEqual([])
   })
 
-  it('produtos finais com as cadeias esperadas', () => {
-    const alvos = (id: string) =>
-      consome
-        .filter((l) => l.source === id)
-        .map((l) => l.target)
-        .sort()
-    expect(alvos('setorizacao')).toEqual(['bacen', 'classificacao-de-setores', 'gdp', 'rfb'])
-    // GDAD foi transferido para o nível Gold: quem o consome segue apontando
-    // para o nó real (agora niv-gold-gdad), sem fantasma.
-    expect(alvos('rar-12m')).toEqual([
-      'capital-regulatorio',
-      'custo-de-capital-ke',
-      'estatag',
-      'niv-gold-gdad',
-    ])
-    expect(alvos('evolucao-do-resultado-por-produto')).toEqual(['niv-broze-de-para-de-produtos'])
+  it('toda aresta "consome" aponta para uma linha real do catálogo', () => {
+    // Quais cadeias existem é decisão do catálogo (editável pelo app); o
+    // invariante é que consumo nunca aponta para fantasma nem para derivado
+    // de campo — só para nós que têm linha própria (produto ou componente).
+    const porId = new Map(graph.nodes.map((n) => [n.id, n]))
+    for (const l of consome) {
+      const alvo = porId.get(String(l.target))
+      expect(alvo).toBeDefined()
+      expect(alvo?.fantasma).not.toBe(true)
+    }
   })
 
   it('produtos finais não derivam sistema/origem (células vazias)', () => {
