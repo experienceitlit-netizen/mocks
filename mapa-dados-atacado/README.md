@@ -64,17 +64,46 @@ O `dist/` é estático puro: pode ser aberto em qualquer hosting interno de arqu
 
 ## Distribuição
 
-Dois pacotes ficam em `../entregas/` (fora do git):
+### Pacote de demonstração (o que você entrega)
 
-- **App pronto para rodar** (`mapa-dados-atacado-app.zip`): um único HTML
-  autocontido que abre por duplo clique, sem Node nem servidor — e que também
-  **edita** os CSVs da pasta que o usuário escolher, no Chrome ou no Edge (ver
-  "Os três modos de edição"). Zipe os CSVs junto com ele. Regenerar:
-  `npm run build:standalone` gera `dist-standalone/index.html`; renomeie para
-  `Mapa de Dados do Atacado.html` e zipe junto com um `LEIA-ME.txt`.
-- **Fonte** (`mapa-dados-atacado-fonte.zip`): snapshot limpo do repositório.
-  Regenerar na raiz do repo: `git archive --format=zip -o entregas/mapa-dados-atacado-fonte.zip HEAD`
-  e acrescente um `COMO-RODAR.txt` (Node 20+, `npm install && npm run dev`).
+```bash
+npm run pacote
+```
+
+Um comando: gera o HTML autocontido e monta `../entregas/mapa-dados-atacado-demo.zip`
+(~160 KB) com esta estrutura:
+
+```
+Mapa de Dados do Atacado/
+  Mapa de Dados do Atacado.html   # abre por duplo clique, sem instalar nada
+  catalogo/
+    catalogo.csv                  # cópia do catálogo no momento da geração
+    niveis.csv
+  LEIA-ME.txt                     # como navegar e como editar
+```
+
+Quem recebe abre o HTML e vê o mapa completo. Para **editar**, clica em
+"Abrir catálogo", escolhe a pasta `catalogo/` que veio no zip e autoriza — daí em
+diante o que salvar é gravado naqueles dois CSVs (Chrome ou Edge; ver "Os três
+modos de edição"). Para devolver o trabalho, basta reenviar os dois arquivos.
+
+Os CSVs vão como **cópia**: quem testa a demo não toca no catálogo do repositório,
+e várias pessoas podem editar a sua sem conflito. O HTML carrega os dados
+embutidos da geração, então **regere o pacote** (`npm run pacote`) sempre que o
+catálogo mudar e você for distribuir de novo.
+
+O conteúdo do `LEIA-ME.txt` fica em `scripts/pacote-leia-me.txt` (a data é
+preenchida na geração); o empacotamento em si está em `scripts/empacotar.ts`.
+
+### Fonte
+
+Snapshot limpo do repositório, na raiz do repo:
+
+```bash
+git archive --format=zip -o entregas/mapa-dados-atacado-fonte.zip HEAD
+```
+
+Acrescente um `COMO-RODAR.txt` (Node 20+, `npm install && npm run dev`).
 
 ## Os três modos de edição
 

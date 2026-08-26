@@ -1,0 +1,44 @@
+MAPA DE DADOS DO ATACADO
+========================
+
+Um arquivo, sem instalação. Duplo clique em:
+
+    Mapa de Dados do Atacado.html
+
+Abre no navegador (use Chrome ou Edge) e mostra o mapa completo dos
+componentes de dados, organizados por nível — da esquerda para a direita.
+
+
+COMO NAVEGAR
+------------
+- Clique num componente para fixar o destaque das relações dele.
+- Botão DIREITO abre o balão com os detalhes.
+- Duplo clique (ou "Focar neste nó") entra na cadeia daquele componente.
+- "Mostrar níveis" e "Mostrar associações" limpam a visualização.
+- Aba "Tabela" lista tudo em formato de planilha, com busca e ordenação.
+
+
+COMO EDITAR (opcional)
+----------------------
+Ao abrir, o app está em modo leitura: os dados vieram embutidos no HTML.
+Para editar de verdade:
+
+  1. Clique em "Abrir catálogo" no topo da tela.
+  2. Escolha a PASTA "catalogo" que veio junto deste arquivo.
+  3. Autorize o acesso quando o navegador perguntar.
+
+Pronto: os botões de cadastrar, editar, excluir e gerenciar níveis aparecem,
+e tudo que você salvar é gravado nos arquivos catalogo.csv e niveis.csv que
+estão dentro daquela pasta.
+
+Para devolver o que você editou, basta enviar de volta esses dois arquivos.
+
+Observações:
+- A edição precisa de Chrome ou Edge. No Firefox o app abre em leitura.
+- O navegador pode pedir a autorização de novo em uma nova sessão. É normal:
+  nenhuma página acessa arquivos do seu computador sem o seu consentimento.
+- O HTML não se atualiza sozinho com o que você editar: ele mostra os dados
+  da pasta enquanto estiver aberto com ela.
+
+
+Gerado em {{DATA}}.

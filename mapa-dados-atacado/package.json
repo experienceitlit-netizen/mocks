@@ -12,6 +12,8 @@
     "build": "tsc -b && vite build",
     "prebuild:standalone": "npm run data",
     "build:standalone": "tsc -b && vite build --config vite.config.standalone.ts",
+    "prepacote": "npm run build:standalone",
+    "pacote": "tsx scripts/empacotar.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },

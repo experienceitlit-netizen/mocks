@@ -4,3 +4,4 @@ dist-standalone/
 entregas/
 *.log
 .DS_Store
+.pacote-tmp/
