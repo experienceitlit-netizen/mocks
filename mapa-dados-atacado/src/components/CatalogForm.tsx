@@ -1,9 +1,10 @@
-// Formulário de edição/cadastro de componentes do catálogo (só no dev server,
-// com a API /api/catalogo ativa). Modal centrado sobre o mapa; ao salvar, o
-// plugin regrava catalogo.csv e regenera graph.json — o graph.json novo chega
-// por HMR (react-refresh preserva o estado; a página NÃO recarrega), então o
-// submit re-lê o catálogo antes de montar o conjunto completo (as rows da prop
-// podem ser as do mount) e o App re-busca as rows após o save (onSaved).
+// Formulário de edição/cadastro de componentes do catálogo (só em modo edição,
+// com um store de persistência ativo — dev server ou pasta local). Modal
+// centrado sobre o mapa; ao salvar, o store regrava o catalogo.csv e remonta o
+// grafo — no dev server o graph.json novo chega por HMR (react-refresh preserva
+// o estado; a página NÃO recarrega), então o submit re-lê o catálogo antes de
+// montar o conjunto completo (as rows da prop podem ser as do mount) e o App
+// re-busca as rows após o save (onSaved).
 //
 // Os dois primeiros campos identificam o componente: "Nível/Camada" (a que
 // camada ele pertence — qualquer nível do bloco `niveis`, sem exceção) e
@@ -15,7 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import type { CatalogoRow, SaveOk } from './catalog-api'
-import { fetchCatalogo, saveCatalogo } from './catalog-api'
+import type { CatalogStore } from './catalog-store'
 import type { Referencia } from './catalog-delete'
 import { removerComponente } from './catalog-delete'
 import type { RowFormState } from './catalog-form-row'
@@ -187,7 +188,9 @@ export type FormTarget =
   | { modo: 'cadastrar'; nome: string; nivel: string }
 
 interface CatalogFormProps {
-  /** Linhas atuais do catálogo (GET /api/catalogo no mount do App). */
+  /** Onde o catálogo é lido e gravado (dev server ou arquivo local). */
+  store: CatalogStore
+  /** Linhas atuais do catálogo (lidas do store no mount do App). */
   rows: CatalogoRow[]
   target: FormTarget
   /** Bloco `niveis` do graph.json: monta o select "Nível/Camada". */
@@ -201,6 +204,7 @@ interface CatalogFormProps {
 }
 
 export default function CatalogForm({
+  store,
   rows,
   target,
   niveis,
@@ -341,17 +345,17 @@ export default function CatalogForm({
       // Base FRESCA do catálogo: as rows da prop são as do mount do App e um
       // save anterior nesta mesma sessão não recarrega a página (HMR) — montar
       // o conjunto completo a partir delas apagaria o cadastro anterior.
-      const atuais = (await fetchCatalogo()) ?? rows
+      const atuais = (await store.lerCatalogo()) ?? rows
       const idx =
         target.modo === 'editar'
           ? atuais.findIndex((r) => r.nome === target.nome && r.nivel === target.nivel)
           : -1
       const row: CatalogoRow = montarRow(estado, idx >= 0 ? atuais[idx] : null)
       const next = idx >= 0 ? atuais.map((r, i) => (i === idx ? row : r)) : [...atuais, row]
-      const res = await saveCatalogo(next)
+      const res = await store.salvarCatalogo(next)
       if (res.ok) {
-        // CSV e graph.json regravados; o grafo novo chega por HMR e o App
-        // re-busca as rows — a confirmação fica visível e o form fecha em 4s.
+        // CSV regravado e grafo remontado; o App re-busca as rows e troca o
+        // grafo — a confirmação fica visível e o form fecha em 4s.
         onSaved()
         setSaved(res)
         closeTimer.current = window.setTimeout(onClose, 4000)
@@ -359,7 +363,7 @@ export default function CatalogForm({
         setErrors(res.errors)
       }
     } catch (err) {
-      setErrors([err instanceof Error ? err.message : 'Falha de rede ao salvar.'])
+      setErrors([err instanceof Error ? err.message : 'Falha ao salvar.'])
     } finally {
       setSaving(false)
     }
@@ -372,7 +376,7 @@ export default function CatalogForm({
     setErrors([])
     setSaving(true)
     try {
-      const atuais = (await fetchCatalogo()) ?? rows
+      const atuais = (await store.lerCatalogo()) ?? rows
       const alvo = { nome: target.nome, nivel: target.nivel }
       const r = removerComponente(atuais, alvo)
       if (!r.encontrada) {
@@ -383,7 +387,7 @@ export default function CatalogForm({
         setConfirmarExclusao(r.referencias)
         return
       }
-      const res = await saveCatalogo(r.rows)
+      const res = await store.salvarCatalogo(r.rows)
       if (res.ok) {
         onSaved()
         setSaved(res)
@@ -392,7 +396,7 @@ export default function CatalogForm({
         setErrors(res.errors)
       }
     } catch (err) {
-      setErrors([err instanceof Error ? err.message : 'Falha de rede ao excluir.'])
+      setErrors([err instanceof Error ? err.message : 'Falha ao excluir.'])
     } finally {
       setSaving(false)
     }

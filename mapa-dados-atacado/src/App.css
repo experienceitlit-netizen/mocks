@@ -93,6 +93,61 @@
   background: rgba(127, 180, 232, 0.15);
 }
 
+.topbar__new:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* fonte de dados: chip do modo ativo + botões de abrir/importar catálogo */
+
+.fonte {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.fonte__chip {
+  flex-shrink: 1;
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid #3a5a4a;
+  background: rgba(127, 232, 180, 0.08);
+  color: #8fd9b4;
+  font-size: 0.7rem;
+}
+
+.fonte__chip--leitura {
+  border-color: #4a4a4a;
+  background: rgba(200, 200, 200, 0.06);
+  color: #9a9a9a;
+}
+
+/* o input de arquivo fica escondido: quem dispara é o botão "Importar CSV" */
+.fonte__input {
+  display: none;
+}
+
+.fonte__erro {
+  max-width: 26rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid #7a3a3a;
+  background: rgba(232, 127, 127, 0.1);
+  color: #e89090;
+  font-size: 0.7rem;
+  text-align: left;
+  cursor: pointer;
+}
+
 .search-box {
   pointer-events: auto;
   margin-left: auto;

@@ -11,7 +11,14 @@ import type { Vista } from './components/FocusBar'
 import Legend from './components/Legend'
 import TableView from './components/TableView'
 import type { Counts } from './components/Filters'
-import type { Debito, GraphJson, GraphNodeData, SimLink, SimNode } from './components/graph-types'
+import type {
+  Debito,
+  GraphJson,
+  GraphNodeData,
+  NivelDef,
+  SimLink,
+  SimNode,
+} from './components/graph-types'
 import {
   debitoDe,
   derivarNiveis,
@@ -25,7 +32,8 @@ import CatalogForm from './components/CatalogForm'
 import type { FormTarget } from './components/CatalogForm'
 import NiveisModal from './components/NiveisModal'
 import type { CatalogoRow } from './components/catalog-api'
-import { fetchCatalogo } from './components/catalog-api'
+import FonteBar from './components/FonteBar'
+import { useFonteCatalogo } from './components/useFonteCatalogo'
 import './App.css'
 
 /** Busca insensível a caixa e acentos. */
@@ -37,21 +45,30 @@ function norm(s: string): string {
     .trim()
 }
 
-const GRAPH = graphJson as GraphJson
+/** Grafo de partida: o src/data/graph.json que o build gerou. No modo de
+ *  edição em arquivo local (pacote HTML sem servidor) ele é substituído pelo
+ *  grafo que o próprio navegador monta a partir dos CSVs abertos — ver
+ *  components/catalog-store-local.ts. */
+const GRAPH_INICIAL = graphJson as GraphJson
 
 /** Níveis da cadeia ordenados por `ordem` (colunas da vista Níveis, chips de
  *  filtro, select do formulário). graph.json sem o bloco (build antigo) tem os
  *  níveis derivados dos próprios componentes. */
-const NIVEIS =
-  GRAPH.niveis !== undefined && GRAPH.niveis.length > 0
-    ? [...GRAPH.niveis].sort((a, b) => a.ordem - b.ordem)
-    : derivarNiveis(GRAPH.nodes)
+function niveisDoGrafo(graph: GraphJson): NivelDef[] {
+  return graph.niveis !== undefined && graph.niveis.length > 0
+    ? [...graph.niveis].sort((a, b) => a.ordem - b.ordem)
+    : derivarNiveis(graph.nodes)
+}
 
 /** Componente de entrada do mapa: o único do nível de menor ordem. É a entrada
  *  padrão do app — sem parâmetros na URL, a navegação começa focada nele (e o
  *  foco nele mostra o inventário completo, ver buildLineage). null quando não
  *  há entrada óbvia: o app abre no mapa completo. */
-const ENTRADA_ID = noDeEntrada(GRAPH.nodes, NIVEIS)?.id ?? null
+function entradaDoGrafo(graph: GraphJson, niveis: readonly NivelDef[]): string | null {
+  return noDeEntrada(graph.nodes, niveis)?.id ?? null
+}
+
+const ENTRADA_INICIAL = entradaDoGrafo(GRAPH_INICIAL, niveisDoGrafo(GRAPH_INICIAL))
 
 function readUrlSelection(): string | null {
   return new URLSearchParams(window.location.search).get('no')
@@ -66,10 +83,10 @@ function readUrlFocus(): string | null {
  *  fechado). URL sem parâmetros SEMPRE significa essa entrada padrão — o
  *  estado "mapa global" não é codificado na URL (ver efeito de sincronização
  *  abaixo). */
-function readInitialFocusPath(): string[] {
+function readInitialFocusPath(entradaId: string | null): string[] {
   const foco = readUrlFocus()
   if (foco) return [foco]
-  if (ENTRADA_ID !== null && readUrlSelection() === null) return [ENTRADA_ID]
+  if (entradaId !== null && readUrlSelection() === null) return [entradaId]
   return []
 }
 
@@ -101,8 +118,16 @@ function toggled<T>(set: ReadonlySet<T>, value: T): Set<T> {
 const DBLCLICK_MS = 350
 
 function App() {
-  const { nodes, links } = GRAPH
-  const niveis = NIVEIS
+  // Grafo montado no cliente (modo arquivo local); null = usar o graph.json
+  // importado. Ele NÃO é o estado inicial de um useState de propósito: no dev
+  // server o graph.json novo chega por HMR re-executando este módulo, e um
+  // estado inicializado uma vez só congelaria o mapa no que foi carregado no
+  // mount. Lido assim, o comportamento no dev server é o de sempre.
+  const [grafoLocal, setGrafoLocal] = useState<GraphJson | null>(null)
+  const graph = grafoLocal ?? GRAPH_INICIAL
+  const { nodes, links } = graph
+  const niveis = useMemo(() => niveisDoGrafo(graph), [graph])
+  const entradaId = useMemo(() => entradaDoGrafo(graph, niveis), [graph, niveis])
 
   // A lib de força muta os objetos (injeta x/y) — clona uma única vez.
   const simData = useMemo<{ nodes: SimNode[]; links: SimLink[] }>(
@@ -189,7 +214,7 @@ function App() {
   const [selNiveis, setSelNiveis] = useState<ReadonlySet<string>>(new Set())
   const [somenteSemOwner, setSomenteSemOwner] = useState(false)
 
-  const [focusPath, setFocusPath] = useState<string[]>(readInitialFocusPath)
+  const [focusPath, setFocusPath] = useState<string[]>(() => readInitialFocusPath(ENTRADA_INICIAL))
   const [depth, setDepth] = useState<number>(readUrlDepth)
   const [vista, setVista] = useState<Vista>(readUrlVista)
   // Faixas de nível (retângulos + títulos + chevrons) da vista Níveis.
@@ -200,10 +225,13 @@ function App() {
 
   const focusId = focusPath.length > 0 ? focusPath[focusPath.length - 1] : null
 
-  // --- modo edição (só no dev server, com a API /api/catalogo ativa) ---
-  // Feature-detect no mount: GET /api/catalogo com sucesso liga os controles
-  // de edição ("+ Novo componente", "✎ Editar" no balão). No build estático ou
-  // standalone o fetch falha e nada de edição aparece.
+  // --- modo edição ---
+  // Quem persiste é o store escolhido no mount (ver useFonteCatalogo): a API do
+  // dev server, uma pasta local aberta pelo usuário ou nada. Sem store, o app
+  // fica somente leitura e nenhum controle de edição aparece — exatamente o que
+  // acontecia no build estático antes de existir o modo arquivo.
+  const fonte = useFonteCatalogo()
+  const store = fonte.store
   const [catalogRows, setCatalogRows] = useState<CatalogoRow[] | null>(null)
   // null = fechado; FormTarget = cadastro em branco, edição de linha ou
   // cadastro pré-preenchido de um componente ainda sem linha.
@@ -211,24 +239,45 @@ function App() {
   // Modal "≣ Níveis" (gerenciar níveis; só em modo edição).
   const [niveisOpen, setNiveisOpen] = useState(false)
   useEffect(() => {
+    if (store === null) {
+      setCatalogRows(null)
+      return
+    }
     let alive = true
-    void fetchCatalogo().then((rows) => {
+    void store.lerCatalogo().then((rows) => {
       if (alive) setCatalogRows(rows)
     })
     return () => {
       alive = false
     }
-  }, [])
+  }, [store])
+
+  // Catálogo aberto de um arquivo local: o grafo passa a ser o que o próprio
+  // navegador montou a partir dos CSVs, e a navegação recomeça na entrada dele
+  // (os ids do catálogo novo não têm relação com os do graph.json embutido).
+  useEffect(() => {
+    const novo = store?.grafo() ?? null
+    if (novo === null) return
+    setGrafoLocal(novo)
+    const entrada = entradaDoGrafo(novo, niveisDoGrafo(novo))
+    setFocusPath(entrada === null ? [] : [entrada])
+    setSelectedId(null)
+    setPinnedId(null)
+  }, [store])
 
   // Save confirmado pelo form: re-busca as rows. Um save NÃO recarrega a
-  // página (o graph.json novo chega por HMR preservando o estado dos hooks);
-  // sem o re-fetch, o próximo cadastro partiria da lista do mount e apagaria
-  // o anterior do CSV.
+  // página (no dev server o graph.json novo chega por HMR preservando o estado
+  // dos hooks); sem o re-fetch, o próximo cadastro partiria da lista do mount e
+  // apagaria o anterior do CSV. No modo arquivo local não há HMR: o grafo novo
+  // é o que o próprio save acabou de montar.
   const refreshCatalogo = useCallback(() => {
-    void fetchCatalogo().then((rows) => {
+    if (store === null) return
+    void store.lerCatalogo().then((rows) => {
       if (rows) setCatalogRows(rows)
     })
-  }, [])
+    const novo = store.grafo()
+    if (novo !== null) setGrafoLocal(novo)
+  }, [store])
 
   // Cada abertura ganha uma key nova: o form monta sempre zerado, mesmo que o
   // alvo troque com o modal já aberto (nada herda do uso anterior).
@@ -449,7 +498,7 @@ function App() {
     else url.searchParams.delete('aba')
     if (selectedId) url.searchParams.set('no', selectedId)
     else url.searchParams.delete('no')
-    const focoDefault = focusId === ENTRADA_ID && vista === 'niveis' && !selectedId
+    const focoDefault = focusId === entradaId && vista === 'niveis' && !selectedId
     if (focusId && !focoDefault) {
       url.searchParams.set('foco', focusId)
       url.searchParams.set('vista', vista)
@@ -461,7 +510,7 @@ function App() {
       url.searchParams.delete('vista')
     }
     window.history.replaceState(null, '', url)
-  }, [aba, selectedId, focusId, depth, vista])
+  }, [aba, selectedId, focusId, depth, vista, entradaId])
 
   // Esc em estágios: cancela o formulário de edição, senão fecha o balão,
   // senão desfixa o destaque, senão sai do foco. Na aba Tabela, volta ao mapa
@@ -477,13 +526,20 @@ function App() {
     else if (focusId) exitFocus()
   }
 
+  // O componente de entrada muda quando o catálogo em edição muda (modo
+  // arquivo); o handler de popstate é registrado uma vez só e lê pela ref.
+  const entradaRef = useRef(entradaId)
+  useEffect(() => {
+    entradaRef.current = entradaId
+  }, [entradaId])
+
   useEffect(() => {
     const onPopState = () => {
       const id = readUrlSelection()
       setAba(readUrlAba())
       setSelectedId(id)
       setPinnedId(null)
-      setFocusPath(readInitialFocusPath())
+      setFocusPath(readInitialFocusPath(entradaRef.current))
       setDepth(readUrlDepth())
       setVista(readUrlVista())
       if (id) graphRef.current?.focusNode(id)
@@ -635,6 +691,7 @@ function App() {
             </button>
           </>
         )}
+        <FonteBar fonte={fonte} />
         {aba === 'mapa' && (
           <SearchBox
             query={query}
@@ -709,9 +766,10 @@ function App() {
         />
       )}
 
-      {catalogForm && catalogRows !== null && (
+      {catalogForm && catalogRows !== null && store !== null && (
         <CatalogForm
           key={formSeq.current}
+          store={store}
           rows={catalogRows}
           target={catalogForm}
           niveis={niveis}
@@ -723,6 +781,7 @@ function App() {
 
       {niveisOpen && (
         <NiveisModal
+          store={store}
           niveis={niveis}
           onSaved={refreshCatalogo}
           onClose={() => setNiveisOpen(false)}

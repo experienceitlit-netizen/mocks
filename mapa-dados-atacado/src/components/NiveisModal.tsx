@@ -2,15 +2,15 @@
 // editáveis e removíveis — os que vieram com o modelo inclusive. O que amarra
 // um nível ao catálogo é o `slug`, não o título: renomear um nível não mexe em
 // nenhuma linha do catalogo.csv.
-// Toda mudança vai por POST /api/niveis com a lista COMPLETA (mesma disciplina
-// do catálogo): adicionar/remover postam na hora; edições de título/ordem
+// Toda mudança vai pelo store com a lista COMPLETA (mesma disciplina do
+// catálogo): adicionar/remover salvam na hora; edições de título/ordem
 // acumulam e vão juntas no "Salvar alterações". Remover pede confirmação (o
-// nível deixa de ser uma coluna do mapa) e a API recusa remoção de nível em
+// nível deixa de ser uma coluna do mapa) e o save recusa remoção de nível em
 // uso — o erro aparece no próprio modal.
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { NivelApiRow } from './catalog-api'
-import { fetchNiveis, saveNiveis } from './catalog-api'
+import type { CatalogStore } from './catalog-store'
 import type { NivelDef } from './graph-types'
 
 function norm(s: string): string {
@@ -37,8 +37,10 @@ const comoLinha = (r: NivelApiRow): Linha => ({
 })
 
 interface NiveisModalProps {
-  /** Bloco `niveis` do graph.json atual: fallback de leitura quando a API não
-   *  responde (build estático) — a edição vem sempre de /api/niveis. */
+  /** Onde os níveis são lidos e gravados; null = sem fonte editável. */
+  store: CatalogStore | null
+  /** Bloco `niveis` do graph.json atual: fallback de leitura quando não há
+   *  store (build estático sem catálogo aberto). */
   niveis: readonly NivelDef[]
   /** Save confirmado: o App re-busca o que depende do catálogo (o graph.json
    *  novo chega por HMR, como no formulário de componentes). */
@@ -46,9 +48,9 @@ interface NiveisModalProps {
   onClose(): void
 }
 
-export default function NiveisModal({ niveis, onSaved, onClose }: NiveisModalProps) {
-  // null = GET ainda em voo. `apiOff` cobre o build sem API: o modal lista os
-  // níveis do graph.json e desliga as ações.
+export default function NiveisModal({ store, niveis, onSaved, onClose }: NiveisModalProps) {
+  // null = leitura ainda em voo. `apiOff` cobre o app sem fonte editável: o
+  // modal lista os níveis do graph.json e desliga as ações.
   const [linhas, setLinhas] = useState<Linha[] | null>(null)
   const [apiOff, setApiOff] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -64,7 +66,7 @@ export default function NiveisModal({ niveis, onSaved, onClose }: NiveisModalPro
 
   useEffect(() => {
     let alive = true
-    void fetchNiveis().then((rows) => {
+    void (store?.lerNiveis() ?? Promise.resolve(null)).then((rows) => {
       if (!alive) return
       if (rows === null) {
         setApiOff(true)
@@ -82,19 +84,20 @@ export default function NiveisModal({ niveis, onSaved, onClose }: NiveisModalPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  /** Lista completa como a API a espera: o slug preserva a identidade de cada
+  /** Lista completa como o store a espera: o slug preserva a identidade de cada
    *  nível (vazio só no que acabou de ser criado). */
   const payload = (rows: Linha[]): NivelApiRow[] =>
     rows.map((r) => (r.slug === '' ? { titulo: r.titulo.trim(), ordem: r.ordem } : { slug: r.slug, titulo: r.titulo.trim(), ordem: r.ordem }))
 
   const post = async (next: Linha[], aposOk: () => void) => {
+    if (store === null) return
     setErrors([])
     setOkMsg(null)
     setSaving(true)
     try {
-      const res = await saveNiveis(payload(next))
+      const res = await store.salvarNiveis(payload(next))
       if (res.ok) {
-        const recarregado = await fetchNiveis()
+        const recarregado = await store.lerNiveis()
         setLinhas(recarregado === null ? next : recarregado.map(comoLinha))
         setDirty(false)
         setConfirmar(null)
@@ -107,7 +110,7 @@ export default function NiveisModal({ niveis, onSaved, onClose }: NiveisModalPro
         setErrors(res.errors)
       }
     } catch (err) {
-      setErrors([err instanceof Error ? err.message : 'Falha de rede ao salvar.'])
+      setErrors([err instanceof Error ? err.message : 'Falha ao salvar.'])
     } finally {
       setSaving(false)
     }
@@ -190,7 +193,7 @@ export default function NiveisModal({ niveis, onSaved, onClose }: NiveisModalPro
         <div className="catalog-form__body">
           {apiOff && (
             <p className="cform__ghost-note">
-              ⚠ API /api/niveis indisponível — lista somente leitura.
+              ⚠ Nenhum catálogo aberto para edição — lista somente leitura.
             </p>
           )}
 

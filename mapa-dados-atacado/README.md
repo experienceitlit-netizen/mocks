@@ -67,12 +67,58 @@ O `dist/` é estático puro: pode ser aberto em qualquer hosting interno de arqu
 Dois pacotes ficam em `../entregas/` (fora do git):
 
 - **App pronto para rodar** (`mapa-dados-atacado-app.zip`): um único HTML
-  autocontido que abre por duplo clique, sem Node nem servidor. Regenerar:
+  autocontido que abre por duplo clique, sem Node nem servidor — e que também
+  **edita** os CSVs da pasta que o usuário escolher, no Chrome ou no Edge (ver
+  "Os três modos de edição"). Zipe os CSVs junto com ele. Regenerar:
   `npm run build:standalone` gera `dist-standalone/index.html`; renomeie para
   `Mapa de Dados do Atacado.html` e zipe junto com um `LEIA-ME.txt`.
 - **Fonte** (`mapa-dados-atacado-fonte.zip`): snapshot limpo do repositório.
   Regenerar na raiz do repo: `git archive --format=zip -o entregas/mapa-dados-atacado-fonte.zip HEAD`
   e acrescente um `COMO-RODAR.txt` (Node 20+, `npm install && npm run dev`).
+
+## Os três modos de edição
+
+O app descobre sozinho, ao abrir, **de onde** os dados vêm e **para onde** as edições
+vão. O chip no alto da tela sempre diz qual modo está valendo.
+
+| Modo | Quando | Chip | Onde a edição vai parar |
+| --- | --- | --- | --- |
+| **Dev server** | `npm run dev` | `✎ dev server` | O Vite grava o `catalogo.csv`/`niveis.csv` do projeto e regenera o `graph.json` (API `/api/catalogo` e `/api/niveis`). |
+| **Arquivo local** | HTML de arquivo único no Chrome/Edge | `✎ pasta/catalogo.csv` | O próprio navegador grava nos CSVs da pasta que você escolher. Sem servidor e sem instalar nada. |
+| **Somente leitura** | nenhum catálogo aberto | `🔒 somente leitura` | Nada é gravado; nenhum controle de edição aparece. |
+
+A ordem é essa: onde a API do dev server responde, ela manda — o modo arquivo local nunca
+interfere no fluxo de desenvolvimento.
+
+### Editando pelo pacote HTML (sem servidor)
+
+1. Deixe o `Mapa de Dados do Atacado.html` **na mesma pasta** do `catalogo.csv` e do
+   `niveis.csv` (ou anote onde eles estão) e abra o HTML por duplo clique — Chrome ou Edge.
+2. Clique em **📂 Abrir catálogo** e escolha essa pasta. O navegador pede autorização
+   uma vez ("Permitir editar arquivos?"): é o que dá ao app o direito de gravar.
+3. Pronto: **+ Novo componente**, **✎ Editar** e **≣ Níveis** passam a funcionar como no
+   dev server. Cada save regrava o CSV inteiro na pasta e remonta o mapa na hora — as
+   mesmas validações de sempre (nome duplicado, nível inexistente, nível em uso) valem
+   aqui, e nada é gravado quando alguma falha.
+4. O `catalogo.csv` continua sendo um CSV comum: abra no Excel quando quiser, e o Git da
+   pasta (se houver) segue mostrando o diff de cada edição.
+
+Detalhes que valem saber:
+
+- **Só Chrome/Edge.** O modo arquivo usa a File System Access API. No Firefox e no Safari
+  o app oferece **📄 Importar CSV** e **⬇ Baixar CSV**: a edição acontece na memória da
+  aba e você grava o arquivo baixado por cima do original. Fechar a aba antes de baixar
+  perde as edições.
+- **A pasta é lembrada** entre sessões quando o app é servido por `http(s)://` — na volta,
+  ele reabre sozinho ou mostra **📂 Reabrir _pasta_** (um clique re-autoriza). Aberto por
+  `file://`, o navegador não deixa guardar essa memória: é escolher a pasta de novo a cada
+  abertura.
+- **A permissão vale enquanto a aba viver.** Se ela expirar no meio, o save avisa e basta
+  reabrir a pasta.
+- **O mapa vem do CSV que você abriu**, não do `graph.json` embutido no HTML: o pacote
+  serve para qualquer catálogo, não só o que foi empacotado junto.
+- **Sem trava de concorrência.** Duas pessoas editando a mesma pasta ao mesmo tempo
+  sobrescrevem uma à outra — cada save grava o arquivo inteiro.
 
 ## Como editar o catálogo (menos de 5 minutos)
 
@@ -288,6 +334,13 @@ src/
     Markdown.tsx            # renderizador mínimo do texto de observações
     palette.ts              # fonte única das cores
     graph-types.ts          # tipos do schema + wrapper tipado da lib de grafo
+    catalog-api.ts          # cliente da API do dev server (/api/catalogo, /api/niveis)
+    catalog-store.ts        # interface de persistência + store HTTP (o modo de sempre)
+    catalog-store-local.ts  # store que grava CSV sem servidor: valida, grava, remonta o grafo
+    fs-access.ts            # File System Access: escolher pasta, ler/gravar, lembrar o handle
+    graph-build.ts          # re-export de scripts/graph-lib.ts para o bundle do front-end
+    useFonteCatalogo.ts     # escolha do modo no mount (HTTP → arquivo local → importar)
+    FonteBar.tsx            # chip do modo ativo + "Abrir catálogo" / "Importar CSV"
   App.tsx                   # estado da UI (aba, seleção, hover, filtros, foco, URL ?no= e ?foco=)
 FUTURO.md                   # itens fora do MVP (Fase 6)
 ```

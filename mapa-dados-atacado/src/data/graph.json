@@ -97,26 +97,13 @@
       "corpo": "De-para construído pelos analistas do Atacado para clusterizar os produtos e dar visão agregada por família de produto na EVOL. É um artefato exploratório mantido em planilha Excel — útil na análise, mas ainda sem rota governada, o que caracteriza o débito. Há um MVP no Salesforce com destino planejado no lake."
     },
     {
-      "id": "dominio-bacen-dom",
-      "nome": "Bacen (DOM)",
-      "nivel": "dominio",
-      "tipoComponente": "Default",
-      "dominio": "",
-      "debito": "",
-      "status": "",
-      "owner": null,
-      "centroDeCusto": null,
-      "descricao": "",
-      "incompleto": true
-    },
-    {
       "id": "dominio-cadastro",
       "nome": "Cadastro",
       "nivel": "dominio",
       "tipoComponente": "Default",
       "dominio": "",
-      "debito": "",
-      "status": "",
+      "debito": "avaliar",
+      "status": "producao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
