@@ -19,6 +19,9 @@ interface GraphProps {
   degreeById: ReadonlyMap<string, number>
   /** Conjunto final de nós esmaecidos (hover + filtros, calculado no App). */
   dimmedIds: ReadonlySet<string>
+  /** false esconde todas as arestas, menos as do nó em destaque (hover, clique
+   *  fixado ou balão aberto) — visão limpa sem perder a relação sob análise. */
+  assocOn: boolean
   hoverId: string | null
   /** "Hover fixado" pelo clique esquerdo: mesmo visual do hover, persistente. */
   pinnedId: string | null
@@ -110,6 +113,7 @@ export default function Graph({
   data,
   degreeById,
   dimmedIds,
+  assocOn,
   hoverId,
   pinnedId,
   selectedId,
@@ -407,13 +411,26 @@ export default function Graph({
     [degreeById],
   )
 
-  // Arestas acesas do nó "ativo": hover momentâneo sobrepõe o fixado.
-  const activeId = hoverId ?? pinnedId
+  // Arestas acesas do nó "ativo": hover momentâneo sobrepõe o fixado, que por
+  // sua vez sobrepõe o nó do balão.
+  const activeId = hoverId ?? pinnedId ?? selectedId
   const linkTouchesActive = useCallback(
     (link: SimLink) =>
       activeId !== null &&
       (linkEndId(link.source) === activeId || linkEndId(link.target) === activeId),
     [activeId],
+  )
+
+  // Com "Mostrar associações" desligado o grafo fica só com os nós; as arestas
+  // do destaque atual continuam visíveis (mesma regra do esmaecimento: o que
+  // não está em dimmedIds é o que está em foco).
+  const linkVisible = useCallback(
+    (link: SimLink) => {
+      if (assocOn) return true
+      if (activeId === null) return false
+      return !dimmedIds.has(linkEndId(link.source)) && !dimmedIds.has(linkEndId(link.target))
+    },
+    [assocOn, activeId, dimmedIds],
   )
 
   const linkColor = useCallback(
@@ -444,6 +461,7 @@ export default function Graph({
         nodeLabel={() => ''}
         nodeCanvasObject={drawNode}
         nodePointerAreaPaint={paintPointerArea}
+        linkVisibility={linkVisible}
         linkColor={linkColor}
         linkWidth={(l) => (linkTouchesActive(l) ? 1.6 : 1)}
         linkDirectionalArrowLength={3.5}

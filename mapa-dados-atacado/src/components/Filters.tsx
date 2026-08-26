@@ -20,6 +20,7 @@ interface FiltersProps {
   somenteSemOwner: boolean
   /** Camada de linhagem (sistemas/origens) visível no grafo. */
   layersOn: boolean
+  assocOn: boolean
   counts: Counts
   hasActiveFilter: boolean
   onToggleDominio(dominio: string): void
@@ -27,6 +28,7 @@ interface FiltersProps {
   onToggleNivel(nivel: NivelFiltro): void
   onToggleSemOwner(): void
   onToggleLayers(): void
+  onToggleAssoc(): void
   onClear(): void
 }
 
@@ -45,6 +47,7 @@ export default function Filters({
   selectedNiveis,
   somenteSemOwner,
   layersOn,
+  assocOn,
   counts,
   hasActiveFilter,
   onToggleDominio,
@@ -52,6 +55,7 @@ export default function Filters({
   onToggleNivel,
   onToggleSemOwner,
   onToggleLayers,
+  onToggleAssoc,
   onClear,
 }: FiltersProps) {
   return (
@@ -132,6 +136,14 @@ export default function Filters({
       <label className="filters__toggle" title="Mostrar sistemas e origens (linhagem) no grafo">
         <input type="checkbox" checked={layersOn} onChange={onToggleLayers} />
         Fontes e origens
+      </label>
+
+      <label
+        className="filters__toggle"
+        title="Mostrar as setas entre os componentes; desligado, só as do nó em destaque aparecem"
+      >
+        <input type="checkbox" checked={assocOn} onChange={onToggleAssoc} />
+        Mostrar associações
       </label>
 
       {hasActiveFilter && (

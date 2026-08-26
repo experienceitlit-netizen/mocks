@@ -169,6 +169,14 @@ Na planilha, os níveis vivem em **`niveis.csv`** (`titulo;ordem`, só os custom
 coluna `nivel` do `catalogo.csv` aceita o slug do nível (ex.: `bronze`). Uma coluna só
 vira faixa no grafo quando tem ao menos um componente.
 
+### Visão limpa: "Mostrar associações"
+
+O checkbox **Mostrar associações** (na barra de foco e no painel de filtros) esconde todas
+as setas do grafo, deixando só os nós — útil quando o mapa inteiro está na tela. O
+destaque continua valendo: ao passar o mouse, fixar um nó com o clique ou abrir o balão
+com o botão direito, as ligações **daquele** componente reaparecem (na vista de níveis, a
+cadeia inteira dele). Companheiro do **Mostrar níveis**, que esconde as faixas.
+
 ### Excluir um componente
 
 O **✎ Editar** de uma linha já cadastrada traz o botão **🗑 Excluir**. O primeiro clique

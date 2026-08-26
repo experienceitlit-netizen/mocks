@@ -239,6 +239,9 @@ function App() {
   const [vista, setVista] = useState<Vista>(readUrlVista)
   // Faixas de nível (retângulos + títulos + chevrons) da vista Níveis.
   const [bandsOn, setBandsOn] = useState(true)
+  /** "Mostrar associações": desligado, o grafo fica só com os nós — as arestas
+   *  do nó em destaque (hover, clique fixado ou balão) continuam visíveis. */
+  const [assocOn, setAssocOn] = useState(true)
   const [layersOn, setLayersOn] = useState<boolean>(() => readInitialFocusPath().length > 0)
   // Estado da camada antes de entrar em foco, restaurado ao sair.
   const layersBeforeFocusRef = useRef(false)
@@ -720,6 +723,7 @@ function App() {
         initialFocusId={initialFocusId}
         fixedLayout={lineage !== null}
         levelColumns={lineage && bandsOn ? lineage.columns : null}
+        assocOn={assocOn}
         onNodeClick={handleNodeClick}
         onNodeRightClick={handleNodeRightClick}
         onNodeHover={setHoverId}
@@ -794,10 +798,12 @@ function App() {
           vista={lineage ? 'niveis' : 'forca'}
           canNiveis={canNiveis}
           bandsOn={bandsOn}
+          assocOn={assocOn}
           onCrumbClick={(i) => setFocusPath((path) => path.slice(0, i + 1))}
           onDepthChange={setDepth}
           onVistaChange={setVista}
           onToggleBands={() => setBandsOn((v) => !v)}
+          onToggleAssoc={() => setAssocOn((v) => !v)}
           onExit={exitFocus}
         />
       )}
@@ -811,12 +817,14 @@ function App() {
           selectedNiveis={selNiveis}
           somenteSemOwner={somenteSemOwner}
           layersOn={layersOn}
+          assocOn={assocOn}
           counts={counts}
           hasActiveFilter={hasActiveFilter}
           onToggleDominio={(d) => setSelDominios((prev) => toggled(prev, d))}
           onToggleDebito={(d) => setSelDebitos((prev) => toggled(prev, d))}
           onToggleNivel={(n) => setSelNiveis((prev) => toggled(prev, n))}
           onToggleSemOwner={() => setSomenteSemOwner((v) => !v)}
+          onToggleAssoc={() => setAssocOn((v) => !v)}
           onToggleLayers={() => setLayersOn((v) => !v)}
           onClear={() => {
             setQuery('')

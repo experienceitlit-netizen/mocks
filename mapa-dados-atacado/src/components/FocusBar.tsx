@@ -18,11 +18,13 @@ interface FocusBarProps {
   canNiveis: boolean
   /** Faixas de nível (retângulos + títulos) visíveis na vista Níveis. */
   bandsOn: boolean
+  assocOn: boolean
   /** Clique num item do breadcrumb: volta o foco àquele nó (trunca o caminho). */
   onCrumbClick(index: number): void
   onDepthChange(depth: number): void
   onVistaChange(vista: Vista): void
   onToggleBands(): void
+  onToggleAssoc(): void
   onExit(): void
 }
 
@@ -32,10 +34,12 @@ export default function FocusBar({
   vista,
   canNiveis,
   bandsOn,
+  assocOn,
   onCrumbClick,
   onDepthChange,
   onVistaChange,
   onToggleBands,
+  onToggleAssoc,
   onExit,
 }: FocusBarProps) {
   const last = path.length - 1
@@ -96,6 +100,14 @@ export default function FocusBar({
           Mostrar níveis
         </label>
       )}
+
+      <label
+        className="focus-bar__bands"
+        title="Mostrar as setas entre os componentes; desligado, só as do nó em destaque aparecem"
+      >
+        <input type="checkbox" checked={assocOn} onChange={onToggleAssoc} />
+        Mostrar associações
+      </label>
 
       {vista === 'forca' && (
         <label className="focus-bar__depth">
