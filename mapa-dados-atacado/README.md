@@ -169,6 +169,15 @@ Na planilha, os níveis vivem em **`niveis.csv`** (`titulo;ordem`, só os custom
 coluna `nivel` do `catalogo.csv` aceita o slug do nível (ex.: `bronze`). Uma coluna só
 vira faixa no grafo quando tem ao menos um componente.
 
+### Excluir um componente
+
+O **✎ Editar** de uma linha já cadastrada traz o botão **🗑 Excluir**. O primeiro clique
+mostra o que sai junto: a linha e **cada menção a ela** nas outras linhas (`Consome/
+Upstream`, `Associações`, `Fontes secundárias` e a rota de quem a citava como origem ou
+fonte). O segundo confirma e grava. Limpar as menções é o ponto: sem isso, quem consumia o
+componente ficaria apontando para um nó fantasma. A exclusão não tem desfazer no app — o
+histórico do Git guarda a versão anterior do `catalogo.csv`.
+
 ## Cores e bordas do grafo
 
 Cor do nó, por ordem de precedência (definida em `src/components/palette.ts`):

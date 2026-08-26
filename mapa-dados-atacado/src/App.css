@@ -1168,6 +1168,50 @@
   border-top: 1px solid #333;
 }
 
+/* Excluir fica à esquerda, longe do Salvar, para não ser clicado sem querer. */
+.catalog-form__delete {
+  margin-right: auto;
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid #6b2733;
+  background: transparent;
+  color: #d98a97;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.catalog-form__delete:hover:not(:disabled) {
+  border-color: #cc092f;
+  background: rgba(204, 9, 47, 0.12);
+  color: #f0c2c9;
+}
+
+.catalog-form__danger {
+  margin-top: 0.9rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 6px;
+  border: 1px solid #6b2733;
+  background: rgba(204, 9, 47, 0.08);
+  color: #e8c4cb;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.catalog-form__danger strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #f0c2c9;
+}
+
+.catalog-form__danger p {
+  margin: 0.3rem 0;
+}
+
+.catalog-form__danger ul {
+  margin: 0.3rem 0;
+  padding-left: 1.1rem;
+}
+
 .catalog-form__cancel {
   padding: 0.35rem 0.8rem;
   border-radius: 6px;

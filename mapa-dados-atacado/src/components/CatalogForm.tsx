@@ -13,11 +13,12 @@
 // gravado como está (ver catalog-form-row.ts), com aviso do que não couber.
 // Esc cancela (tratado pelo handler global do App, que fecha o form antes dos
 // demais estágios).
-// TODO: exclusão de linhas fica para uma próxima fase.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import type { CatalogoRow, NivelRow, SaveOk } from './catalog-api'
 import { fetchCatalogo, isProdutoRow, parseAssocList, saveCatalogo } from './catalog-api'
+import type { Referencia } from './catalog-delete'
+import { removerComponente } from './catalog-delete'
 import type { RowFormState } from './catalog-form-row'
 import { avisoTroca, montarRow } from './catalog-form-row'
 import type { Debito, NivelDef } from './graph-types'
@@ -297,6 +298,8 @@ export default function CatalogForm({
 
   const [errors, setErrors] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
+  /** null = exclusão não pedida; lista = menções que sairão junto (confirmação). */
+  const [confirmarExclusao, setConfirmarExclusao] = useState<Referencia[] | null>(null)
   const [saved, setSaved] = useState<SaveOk | null>(null)
   const closeTimer = useRef(0)
   // Sem o clear, o timer de um save anterior fecharia um form reaberto logo
@@ -446,6 +449,39 @@ export default function CatalogForm({
       }
     } catch (err) {
       setErrors([err instanceof Error ? err.message : 'Falha de rede ao salvar.'])
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Exclusão em dois passos: o primeiro clique mostra o que sai junto (a linha
+  // e cada menção a ela), o segundo grava. Só existe para linha já no catálogo.
+  const excluir = async () => {
+    if (saving || saved || target.modo !== 'editar') return
+    setErrors([])
+    setSaving(true)
+    try {
+      const atuais = (await fetchCatalogo()) ?? rows
+      const alvo = { nome: target.nome, nivel: target.nivel }
+      const r = removerComponente(atuais, alvo)
+      if (!r.encontrada) {
+        setErrors([`"${target.nome}" não está mais no catálogo.`])
+        return
+      }
+      if (confirmarExclusao === null) {
+        setConfirmarExclusao(r.referencias)
+        return
+      }
+      const res = await saveCatalogo(r.rows)
+      if (res.ok) {
+        onSaved()
+        setSaved(res)
+        closeTimer.current = window.setTimeout(onClose, 2500)
+      } else {
+        setErrors(res.errors)
+      }
+    } catch (err) {
+      setErrors([err instanceof Error ? err.message : 'Falha de rede ao excluir.'])
     } finally {
       setSaving(false)
     }
@@ -682,6 +718,31 @@ export default function CatalogForm({
                 </ul>
               )}
 
+              {confirmarExclusao !== null && (
+                <div className="catalog-form__danger" role="alert">
+                  <strong>Excluir "{subtitulo}" do catálogo?</strong>
+                  {confirmarExclusao.length === 0 ? (
+                    <p>Nenhum outro componente cita este — nada mais será alterado.</p>
+                  ) : (
+                    <>
+                      <p>
+                        {confirmarExclusao.length === 1
+                          ? 'Uma menção também será removida:'
+                          : `${confirmarExclusao.length} menções também serão removidas:`}
+                      </p>
+                      <ul>
+                        {confirmarExclusao.map((r) => (
+                          <li key={`${r.nome}-${r.campo}`}>
+                            {r.nome} — {r.campo}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  <p>Não dá para desfazer pelo app (o histórico do Git guarda a versão anterior).</p>
+                </div>
+              )}
+
               {errors.length > 0 && (
                 <ul className="catalog-form__errors" role="alert">
                   {errors.map((er) => (
@@ -692,10 +753,28 @@ export default function CatalogForm({
             </div>
 
             <footer className="catalog-form__footer">
-              <button type="button" className="catalog-form__cancel" onClick={onClose}>
+              {target.modo === 'editar' && (
+                <button
+                  type="button"
+                  className="catalog-form__delete"
+                  disabled={saving}
+                  onClick={() => void excluir()}
+                >
+                  {confirmarExclusao === null ? '🗑 Excluir' : 'Confirmar exclusão'}
+                </button>
+              )}
+              <button
+                type="button"
+                className="catalog-form__cancel"
+                onClick={confirmarExclusao === null ? onClose : () => setConfirmarExclusao(null)}
+              >
                 Cancelar
               </button>
-              <button type="submit" className="catalog-form__save" disabled={saving}>
+              <button
+                type="submit"
+                className="catalog-form__save"
+                disabled={saving || confirmarExclusao !== null}
+              >
                 {saving ? 'Salvando…' : 'Salvar'}
               </button>
             </footer>
