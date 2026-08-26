@@ -16,7 +16,13 @@ import { parseCatalogoRows, serializarCatalogo } from './graph-build'
 // pasta escolhida). ?raw é resolvido pelo Vite, então o teste roda no mesmo
 // pipeline do app — sem APIs de Node, que não existem no bundle do front.
 import CSV_CATALOGO from '../../catalogo.csv?raw'
-import CSV_NIVEIS from '../../niveis.csv?raw'
+// Fixture própria: o niveis.csv do projeto é dado vivo (o usuário pinta e
+// renomeia níveis pelo app), então usá-lo aqui quebraria o teste a cada edição.
+const CSV_NIVEIS =
+  '\uFEFFtitulo;ordem;slug;cor_fundo;cor_borda\r\n' +
+  'Gold;43;gold;;\r\n' +
+  'Silver;44;silver;;\r\n' +
+  'Broze;45;broze;;\r\n'
 
 /** Destino de teste: guarda o que seria gravado em disco. */
 function destinoEspiao(): DestinoLocal & { gravados: Array<[ArquivoCatalogo, string]> } {
@@ -224,6 +230,55 @@ describe('store local — gravação dos níveis', () => {
 
     expect(res.ok).toBe(false)
     expect(res.ok === false && res.errors.join(' ')).toContain('está em uso')
+    expect(destino.gravados).toEqual([])
+  })
+
+  it('cor do nível faz a volta completa: grava no CSV e volta na leitura e no grafo', async () => {
+    const destino = destinoEspiao()
+    const store = criarStoreLocal(destino, { catalogo: CSV_CATALOGO, niveis: CSV_NIVEIS })
+    const niveis = (await store.lerNiveis()) ?? []
+    const pintados = niveis.map((n) =>
+      // "#C0C0C0" maiúsculo de propósito: a normalização é do backend, não da UI.
+      n.slug === 'gold' ? { ...n, corFundo: '#C0C0C0', corBorda: '#8fa3b8' } : n,
+    )
+
+    const res = await store.salvarNiveis(pintados)
+
+    expect(res.ok).toBe(true)
+    expect(destino.gravados[0][1]).toContain(';#c0c0c0;#8fa3b8')
+    expect(store.grafo()?.niveis?.find((n) => n.slug === 'gold')).toMatchObject({
+      corFundo: '#c0c0c0',
+      corBorda: '#8fa3b8',
+    })
+    const relidos = (await store.lerNiveis()) ?? []
+    expect(relidos.find((n) => n.slug === 'gold')?.corFundo).toBe('#c0c0c0')
+    // Só aquele nível mudou de cor.
+    expect(relidos.filter((n) => n.corFundo !== undefined).map((n) => n.slug)).toEqual(['gold'])
+  })
+
+  it('limpar a cor (campo ausente) devolve o nível ao padrão', async () => {
+    const store = criarStoreLocal(destinoEspiao(), { catalogo: CSV_CATALOGO, niveis: CSV_NIVEIS })
+    const niveis = (await store.lerNiveis()) ?? []
+    await store.salvarNiveis(niveis.map((n) => (n.slug === 'gold' ? { ...n, corFundo: '#c0c0c0' } : n)))
+
+    const semCor = ((await store.lerNiveis()) ?? []).map(({ corFundo: _, ...n }) => n)
+    const res = await store.salvarNiveis(semCor)
+
+    expect(res.ok).toBe(true)
+    expect(store.grafo()?.niveis?.find((n) => n.slug === 'gold')?.corFundo).toBeUndefined()
+  })
+
+  it('cor fora do hexadecimal é erro de validação e não grava', async () => {
+    const destino = destinoEspiao()
+    const store = criarStoreLocal(destino, { catalogo: CSV_CATALOGO, niveis: CSV_NIVEIS })
+    const niveis = (await store.lerNiveis()) ?? []
+
+    const res = await store.salvarNiveis(
+      niveis.map((n) => (n.slug === 'gold' ? { ...n, corBorda: 'prateado' } : n)),
+    )
+
+    expect(res.ok).toBe(false)
+    expect(res.ok === false && res.errors.join(' ')).toContain('cor_borda "prateado"')
     expect(destino.gravados).toEqual([])
   })
 

@@ -2,13 +2,15 @@
 //   GET  /api/catalogo → {"rows": CatalogoRow[]} lido do catalogo.csv na hora
 //   POST /api/catalogo {"rows": CatalogoRow[]} → valida, grava o catalogo.csv
 //        e regenera src/data/graph.json (mesmo formato do npm run data).
-//   GET  /api/niveis → {"rows": [{slug, titulo, ordem, builtin}]} com TODOS os
-//        níveis da cadeia (built-in e customizados), resolvidos do niveis.csv.
-//   POST /api/niveis {"rows": [{slug?, titulo, ordem}]} → a lista COMPLETA de
-//        níveis: valida (inclusive remoção de nível em uso no catálogo), grava
-//        as três colunas do niveis.csv e regenera o graph.json. Nível que não
-//        vier na lista é removido; `slug` amarra a linha a um nível existente
-//        (é o que faz renomear um built-in não mexer no catalogo.csv).
+//   GET  /api/niveis → {"rows": [{slug, titulo, ordem, builtin, corFundo?,
+//        corBorda?}]} com TODOS os níveis da cadeia (built-in e customizados),
+//        resolvidos do niveis.csv.
+//   POST /api/niveis {"rows": [{slug?, titulo, ordem, corFundo?, corBorda?}]} →
+//        a lista COMPLETA de níveis: valida (inclusive remoção de nível em uso
+//        no catálogo e cor fora do hexadecimal), grava as cinco colunas do
+//        niveis.csv e regenera o graph.json. Nível que não vier na lista é
+//        removido; `slug` amarra a linha a um nível existente (é o que faz
+//        renomear um built-in não mexer no catalogo.csv).
 // O build estático/standalone não passa por aqui — os CSVs seguem sendo a fonte.
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -17,6 +19,7 @@ import type { Plugin } from 'vite'
 import {
   buildGraph,
   carregarNiveis,
+  normalizarCor,
   parseCatalogoRows,
   resolverNiveis,
   serializarCatalogo,
@@ -88,9 +91,10 @@ export function rowsDoBody(body: unknown): { rows: CatalogoRow[]; errors: string
 }
 
 /** Valida a FORMA do body do POST /api/niveis ({"rows": [{slug?, titulo,
- *  ordem}]}) e materializa NivelRow[]; a validação de conteúdo (título/ordem
- *  únicos) é do validarNiveis. `ordem` aceita number ou string numérica
- *  ("42.5"); `slug` é opcional (ausente/vazio = derivar do título). */
+ *  ordem, corFundo?, corBorda?}]}) e materializa NivelRow[]; a validação de
+ *  conteúdo (título/ordem únicos, cor hexadecimal) é do validarNiveis. `ordem`
+ *  aceita number ou string numérica ("42.5"); `slug` é opcional (ausente/vazio
+ *  = derivar do título) e as cores também (ausente/vazia = cor padrão). */
 export function niveisDoBody(body: unknown): { rows: NivelRow[]; errors: string[] } {
   const errors: string[] = []
   if (typeof body !== 'object' || body === null || !Array.isArray((body as { rows?: unknown }).rows)) {
@@ -125,10 +129,25 @@ export function niveisDoBody(body: unknown): { rows: NivelRow[]; errors: string[
       errors.push(`rows[${i}].slug: deve ser string`)
       ok = false
     }
+    const cores: Record<'corFundo' | 'corBorda', string> = { corFundo: '', corBorda: '' }
+    for (const campo of ['corFundo', 'corBorda'] as const) {
+      const cor = registro[campo] ?? ''
+      if (typeof cor !== 'string') {
+        errors.push(`rows[${i}].${campo}: deve ser string`)
+        ok = false
+      } else {
+        cores[campo] = cor.trim()
+      }
+    }
     if (!ok) return
     const row: NivelRow = { titulo: (titulo as string).trim(), ordem }
     // Slug vazio não vira campo: é o que marca "nível novo" (derivar do título).
     if ((slug as string).trim() !== '') row.slug = (slug as string).trim()
+    // Cor vazia idem ("volte ao padrão"); a que vier vira canônica aqui e o que
+    // não for hex segue cru, para validarNiveis reclamar citando o valor.
+    for (const campo of ['corFundo', 'corBorda'] as const) {
+      if (cores[campo] !== '') row[campo] = normalizarCor(cores[campo]) ?? cores[campo]
+    }
     rows.push(row)
   })
   return { rows, errors }

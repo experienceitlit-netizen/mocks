@@ -12,6 +12,7 @@ import {
   defsDeNiveis,
   montarNiveis,
   NIVEIS_BUILTIN,
+  normalizarCor,
   parseCatalogo,
   parseCatalogoRows,
   parseNiveisRows,
@@ -79,15 +80,17 @@ const catalogoRow = (extra: Partial<CatalogoRow>): CatalogoRow => ({
 })
 
 describe('niveis.csv — parse e serialize', () => {
-  it('formato canônico: BOM, cabeçalho titulo;ordem;slug, ";", CRLF e aspas mínimas', () => {
+  it('formato canônico: BOM, cabeçalho de 5 colunas, ";", CRLF e aspas mínimas', () => {
     const texto = serializarNiveis([nivelRow('Bronze', 46), nivelRow('Prata; fina', 44.5)])
-    expect(texto).toBe('﻿titulo;ordem;slug\r\nBronze;46;\r\n"Prata; fina";44.5;\r\n')
+    expect(texto).toBe(
+      '﻿titulo;ordem;slug;cor_fundo;cor_borda\r\nBronze;46;;;\r\n"Prata; fina";44.5;;;\r\n',
+    )
   })
 
   it('slug preenchido é gravado na 3ª coluna e volta no parse', () => {
     const rows = [{ titulo: 'Produto de dados', ordem: 20, slug: 'final' }]
     const texto = serializarNiveis(rows)
-    expect(texto).toBe('﻿titulo;ordem;slug\r\nProduto de dados;20;final\r\n')
+    expect(texto).toBe('﻿titulo;ordem;slug;cor_fundo;cor_borda\r\nProduto de dados;20;final;;\r\n')
     expect(parseNiveisRows(texto)).toEqual(rows)
   })
 
@@ -125,6 +128,149 @@ describe('niveis.csv — parse e serialize', () => {
       niveis: NIVEIS_BUILTIN.map((n) => ({ ...n, builtin: true })),
       warnings: [],
     })
+  })
+})
+
+// As cores são atributo LIVRE do nível — nenhum teste aqui espera que um nome
+// ("Prata") produza cor nenhuma: quem escolhe é sempre o arquivo.
+describe('niveis.csv — cores da faixa (cor_fundo e cor_borda)', () => {
+  const prata: NivelRow = { titulo: 'Prata', ordem: 44, corFundo: '#c0c0c0', corBorda: '#8fa3b8' }
+
+  it('as duas cores vão para as colunas 4 e 5 e voltam no round-trip', () => {
+    const texto = serializarNiveis([prata])
+    expect(texto).toBe('﻿titulo;ordem;slug;cor_fundo;cor_borda\r\nPrata;44;;#c0c0c0;#8fa3b8\r\n')
+    expect(parseNiveisRows(texto)).toEqual([prata])
+    expect(serializarNiveis(parseNiveisRows(texto))).toBe(texto)
+  })
+
+  it('só uma das duas também vale — a outra fica no padrão', () => {
+    const rows: NivelRow[] = [{ titulo: 'Prata', ordem: 44, corBorda: '#8fa3b8' }]
+    expect(parseNiveisRows(serializarNiveis(rows))).toEqual(rows)
+    const { niveis, warnings } = carregarNiveis(serializarNiveis(rows))
+    expect(warnings).toEqual([])
+    const nivel = niveis.find((n) => n.slug === 'prata')
+    expect(nivel?.corBorda).toBe('#8fa3b8')
+    expect(nivel?.corFundo).toBeUndefined()
+  })
+
+  it('arquivo de 3 colunas (o formato anterior) parseia e carrega sem warning', () => {
+    const antigo = '﻿titulo;ordem;slug\r\nPrata;44;\r\n'
+    expect(parseNiveisRows(antigo)).toEqual([nivelRow('Prata', 44)])
+    const { niveis, warnings } = carregarNiveis(antigo)
+    expect(warnings).toEqual([])
+    expect(niveis.find((n) => n.slug === 'prata')).toEqual({
+      slug: 'prata',
+      titulo: 'Prata',
+      ordem: 44,
+      builtin: false,
+    })
+  })
+
+  it('"#RGB" e maiúsculas são normalizados para "#rrggbb" minúsculo', () => {
+    expect(normalizarCor('#0AF')).toBe('#00aaff')
+    expect(normalizarCor('  #C0C0C0  ')).toBe('#c0c0c0')
+    expect(parseNiveisRows('﻿titulo;ordem;cor_fundo\r\nPrata;44;#0AF\r\n')).toEqual([
+      { titulo: 'Prata', ordem: 44, corFundo: '#00aaff' },
+    ])
+    // e o que não é hex não vira cor
+    expect(normalizarCor('prata')).toBeNull()
+    expect(normalizarCor('#12345')).toBeNull()
+    expect(normalizarCor('rgb(1,2,3)')).toBeNull()
+    expect(normalizarCor('')).toBeNull()
+  })
+
+  it('cor inválida é ERRO no POST, citando coluna e valor', () => {
+    const { errors } = validarNiveis([{ titulo: 'Prata', ordem: 44, corFundo: 'prateado' }])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('linha 2 ("Prata")')
+    expect(errors[0]).toContain('cor_fundo "prateado"')
+    expect(errors[0]).toContain('#RRGGBB')
+  })
+
+  it('cor inválida no arquivo é WARNING no build — e o nível sobrevive sem cor', () => {
+    const { niveis, warnings } = carregarNiveis(
+      '﻿titulo;ordem;cor_fundo;cor_borda\r\nPrata;44;prateado;#8fa3b8\r\n',
+    )
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('cor ignorada')
+    const nivel = niveis.find((n) => n.slug === 'prata')
+    // O nível carrega as linhas do catálogo: cor ruim não pode derrubá-lo.
+    expect(nivel).toBeDefined()
+    expect(nivel?.corFundo).toBeUndefined()
+    expect(nivel?.corBorda).toBe('#8fa3b8')
+  })
+
+  it('nível built-in aceita cor como qualquer outro (modo explícito)', () => {
+    const { niveis, warnings } = carregarNiveis(
+      serializarNiveis(
+        NIVEIS_BUILTIN.map((n) =>
+          n.slug === 'origem' ? { ...n, corFundo: '#3d2b1f' } : { ...n },
+        ),
+      ),
+    )
+    expect(warnings).toEqual([])
+    expect(niveis.find((n) => n.slug === 'origem')).toEqual({
+      slug: 'origem',
+      titulo: 'Origem',
+      ordem: 60,
+      builtin: true,
+      corFundo: '#3d2b1f',
+    })
+  })
+
+  it('limpar a cor = gravar a coluna vazia; o nível volta ao padrão', () => {
+    const comCor = serializarNiveis([prata])
+    expect(carregarNiveis(comCor).niveis.find((n) => n.slug === 'prata')?.corFundo).toBe('#c0c0c0')
+    const semCor = serializarNiveis([nivelRow('Prata', 44)])
+    expect(carregarNiveis(semCor).niveis.find((n) => n.slug === 'prata')?.corFundo).toBeUndefined()
+  })
+
+  it('defsDeNiveis leva as cores canônicas junto com o slug', () => {
+    expect(defsDeNiveis([{ titulo: 'Prata', ordem: 44, corFundo: '#0AF', corBorda: 'nada' }])).toEqual([
+      { slug: 'prata', titulo: 'Prata', ordem: 44, corFundo: '#00aaff' },
+    ])
+  })
+})
+
+describe('bloco `niveis` do graph.json com cores', () => {
+  it('as cores do niveis.csv chegam ao graph.json emitido pelo build', () => {
+    const { niveis } = carregarNiveis(
+      serializarNiveis([
+        { titulo: 'Prata', ordem: 44, corFundo: '#c0c0c0', corBorda: '#8fa3b8' },
+        nivelRow('Bronze', 46),
+      ]),
+    )
+    const { graph } = buildGraph(
+      csv(completo({ nome: 'Tabela P', nivel: 'prata' })),
+      niveis,
+    )
+    expect(graph.niveis.find((n) => n.slug === 'prata')).toEqual({
+      slug: 'prata',
+      titulo: 'Prata',
+      ordem: 44,
+      builtin: false,
+      corFundo: '#c0c0c0',
+      corBorda: '#8fa3b8',
+    })
+    // Nível sem cor não ganha campo nenhum: o JSON continua o de sempre.
+    expect(graph.niveis.find((n) => n.slug === 'bronze')).toEqual({
+      slug: 'bronze',
+      titulo: 'Bronze',
+      ordem: 46,
+      builtin: false,
+    })
+    // E a cor é do NÍVEL, não do nó — nada foi acrescentado ao componente.
+    expect(graph.nodes[0]).not.toHaveProperty('corFundo')
+  })
+
+  it('determinismo: a cor não muda o resto do grafo', () => {
+    const catalogo = csv(completo({ nome: 'Tabela P', nivel: 'prata' }))
+    const semCor = carregarNiveis(serializarNiveis([nivelRow('Prata', 44)])).niveis
+    const comCor = carregarNiveis(
+      serializarNiveis([{ titulo: 'Prata', ordem: 44, corFundo: '#c0c0c0' }]),
+    ).niveis
+    expect(buildGraph(catalogo, comCor).graph.nodes).toEqual(buildGraph(catalogo, semCor).graph.nodes)
+    expect(buildGraph(catalogo, comCor).graph.links).toEqual(buildGraph(catalogo, semCor).graph.links)
   })
 })
 
@@ -625,6 +771,36 @@ describe('niveisDoBody (forma do body do POST /api/niveis)', () => {
     })
     expect(errors).toEqual([])
     expect(rows).toEqual([nivelRow('Bronze', 46), { titulo: 'Produto de dados', ordem: 20, slug: 'final' }])
+  })
+
+  it('corFundo/corBorda: vazio não vira campo, hex entra canônico, cru segue para a validação', () => {
+    expect(
+      niveisDoBody({
+        rows: [
+          { titulo: 'Prata', ordem: 44, corFundo: ' #0AF ', corBorda: '' },
+          { titulo: 'Ouro', ordem: 42, corFundo: 'dourado' },
+          { titulo: 'Bronze', ordem: 46 },
+        ],
+      }),
+    ).toEqual({
+      rows: [
+        { titulo: 'Prata', ordem: 44, corFundo: '#00aaff' },
+        { titulo: 'Ouro', ordem: 42, corFundo: 'dourado' },
+        { titulo: 'Bronze', ordem: 46 },
+      ],
+      errors: [],
+    })
+    // e o valor cru é o que validarNiveis recusa, citando-o
+    expect(validarNiveis(niveisDoBody({ rows: [{ titulo: 'Ouro', ordem: 42, corFundo: 'dourado' }] }).rows).errors[0]).toContain(
+      'cor_fundo "dourado"',
+    )
+  })
+
+  it('cor de tipo errado é rejeitada na forma do body', () => {
+    expect(niveisDoBody({ rows: [{ titulo: 'Prata', ordem: 44, corBorda: 123 }] })).toEqual({
+      rows: [],
+      errors: ['rows[0].corBorda: deve ser string'],
+    })
   })
 
   it('body sem "rows" ou com campo de tipo errado é rejeitado', () => {

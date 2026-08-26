@@ -1315,7 +1315,8 @@
 /* --- modal "≣ Níveis" (gerenciar níveis da cadeia; só em modo edição) --- */
 
 .niveis-modal {
-  width: min(30rem, 94vw);
+  /* Um pouco mais larga desde que a linha ganhou os dois seletores de cor. */
+  width: min(34rem, 94vw);
 }
 
 .niveis-modal__list {
@@ -1382,6 +1383,78 @@
 .niveis-modal__ordem-input:focus,
 .niveis-modal__titulo-input:focus {
   border-color: #6a6a6a;
+}
+
+/* Cores da faixa do nível: dois swatches pequenos (fundo e borda) e o botão
+   que volta ao padrão. Ficam do tamanho de um chip para a linha continuar
+   legível — o texto do nível é que manda nela. */
+.niveis-modal__cores {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.niveis-modal__cor {
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid #3a3a3a;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+  /* Sem isto o Chrome desenha uma moldura grossa em volta do swatch. */
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.niveis-modal__cor::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.niveis-modal__cor::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+.niveis-modal__cor::-moz-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+/* Nível sem cor própria: o swatch mostra o cinza que está desenhado no mapa,
+   mas tracejado e esmaecido — "isto é o padrão, não uma escolha". */
+.niveis-modal__cor--vazio {
+  border-style: dashed;
+  opacity: 0.55;
+}
+
+.niveis-modal__cor:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.niveis-modal__cor-limpar {
+  border: 1px solid #3a3a3a;
+  border-radius: 5px;
+  background: none;
+  color: #8a8a8a;
+  font-size: 0.8rem;
+  line-height: 1;
+  width: 1.5rem;
+  height: 1.5rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.niveis-modal__cor-limpar:hover:not(:disabled) {
+  border-color: #6a6a6a;
+  color: #c0c0c0;
+}
+
+.niveis-modal__cor-limpar:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .niveis-modal__tag {

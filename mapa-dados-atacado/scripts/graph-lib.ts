@@ -88,9 +88,12 @@ export interface BuildResult {
 // ---------------------------------------------------------------------------
 // Níveis da cadeia: os sete built-in (raiz → domínio → final → primário →
 // fonte secundária → fonte → origem) são o modelo padrão, e o niveis.csv
-// (colunas titulo;ordem;slug) pode renomear, reordenar e REMOVER qualquer um
-// deles, além de acrescentar níveis próprios (ex.: Bronze/Prata/Ouro de uma
-// arquitetura medallion).
+// (colunas titulo;ordem;slug;cor_fundo;cor_borda) pode renomear, reordenar,
+// RECOLORIR e REMOVER qualquer um deles, além de acrescentar níveis próprios
+// (ex.: Bronze/Prata/Ouro de uma arquitetura medallion).
+//
+// As duas cores são atributo LIVRE do nível: o build só as valida como hex e as
+// repassa. Nenhum nome de nível tem cor embutida no código.
 //
 // Os built-in não são especiais no build: são só a lista que vale quando o
 // niveis.csv não diz outra coisa. Todo nível — built-in ou cadastrado — é
@@ -118,14 +121,22 @@ export interface NivelRow {
   /** Chave semântica: ausente/vazia = derivar do título (nível novo);
    *  preenchida = esta linha É aquele nível, com o título que ela disser. */
   slug?: string
+  /** Cor da faixa do nível na vista em níveis, "#rrggbb"; ausente = padrão.
+   *  Valor cru quando o texto não é hex — para a validação reclamar com o que
+   *  o usuário escreveu. */
+  corFundo?: string
+  /** Cor da borda (e do título) da faixa; mesmas regras de corFundo. */
+  corBorda?: string
 }
 
 /** Nível resolvido: slug(titulo) é o id (valor aceito na coluna `nivel` do
- *  catalogo.csv). */
+ *  catalogo.csv). As cores, quando presentes, já vêm canônicas (#rrggbb). */
 export interface NivelDef {
   slug: string
   titulo: string
   ordem: number
+  corFundo?: string
+  corBorda?: string
 }
 
 /** Entrada do bloco `niveis` do graph.json (built-ins + customs, por ordem). */
@@ -146,13 +157,39 @@ export const NIVEIS_BUILTIN: readonly NivelDef[] = [
   { slug: 'origem', titulo: 'Origem', ordem: 60 },
 ]
 
-/** Colunas do niveis.csv, na ordem canônica do cabeçalho. A 3ª (slug) é
- *  opcional na LEITURA — arquivo legado de duas colunas parseia sem warning —
- *  mas o serializador sempre escreve as três. */
-export const COLUNAS_NIVEIS = ['titulo', 'ordem', 'slug'] as const
+/** Colunas do niveis.csv, na ordem canônica do cabeçalho. Só `titulo` e
+ *  `ordem` são exigidas na LEITURA — arquivo de duas ou três colunas parseia
+ *  sem warning — mas o serializador sempre escreve as cinco. */
+export const COLUNAS_NIVEIS = ['titulo', 'ordem', 'slug', 'cor_fundo', 'cor_borda'] as const
 
 /** Colunas do niveis.csv que podem faltar do cabeçalho sem warning. */
-const COLUNAS_NIVEIS_OPCIONAIS = new Set<string>(['slug'])
+const COLUNAS_NIVEIS_OPCIONAIS = new Set<string>(['slug', 'cor_fundo', 'cor_borda'])
+
+/** As duas colunas de cor e o campo correspondente no NivelRow. O CSV fala
+ *  snake_case (como o catalogo.csv) e o TypeScript, camelCase (como o resto do
+ *  graph.json): esta tabela é o único lugar onde os dois nomes se encontram. */
+const COLUNAS_COR = [
+  { coluna: 'cor_fundo', campo: 'corFundo' },
+  { coluna: 'cor_borda', campo: 'corBorda' },
+] as const
+
+/** Hex aceito nas colunas de cor: "#RRGGBB" ou a forma curta "#RGB". */
+const HEX_COR = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+
+/**
+ * Cor de nível na forma canônica ("#rrggbb" minúsculo), ou null quando o texto
+ * não é um hex aceito. A forma curta expande dobrando cada dígito
+ * ("#0af" → "#00aaff"), que é como o CSS a lê.
+ *
+ * O que a cor SIGNIFICA não é assunto do código: "Prata" ficar prateado é
+ * escolha de quem cadastrou o nível, não uma regra por nome.
+ */
+export function normalizarCor(valor: string): string | null {
+  const bruto = valor.trim()
+  if (!HEX_COR.test(bruto)) return null
+  const hex = bruto.slice(1).toLowerCase()
+  return '#' + (hex.length === 3 ? [...hex].map((d) => d + d).join('') : hex)
+}
 
 const SLUGS_BUILTIN = new Set<string>(NIVEIS_BUILTIN.map((n) => n.slug))
 
@@ -182,9 +219,26 @@ export function modoExplicito(rows: readonly NivelRow[]): boolean {
   return rows.some((r) => SLUGS_BUILTIN.has((r.slug ?? '').trim()))
 }
 
+/** Cores de uma linha na forma canônica, prontas para o NivelDef: campo
+ *  ausente, vazio ou fora do hex aceito simplesmente não vira cor (a reclamação
+ *  fica com checarCores, que sabe se o caso é erro ou warning). */
+function coresDoNivel(row: NivelRow): Pick<NivelDef, 'corFundo' | 'corBorda'> {
+  const cores: Pick<NivelDef, 'corFundo' | 'corBorda'> = {}
+  for (const { campo } of COLUNAS_COR) {
+    const cor = normalizarCor(row[campo] ?? '')
+    if (cor !== null) cores[campo] = cor
+  }
+  return cores
+}
+
 /** NivelRow (bruta) → NivelDef (com slug), sem validar. */
 export function defsDeNiveis(rows: NivelRow[]): NivelDef[] {
-  return rows.map((r) => ({ slug: slugDoNivel(r), titulo: r.titulo.trim(), ordem: r.ordem }))
+  return rows.map((r) => ({
+    slug: slugDoNivel(r),
+    titulo: r.titulo.trim(),
+    ordem: r.ordem,
+    ...coresDoNivel(r),
+  }))
 }
 
 /**
@@ -212,18 +266,30 @@ export function parseNiveisRows(texto: string): NivelRow[] {
     }
     // Coluna ausente ou vazia não vira campo: slug só existe quando declarado.
     if (slug !== '') row.slug = slug
+    // Cor idem, e já canônica quando é hex ("#0AF" → "#00aaff"). Texto que não
+    // é hex entra CRU: a validação precisa dele para citar o que foi escrito.
+    for (const { coluna, campo } of COLUNAS_COR) {
+      const bruto = celula(registro, coluna)
+      if (bruto !== '') row[campo] = normalizarCor(bruto) ?? bruto
+    }
     return row
   })
 }
 
 /**
- * Serializa o niveis.csv canônico: BOM UTF-8 + cabeçalho titulo;ordem;slug +
- * separador ";", registros em \r\n e aspas mínimas. Round-trip garantido para
- * títulos trimados e ordens em forma canônica de Number (42.5 → "42.5").
+ * Serializa o niveis.csv canônico: BOM UTF-8 + cabeçalho
+ * titulo;ordem;slug;cor_fundo;cor_borda + separador ";", registros em \r\n e
+ * aspas mínimas. Round-trip garantido para títulos trimados, ordens em forma
+ * canônica de Number (42.5 → "42.5") e cores canônicas ("#00aaff").
  */
 export function serializarNiveis(rows: NivelRow[]): string {
-  const linhas = rows.map(
-    (r) => `${celulaCsv(r.titulo)};${celulaCsv(String(r.ordem))};${celulaCsv((r.slug ?? '').trim())}`,
+  const linhas = rows.map((r) =>
+    [
+      celulaCsv(r.titulo),
+      celulaCsv(String(r.ordem)),
+      celulaCsv((r.slug ?? '').trim()),
+      ...COLUNAS_COR.map(({ campo }) => celulaCsv((r[campo] ?? '').trim())),
+    ].join(';'),
   )
   return '\uFEFF' + [COLUNAS_NIVEIS.join(';'), ...linhas].join('\r\n') + '\r\n'
 }
@@ -322,17 +388,41 @@ function checarNivel(
 }
 
 /**
+ * Erros das cores de UMA linha. Fica FORA do checarNivel de propósito: cor
+ * ruim não pode custar o nível — ele carrega as linhas do catálogo que estão
+ * nele. No POST isto é erro (nada é gravado); no build, warning, e a faixa cai
+ * na cor padrão.
+ */
+function checarCores(row: NivelRow, linha: number): string[] {
+  const errors: string[] = []
+  for (const { coluna, campo } of COLUNAS_COR) {
+    const valor = (row[campo] ?? '').trim()
+    if (valor !== '' && normalizarCor(valor) === null) {
+      errors.push(
+        `linha ${linha} ("${row.titulo.trim()}"): ${coluna} "${valor}" inválida —` +
+          ` use hexadecimal "#RRGGBB" (ou "#RGB"), ou deixe vazio para a cor padrão`,
+      )
+    }
+  }
+  return errors
+}
+
+/**
  * Valida linhas brutas antes de gravar o niveis.csv (POST /api/niveis).
  * Erros (impedem a gravação): titulo vazio ou sem letras/números, slug fora do
- * kebab-case, título duplicado por slug, ordem não-numérica ou repetida. Em
- * modo legado os sete built-in contam como ocupados (não pode custom "Origem",
- * nem ordem 40); em modo explícito o arquivo é a lista completa e só disputa
- * consigo mesmo. "linha N" conta o cabeçalho do CSV como linha 1.
+ * kebab-case, título duplicado por slug, ordem não-numérica ou repetida, cor
+ * fora do hexadecimal. Em modo legado os sete built-in contam como ocupados
+ * (não pode custom "Origem", nem ordem 40); em modo explícito o arquivo é a
+ * lista completa e só disputa consigo mesmo. "linha N" conta o cabeçalho do
+ * CSV como linha 1.
  */
 export function validarNiveis(rows: NivelRow[]): ValidacaoCatalogo {
   const errors: string[] = []
   const { porSlug, porOrdem } = ocupacaoInicial(rows)
-  rows.forEach((row, i) => errors.push(...checarNivel(row, i + 2, porSlug, porOrdem)))
+  rows.forEach((row, i) => {
+    errors.push(...checarNivel(row, i + 2, porSlug, porOrdem))
+    errors.push(...checarCores(row, i + 2))
+  })
   return { errors, warnings: [] }
 }
 
@@ -352,12 +442,15 @@ function resolverLinhas(rows: NivelRow[]): { niveis: NivelInfo[]; warnings: stri
       warnings.push(...errosLinha.map((e) => `niveis.csv ${e} — nível ignorado`))
       return
     }
+    // Cor ruim não derruba o nível: vira aviso e a faixa fica com o padrão.
+    warnings.push(...checarCores(row, i + 2).map((e) => `niveis.csv ${e} — cor ignorada`))
     const slug = slugDoNivel(row)
     doArquivo.push({
       slug,
       titulo: row.titulo.trim(),
       ordem: row.ordem,
       builtin: SLUGS_BUILTIN.has(slug),
+      ...coresDoNivel(row),
     })
   })
   // Modo legado: o arquivo só traz customs, que se encaixam entre os built-in.

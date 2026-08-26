@@ -28,19 +28,25 @@
       "slug": "gold",
       "titulo": "Gold",
       "ordem": 43,
-      "builtin": false
+      "builtin": false,
+      "corFundo": "#feeb01",
+      "corBorda": "#feeb20"
     },
     {
       "slug": "silver",
       "titulo": "Silver",
       "ordem": 44,
-      "builtin": false
+      "builtin": false,
+      "corFundo": "#c0c0c0",
+      "corBorda": "#bfbaba"
     },
     {
       "slug": "broze",
       "titulo": "Broze",
       "ordem": 45,
-      "builtin": false
+      "builtin": false,
+      "corFundo": "#cd7f32",
+      "corBorda": "#724927"
     },
     {
       "slug": "fonte",

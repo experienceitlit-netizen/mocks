@@ -99,6 +99,10 @@ export interface NivelApiRow {
   ordem: number
   slug?: string
   builtin?: boolean
+  /** Cor "#rrggbb" da faixa do nível; ausente/vazia = cor padrão. O POST
+   *  recusa o que não for hexadecimal ("#RGB" também vale, e é normalizado). */
+  corFundo?: string
+  corBorda?: string
 }
 
 /** GET /api/niveis. null quando a API não existe (mesma disciplina de

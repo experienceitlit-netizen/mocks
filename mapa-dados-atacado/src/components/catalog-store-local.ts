@@ -19,6 +19,7 @@ import type { ArquivosCatalogo, CatalogStore, ModoPersistencia } from './catalog
 import {
   buildGraph,
   carregarNiveis,
+  normalizarCor,
   parseCatalogoRows,
   resolverNiveis,
   serializarCatalogo,
@@ -93,11 +94,17 @@ export function comoGraphJson(graph: Graph): GraphJson {
 
 /** NivelApiRow (formato da UI e do POST /api/niveis) → linha bruta do
  *  niveis.csv, com a mesma leitura de `slug` do plugin: vazio não vira campo,
- *  porque é o que marca "nível novo, derive o slug do título". */
+ *  porque é o que marca "nível novo, derive o slug do título". As cores seguem
+ *  a regra irmã — vazia é "volte ao padrão" — e o que não for hex entra cru,
+ *  para validarNiveis recusar citando o valor. */
 function comoNivelRow(r: NivelApiRow): NivelRow {
   const slug = (r.slug ?? '').trim()
   const row: NivelRow = { titulo: r.titulo.trim(), ordem: r.ordem }
   if (slug !== '') row.slug = slug
+  for (const campo of ['corFundo', 'corBorda'] as const) {
+    const cor = (r[campo] ?? '').trim()
+    if (cor !== '') row[campo] = normalizarCor(cor) ?? cor
+  }
   return row
 }
 

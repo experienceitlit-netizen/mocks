@@ -35,6 +35,10 @@ export interface LineageColumn {
   x: number
   yMin: number
   yMax: number
+  /** Cores do nível, repassadas cruas do bloco `niveis`; ausentes = faixa
+   *  neutra. Quem desenha decide como aplicá-las (ver band-colors.ts). */
+  corFundo?: string
+  corBorda?: string
 }
 
 /** Aresta de saída de um componente, já resolvida no nó de destino. */
@@ -179,12 +183,15 @@ export function buildLineage(
       n.fy = y
     })
     const meiaAltura = ((coluna.length - 1) / 2) * NIVEIS_ROW_Y
+    const nivel = niveis.find((nv) => nv.slug === slug)
     columns.push({
       slug,
       label: tituloDoNivel(niveis, slug),
       x,
       yMin: -meiaAltura,
       yMax: meiaAltura,
+      corFundo: nivel?.corFundo,
+      corBorda: nivel?.corBorda,
     })
   })
 

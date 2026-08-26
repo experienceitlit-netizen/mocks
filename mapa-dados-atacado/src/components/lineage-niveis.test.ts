@@ -77,4 +77,17 @@ describe('vista em níveis com bloco `niveis` dinâmico', () => {
     if (!lineage) throw new Error('lineage null')
     expect(lineage.columns.map((c) => c.slug)).toEqual(['bronze', 'final', 'fonte', 'raiz'])
   })
+
+  it('a coluna carrega as cores do nível, cruas — quem aplica o alpha é o desenho', () => {
+    const coloridos = NIVEIS.map((n) =>
+      n.slug === 'bronze' ? { ...n, corFundo: '#c0c0c0', corBorda: '#8fa3b8' } : n,
+    )
+    const lineage = buildLineage('raiz', NODES, LINKS, coloridos)
+    if (!lineage) throw new Error('lineage null')
+    const bronze = lineage.columns.find((c) => c.slug === 'bronze')
+    expect([bronze?.corFundo, bronze?.corBorda]).toEqual(['#c0c0c0', '#8fa3b8'])
+    // as demais seguem sem cor: colorir um nível não vaza para os vizinhos
+    const outras = lineage.columns.filter((c) => c.slug !== 'bronze')
+    expect(outras.every((c) => c.corFundo === undefined && c.corBorda === undefined)).toBe(true)
+  })
 })

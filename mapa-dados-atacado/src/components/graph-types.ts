@@ -47,6 +47,12 @@ export interface NivelDef {
   titulo: string
   ordem: number
   builtin: boolean
+  /** Cor "#rrggbb" da faixa do nível na vista em níveis; ausente = padrão.
+   *  Escolha livre de quem cadastrou o nível — o código não deriva cor de nome
+   *  nenhum. Quem desenha aplica alpha (ver band-colors.ts). */
+  corFundo?: string
+  /** Cor "#rrggbb" da borda da faixa, que o título também herda. */
+  corBorda?: string
 }
 
 /** Nó como emitido pelo build (scripts/build-graph.ts). Campos além de

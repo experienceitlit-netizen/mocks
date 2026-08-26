@@ -9,6 +9,7 @@
 export {
   buildGraph,
   carregarNiveis,
+  normalizarCor,
   parseCatalogoRows,
   resolverNiveis,
   serializarCatalogo,

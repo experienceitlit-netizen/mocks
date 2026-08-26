@@ -182,7 +182,12 @@ aviso dizendo por quê.
 
 ```jsonc
 {
-  "niveis": [ { "slug": "raiz", "titulo": "Raiz", "ordem": 0, "builtin": true }, … ],
+  "niveis": [
+    { "slug": "raiz", "titulo": "Raiz", "ordem": 0, "builtin": true },
+    // corFundo/corBorda só aparecem no nível que declarou cor no niveis.csv
+    { "slug": "prata", "titulo": "Prata", "ordem": 44, "builtin": false,
+      "corFundo": "#c0c0c0", "corBorda": "#8fa3b8" }, …
+  ],
   "nodes": [
     {
       "id": "final-rar-12m",        // <slug do nível>-<slug do nome>
@@ -215,7 +220,7 @@ secundária, Fonte, Origem) são apenas o **padrão**: todos podem ser renomeado
 reordenados e removidos, e dá para criar níveis próprios — por exemplo as camadas
 medallion Bronze, Prata e Ouro entre a fonte e a fonte secundária.
 
-Cada nível tem **Título** e **Ordem**; a ordem posiciona a coluna na vista de linhagem,
+Cada nível tem **Título**, **Ordem** e, opcionalmente, duas **cores**; a ordem posiciona a coluna na vista de linhagem,
 que é lida da esquerda (produto) para a direita (origem). Os padrão ocupam as ordens 0
 (raiz), 10 (domínio), 20 (produto final), 30 (produto primário), 40 (fonte secundária),
 50 (fonte) e 60 (origem) — então Ouro 42, Prata 44 e Bronze 46 entram exatamente entre a
@@ -229,8 +234,9 @@ continua valendo — o resto fica vazio. Transferir um componente entre níveis 
 (e a coluna em que ele aparece): não quebra quem o consome nem apaga a ficha dele.
 
 Pelo app (`npm run dev`): botão **≣ Níveis** no topo lista **todos** os níveis, cria
-(Título + Ordem), renomeia, reordena e remove — inclusive os padrão. Remover um nível em
-uso é recusado, com a lista de linhas que o utilizam. Linhas de nível customizado são
+(Título + Ordem), renomeia, reordena, **pinta** e remove — inclusive os padrão. Cada linha
+traz dois seletores de cor (fundo e borda da faixa) e um **↺** que devolve o nível à cor
+padrão. Remover um nível em uso é recusado, com a lista de linhas que o utilizam. Linhas de nível customizado são
 cadastradas pelo **+ Novo componente** (ou pelo **✎ Editar** de um nó) escolhendo o nível
 no campo "Tipo de componente"; o campo "Associações" liga a linha às demais (coluna
 `associacoes`). Trocar o tipo de uma linha **nunca apaga campo**: o que o nível novo não
@@ -238,9 +244,10 @@ usa continua na planilha, e o formulário avisa antes de salvar o que não coube
 
 ### Renomear e remover: o `slug` é a chave
 
-Na planilha, os níveis vivem em **`niveis.csv`**, com três colunas: `titulo;ordem;slug`.
-O **slug** é a identidade do nível — é ele que aparece na coluna `nivel` do
-`catalogo.csv` (ex.: `bronze`, `final`) e o que amarra as linhas ao nível:
+Na planilha, os níveis vivem em **`niveis.csv`**, com cinco colunas:
+`titulo;ordem;slug;cor_fundo;cor_borda`. O **slug** é a identidade do nível — é ele que
+aparece na coluna `nivel` do `catalogo.csv` (ex.: `bronze`, `final`) e o que amarra as
+linhas ao nível:
 
 - **slug vazio** = nível novo; o slug é derivado do título (`Bronze` → `bronze`).
 - **slug preenchido** = esta linha *é* aquele nível, com o título que ela disser.
@@ -263,6 +270,34 @@ removidos somem com eles (uma `associacao` órfã vira aviso; um `consome` órf�
 fantasma). Recriar o nível com o mesmo slug traz tudo de volta.
 
 Uma coluna só vira faixa no grafo quando tem ao menos um componente.
+
+### Cor da faixa: `cor_fundo` e `cor_borda`
+
+As duas últimas colunas do `niveis.csv` pintam a faixa daquele nível na vista de níveis —
+útil para dar identidade a uma camada ("Prata" prateado, "Bronze" acobreado). São
+**atributo livre do nível**: o app não sabe o que "prata" significa nem deriva cor de nome
+nenhum, quem escolhe é você.
+
+- Formato: hexadecimal `#RRGGBB` (a forma curta `#RGB` também vale e é normalizada —
+  `#0AF` vira `#00aaff`). **Vazio = cor padrão**, que é o cinza neutro de sempre.
+- As duas são independentes: dá para pintar só o fundo, só a borda, ou as duas.
+- Valor que não for hexadecimal vira **aviso** no `npm run data` (o nível continua valendo,
+  sem a cor) e **erro** no formulário — que recusa salvar citando a coluna e o valor.
+- Arquivo de três colunas (o formato anterior) continua carregando sem aviso nenhum.
+
+```
+titulo;ordem;slug;cor_fundo;cor_borda
+Prata;44;prata;#c0c0c0;#8fa3b8
+Bronze;46;bronze;;
+```
+
+**A cor não vai crua para o mapa.** A faixa é o pano de fundo dos nós, e é a cor do nó
+(débito técnico) que carrega a informação — uma cor cheia atrás deles mataria o contraste
+do tema escuro. Então a cor do nível entra como uma lâmina translúcida, na mesma proporção
+do cinza padrão: **12% de opacidade no preenchimento e 55% na borda**, com o **título da
+faixa herdando a cor da borda clareada** (para uma borda escura continuar legível como
+texto). Definir só uma das cores colore o título do mesmo jeito, para a faixa ficar
+coerente. Os valores vivem em `src/components/band-colors.ts`.
 
 ### Visão limpa: "Mostrar associações"
 
@@ -311,7 +346,7 @@ está grande o suficiente na tela para o glifo ser legível.
 
 ```
 catalogo.csv                # conteúdo: a planilha do catálogo (uma linha por componente)
-niveis.csv                  # níveis da cadeia (titulo;ordem;slug) — vazio = só os padrão
+niveis.csv                  # níveis da cadeia (titulo;ordem;slug;cor_fundo;cor_borda) — vazio = só os padrão
 scripts/
   build-graph.ts            # CLI: lê catalogo.csv e emite src/data/graph.json
   graph-lib.ts              # lógica pura do build (parser CSV, níveis, montagem do grafo)
@@ -332,7 +367,8 @@ src/
     table-utils.ts          # helpers puros da tabela: filtro, ordenação, agrupamento
     Legend.tsx              # legenda fixa de cores/bordas
     Markdown.tsx            # renderizador mínimo do texto de observações
-    palette.ts              # fonte única das cores
+    palette.ts              # fonte única das cores dos nós (semântica de débito)
+    band-colors.ts          # cor da faixa de cada nível: o alpha que a cor escolhida recebe
     graph-types.ts          # tipos do schema + wrapper tipado da lib de grafo
     catalog-api.ts          # cliente da API do dev server (/api/catalogo, /api/niveis)
     catalog-store.ts        # interface de persistência + store HTTP (o modo de sempre)

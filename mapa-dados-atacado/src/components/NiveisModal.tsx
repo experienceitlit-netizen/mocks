@@ -3,10 +3,14 @@
 // um nível ao catálogo é o `slug`, não o título: renomear um nível não mexe em
 // nenhuma linha do catalogo.csv.
 // Toda mudança vai pelo store com a lista COMPLETA (mesma disciplina do
-// catálogo): adicionar/remover salvam na hora; edições de título/ordem
+// catálogo): adicionar/remover salvam na hora; edições de título, ordem e COR
 // acumulam e vão juntas no "Salvar alterações". Remover pede confirmação (o
 // nível deixa de ser uma coluna do mapa) e o save recusa remoção de nível em
 // uso — o erro aparece no próprio modal.
+//
+// As duas cores (fundo e borda da faixa) são atributo livre do nível: nada no
+// código associa cor a nome de camada. No mapa elas entram com alpha, para não
+// estourar o tema escuro — ver band-colors.ts.
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { NivelApiRow } from './catalog-api'
@@ -21,12 +25,16 @@ function norm(s: string): string {
     .trim()
 }
 
-/** Linha do modal: o nível como a API o devolve, com slug e origem resolvidos. */
+/** Linha do modal: o nível como a API o devolve, com slug e origem resolvidos.
+ *  As cores viram string sempre presente — "" é "sem cor, use o padrão", que é
+ *  o estado que o <input type="color"> não sabe representar sozinho. */
 interface Linha {
   slug: string
   titulo: string
   ordem: number
   builtin: boolean
+  corFundo: string
+  corBorda: string
 }
 
 const comoLinha = (r: NivelApiRow): Linha => ({
@@ -34,7 +42,15 @@ const comoLinha = (r: NivelApiRow): Linha => ({
   titulo: r.titulo,
   ordem: r.ordem,
   builtin: r.builtin === true,
+  corFundo: r.corFundo ?? '',
+  corBorda: r.corBorda ?? '',
 })
+
+/** Valor que o seletor mostra quando o nível não tem cor: o cinza da faixa
+ *  neutra, para o swatch não mentir sobre o que está desenhado no mapa. O
+ *  "sem cor" de verdade é o `--vazio` no CSS (swatch tracejado e esmaecido). */
+const COR_FUNDO_NEUTRA = '#2a2a2a'
+const COR_BORDA_NEUTRA = '#8a8a8a'
 
 interface NiveisModalProps {
   /** Onde os níveis são lidos e gravados; null = sem fonte editável. */
@@ -70,9 +86,8 @@ export default function NiveisModal({ store, niveis, onSaved, onClose }: NiveisM
       if (!alive) return
       if (rows === null) {
         setApiOff(true)
-        setLinhas(
-          [...niveis].sort((a, b) => a.ordem - b.ordem).map((n) => ({ ...n, builtin: n.builtin })),
-        )
+        // O bloco `niveis` do graph.json tem a mesma forma da resposta do GET.
+        setLinhas([...niveis].sort((a, b) => a.ordem - b.ordem).map(comoLinha))
       } else {
         setLinhas(rows.map(comoLinha))
       }
@@ -85,9 +100,16 @@ export default function NiveisModal({ store, niveis, onSaved, onClose }: NiveisM
   }, [])
 
   /** Lista completa como o store a espera: o slug preserva a identidade de cada
-   *  nível (vazio só no que acabou de ser criado). */
+   *  nível (vazio só no que acabou de ser criado) e cor vazia não vai no
+   *  payload — é assim que o backend entende "de volta ao padrão". */
   const payload = (rows: Linha[]): NivelApiRow[] =>
-    rows.map((r) => (r.slug === '' ? { titulo: r.titulo.trim(), ordem: r.ordem } : { slug: r.slug, titulo: r.titulo.trim(), ordem: r.ordem }))
+    rows.map((r) => {
+      const row: NivelApiRow = { titulo: r.titulo.trim(), ordem: r.ordem }
+      if (r.slug !== '') row.slug = r.slug
+      if (r.corFundo !== '') row.corFundo = r.corFundo
+      if (r.corBorda !== '') row.corBorda = r.corBorda
+      return row
+    })
 
   const post = async (next: Linha[], aposOk: () => void) => {
     if (store === null) return
@@ -133,8 +155,10 @@ export default function NiveisModal({ store, niveis, onSaved, onClose }: NiveisM
       setErrors(locais)
       return
     }
-    // Slug vazio = nível novo: o backend deriva do título.
-    void post([...linhas, { slug: '', titulo, ordem, builtin: false }], () => {
+    // Slug vazio = nível novo: o backend deriva do título. Nasce sem cor —
+    // colorir é um segundo gesto, na linha que acabou de aparecer.
+    const novo: Linha = { slug: '', titulo, ordem, builtin: false, corFundo: '', corBorda: '' }
+    void post([...linhas, novo], () => {
       setNovoTitulo('')
       setNovaOrdem('')
     })
@@ -220,6 +244,36 @@ export default function NiveisModal({ store, niveis, onSaved, onClose }: NiveisM
                       disabled={apiOff}
                       onChange={(e) => editar(i, { titulo: e.target.value })}
                     />
+                    <span className="niveis-modal__cores">
+                      <input
+                        type="color"
+                        className={`niveis-modal__cor${l.corFundo === '' ? ' niveis-modal__cor--vazio' : ''}`}
+                        title="Cor de fundo da faixa"
+                        aria-label={`Cor de fundo do nível ${l.titulo}`}
+                        value={l.corFundo === '' ? COR_FUNDO_NEUTRA : l.corFundo}
+                        disabled={apiOff}
+                        onChange={(e) => editar(i, { corFundo: e.target.value })}
+                      />
+                      <input
+                        type="color"
+                        className={`niveis-modal__cor${l.corBorda === '' ? ' niveis-modal__cor--vazio' : ''}`}
+                        title="Cor da borda da faixa"
+                        aria-label={`Cor da borda do nível ${l.titulo}`}
+                        value={l.corBorda === '' ? COR_BORDA_NEUTRA : l.corBorda}
+                        disabled={apiOff}
+                        onChange={(e) => editar(i, { corBorda: e.target.value })}
+                      />
+                      <button
+                        type="button"
+                        className="niveis-modal__cor-limpar"
+                        title="Voltar às cores padrão"
+                        aria-label={`Limpar cores do nível ${l.titulo}`}
+                        disabled={apiOff || (l.corFundo === '' && l.corBorda === '')}
+                        onClick={() => editar(i, { corFundo: '', corBorda: '' })}
+                      >
+                        ↺
+                      </button>
+                    </span>
                     {l.builtin && <span className="niveis-modal__tag">padrão</span>}
                     <button
                       type="button"
@@ -308,7 +362,9 @@ export default function NiveisModal({ store, niveis, onSaved, onClose }: NiveisM
             </div>
             <p className="niveis-modal__hint">
               Ordem = posição da coluna, da esquerda para a direita. Renomear um nível não mexe no
-              catálogo; remover só é possível quando nenhuma linha está nele.
+              catálogo; remover só é possível quando nenhuma linha está nele. Os dois quadradinhos
+              pintam a faixa do nível no mapa (fundo e borda, aplicados com transparência); ↺ volta
+              à cor padrão.
             </p>
           </form>
 

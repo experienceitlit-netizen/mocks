@@ -5,6 +5,7 @@ import type { GraphLinkData, GraphMethods, GraphNodeData, SimLink, SimNode } fro
 import { linkEndId, tipoComponenteDe } from './graph-types'
 import type { LineageColumn } from './lineage'
 import { extentOf, traceShape } from './shapes'
+import { coresDaFaixa } from './band-colors'
 import { BACKGROUND, nodeColor } from './palette'
 
 export interface GraphHandle {
@@ -81,9 +82,6 @@ const BAND_PAD_TOP = 46
 /** Folga abaixo do último nó: extensão + rótulo do nó (fonte 10 + margem). */
 const BAND_PAD_BOTTOM = 36
 const BAND_RADIUS = 12
-const BAND_FILL = 'rgba(255,255,255,0.03)'
-const BAND_STROKE = 'rgba(255,255,255,0.10)'
-const BAND_TITLE_COLOR = '#8A8A8A'
 
 /** Raio mínimo NA TELA (px) para o glifo do Databricks aparecer — abaixo
  *  disso os tijolos viram ruído. */
@@ -220,11 +218,14 @@ export default function Graph({
       levelColumns.forEach((col, i) => {
         const top = tops[i]
         const height = col.yMax + BAND_PAD_BOTTOM - top
+        // Cores do próprio nível quando ele as declara, já com o alpha que as
+        // deixa conviver com o tema escuro; sem cor, o neutro de sempre.
+        const cores = coresDaFaixa(col)
         ctx.beginPath()
         ctx.roundRect(col.x - BAND_W / 2, top, BAND_W, height, BAND_RADIUS)
-        ctx.fillStyle = BAND_FILL
+        ctx.fillStyle = cores.fill
         ctx.fill()
-        ctx.strokeStyle = BAND_STROKE
+        ctx.strokeStyle = cores.stroke
         ctx.lineWidth = 1 / scale
         ctx.stroke()
 
@@ -234,7 +235,7 @@ export default function Graph({
         ctx.letterSpacing = '1.5px'
         ctx.textAlign = 'center'
         ctx.textBaseline = 'top'
-        ctx.fillStyle = BAND_TITLE_COLOR
+        ctx.fillStyle = cores.titulo
         ctx.fillText(col.label.toUpperCase(), col.x, top + 10)
         ctx.letterSpacing = '0px'
 
