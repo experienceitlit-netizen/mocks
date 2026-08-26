@@ -4,55 +4,45 @@ MVP web navegável, estilo grafo do Obsidian, dos produtos e insumos de dados da
 Comercial Atacado: quem produz e quem consome cada dado, com owner, centro de custo e
 status de débito técnico visíveis nó a nó.
 
-O conteúdo vive na planilha **`catalogo.csv`** na raiz do projeto (uma linha por dado —
-abra e edite no Excel ou LibreOffice). Um script de build transforma o catálogo em
+O conteúdo vive na planilha **`catalogo.csv`** na raiz do projeto (uma linha por
+componente — abra e edite no Excel ou LibreOffice). Um script de build transforma o
+catálogo em
 `src/data/graph.json`, que o front-end (React + Vite + `react-force-graph-2d`) renderiza
 como grafo interativo. Sem backend, sem banco, sem login. (Evolução futura prevista:
 substituir a edição da planilha por um formulário na própria UI.)
 
-## Modelo em 4 níveis
+## O modelo: componentes e níveis
 
-O catálogo espelha a tabela executiva em cadeias **origem → fonte (sistema) → produto
-primário → produto final**:
+**Todo nó do mapa é um COMPONENTE que pertence a um NÍVEL.** Não existe "produto",
+"insumo", "domínio" ou "raiz" como categoria à parte: o que separa um componente de outro
+é só o nível dele, e níveis são dados que você edita (`niveis.csv` / botão **≣ Níveis**),
+não tipos fixos no código. A raiz do mapa é uma linha do catálogo como qualquer outra; um
+domínio também.
 
-- **Primário** (`nivel: primario`): dado bruto/insumo com rota própria — as colunas
-  `origem` e `fonte_sistema` dizem de onde ele vem. Primários deixam a coluna `consome`
-  vazia.
-- **Final** (`nivel: final`; `secundario` é o nome legado, ainda aceito): produto final
-  montado a partir de primários. Deixa `origem` e `fonte_sistema` vazios (não se aplica —
-  a rota vem dos primários) e lista na coluna `consome` **todos** os primários que
-  consome (arestas "consome").
-- **Ambos** (`nivel: ambos`): produto consumido direto e também insumo de outros
-  (ex.: `rating`), sem self-loop.
-- **Raiz** (criada **automaticamente pelo build**, sem linha no CSV): o nó único
-  **"Atacado — Dados"**, portfólio do domínio e ponto de entrada do mapa. Agrega sozinho
-  todos os produtos finais (todo dado de `nivel` `final` ou `ambos`). Não é um
-  produto de dado: desenhado como **hexágono azul** de tamanho fixo, fica fora dos
-  contadores, dos filtros e da tabela, e owner/centro de custo não se aplicam (o balão
-  mostra "—", sem ⚠).
-- **Fonte secundária** (derivada pelo build, sem linha no CSV): quase toda fonte —
-  banco SQL, planilha etc. — é ingerida numa tabela Databricks **UCS** antes de virar
-  produto. A coluna opcional `fontes_secundarias` (nomes separados por ` | `)
-  materializa essas tabelas como nós `fsec-*` e reescreve a rota para **origem → fonte →
-  fonte secundária → produto primário** (a aresta direta dado→fonte é substituída; com a
-  fonte ainda desconhecida, a fonte secundária liga direto na origem). O débito técnico
-  da rota **permanece no dado** — a ingestão não o resolve. Desenhada como **quadrado de
-  cantos bem arredondados teal**, fica com sistemas/origens (toggle "Fontes e origens") e
-  fora de contadores, filtros e tabela. O mapeamento é **incremental**: hoje só o Mercado
-  Alvo declara as suas; os demais dados seguem com a ligação direta até serem mapeados.
-- **Domínio** (derivado pelo build, sem linha no CSV): entre a raiz e os produtos
-  finais o build insere um nó por domínio (`dom-cadastro`, `dom-mercado`, `dom-risco`,
-  `dom-resultado`, `dom-regulatorio`), reescrevendo cada aresta raiz→produto como
-  raiz→domínio→produto. Navegação: **Atacado — Dados → domínio → produto final →
-  produto primário → fonte → origem**. Desenhado como **quadrado arredondado na cor do
-  domínio**, sempre visível no mapa, focável, e — como a raiz — fora de contadores,
-  filtros e tabela.
+Daí saem as duas regras que governam o build inteiro:
 
-Hoje o `catalogo.csv` tem **35 dados** (22 primários, 11 finais, 2 "ambos") —
-**36 nós de dados contando a raiz automática** — com **25 cadeias "consome"**
-primário→final e **18 arestas "agrega"** (raiz → 5 domínios → 13 produtos finais);
-com os domínios, sistemas, fontes secundárias e origens derivados, o `graph.json` fecha
-em **74 nós e 84 arestas**.
+1. **Todo nó vem de uma LINHA do `catalogo.csv`.** Nada é derivado de campo: preencher a
+   coluna `dominio` não cria um nó de domínio, nenhum campo cria um nó de
+   sistema. Quer o componente no mapa? Cadastre a linha dele, no nível dele.
+2. **Toda aresta vem de uma referência declarada.** Só duas colunas ligam componentes:
+   `consome` (aresta **"consome"**) e `associacoes` (aresta **"vem de"**). O build não
+   infere ligação nenhuma.
+
+As referências resolvem por **nome** (sem diferenciar caixa nem acentos) ou pelo **id**,
+contra **qualquer linha do catálogo**, de qualquer nível — a cadeia pode ser percorrida
+em qualquer direção. Como o mesmo nome pode existir em níveis diferentes, o id é
+`<slug do nível>-<slug do nome>`: `final-resultado` e `silver-resultado` são dois
+componentes distintos, ambos chamados "Resultado". Nome ambíguo numa referência gera aviso
+e vence o nível de **menor ordem**. Mudar um componente de nível muda só o id dele — quem
+o cita pelo nome continua achando.
+
+Nome citado em `consome` que não existe em lugar nenhum vira **nó fantasma** (fica no
+mapa, com aviso: é justamente o buraco que o mapa precisa mostrar). Em `associacoes`,
+gera só o aviso, sem criar nó — não dá para adivinhar em que nível ele existiria.
+
+Um componente está **incompleto** (gap de governança) quando `owner` **ou**
+`centro_de_custo` está vazio. A regra é uma só, para todos os níveis: nenhum nível é
+dispensado de ter dono.
 
 ## Como rodar
 
@@ -87,17 +77,17 @@ Dois pacotes ficam em `../entregas/` (fora do git):
 ## Como editar o catálogo (menos de 5 minutos)
 
 1. Abra o **`catalogo.csv`** no Excel ou LibreOffice (separador `;`, UTF-8 com BOM —
-   abre certo por duplo clique no Excel pt-BR). Cada linha é um dado; a raiz
-   "Atacado — Dados" **não** tem linha (o build a cria e a liga sozinho).
+   abre certo por duplo clique no Excel pt-BR). Cada linha é um componente, seja qual
+   for o nível — inclusive a raiz "Atacado — Dados" e os domínios.
 
-2. Para um dado novo, acrescente uma linha e preencha as colunas (tabela abaixo).
-   Listas (`consome`, `fontes_secundarias`) separam os nomes por ` | ` (barra vertical).
+2. Para um componente novo, acrescente uma linha e preencha as colunas (tabela abaixo).
+   Listas (`consome`, `associacoes`) separam os nomes por ` | ` (barra vertical).
    Não sabe owner ou centro de custo? Deixe a célula vazia — o nó aparece com borda
-   tracejada, sinalizando o gap de governança. Exemplo de linha (as duas primeiras e as
-   três últimas colunas omitidas):
+   tracejada, sinalizando o gap de governança. Exemplo de linha (as três colunas
+   legadas e as duas últimas omitidas):
 
    ```
-   Meu Novo Painel;final;Risco;;;;GDAD | Rating;painel de risco da mesa;nao;producao;;;
+   Meu Novo Painel;final;Tabela Delta;Risco;GDAD | Rating;painel de risco da mesa;nao;producao;;
    ```
 
 3. `observacoes` é texto livre em Markdown (aparece no balão do nó). `[[Wikilinks]]`
@@ -112,62 +102,121 @@ Dois pacotes ficam em `../entregas/` (fora do git):
 
 ## Colunas do catalogo.csv
 
-Cabeçalho, nesta ordem: `nome; nivel; dominio; origem; fonte_sistema;
-fontes_secundarias; consome; descricao; debito; status; owner; centro_de_custo;
-observacoes`.
+Cabeçalho, nesta ordem (12 colunas): `nome; nivel; tipo_componente; dominio;
+consome; descricao; debito; status; owner;
+centro_de_custo; observacoes; associacoes`.
+
+As **mesmas colunas valem em qualquer nível** — não há formato de linha por nível.
 
 | Coluna | Obrigatória | Valores válidos / formato | Observações |
 |---|---|---|---|
-| `nome` | sim | texto livre curto | rótulo do nó; o `id` é derivado como slug (ex.: "RAR 12M" → `rar-12m`, usado na URL `?no=rar-12m`); linha sem nome é ignorada com aviso |
-| `nivel` | sim | `primario` \| `final` (legado: `secundario`) \| `ambos` \| `dominio` \| `origem` \| `fonte` \| `fonte-secundaria` \| slug de um nível customizado | nível na cadeia (ver "Modelo em 4 níveis"); deriva o tipo do nó (primário = insumo, o resto = produto); a raiz não tem linha |
-| `dominio` | sim | `Cadastro` \| `Mercado` \| `Risco` \| `Resultado` \| `Regulatorio` \| `A definir` | filtro por domínio na UI; vazio = `A definir` |
-| `origem` | primários | texto ou vazio | área ou processo de origem; vazio em produtos finais = não se aplica (UI mostra "—") |
-| `fonte_sistema` | primários | texto ou vazio | sistema/plataforma onde o dado vive; se contiver "legado" ou "on-premise", o nó fica âmbar; vazio em produtos finais = não se aplica |
-| `fontes_secundarias` | não | nomes separados por ` \| ` (ex.: `Mercado Alvo Semanal - UCS \| Mercado Alvo Mensal - UCS`) | tabelas UCS onde a fonte é ingerida; presença substitui a aresta direta dado→sistema por dado→fonte secundária→sistema; o nome resolve em qualquer linha do catálogo (inclusive de nível customizado) antes de materializar um nó próprio |
-| `consome` | produtos finais | nomes (ou ids) separados por ` \| `, sem diferenciar caixa nem acentos | cria as arestas "consome"; resolve em **qualquer linha do catálogo** — produto, componente ou nível customizado — e só o nome que não existe em lugar nenhum vira nó fantasma + aviso |
-| `descricao` | sim | uma linha | aparece no balão e na busca |
-| `debito` | sim | `sim` \| `nao` \| `avaliar` | manda na cor do nó (ver abaixo) |
-| `status` | sim | `producao` \| `transicao` \| `investigacao` | |
+| `nome` | sim | texto livre curto | rótulo do nó; o `id` é `<slug do nível>-<slug do nome>` (ex.: "RAR 12M" no nível `final` → `final-rar-12m`, usado na URL `?no=final-rar-12m`); linha sem nome é ignorada com aviso |
+| `nivel` | sim | slug de um nível ativo (`raiz`, `dominio`, `final`, `primario`, `fonte`, `origem`… ou qualquer um cadastrado no `niveis.csv`) | é o que define o componente; nível inexistente (ou removido da cadeia) faz a linha ser ignorada com aviso, e é erro no formulário |
+| `tipo_componente` | não | `Tabela SQL` \| `Tabela Delta` \| `Excel` \| `Default` | forma/tecnologia do componente; vazio = `Default`; valor fora da lista vira aviso no build (assume `Default`) e erro no formulário |
+| `dominio` | não | texto livre (`Cadastro`, `Mercado`, `Risco`…) | filtro por domínio na UI; é **só um campo** — não cria nó de domínio (para isso, cadastre a linha no nível `dominio`) |
+| `consome` | não | nomes (ou ids) separados por ` \| `, sem diferenciar caixa nem acentos | cria as arestas **"consome"**; resolve em **qualquer linha do catálogo**, de qualquer nível; nome que não existe em lugar nenhum vira nó fantasma + aviso |
+| `descricao` | não | uma linha | aparece no balão e na busca |
+| `debito` | não | `sim` \| `nao` \| `avaliar` ou vazio | manda na cor do nó (ver abaixo); opcional em qualquer nível, mas preenchido tem de ser um dos três |
+| `status` | não | `producao` \| `transicao` \| `investigacao` ou vazio | opcional em qualquer nível |
 | `owner` | sim (aceita vazio) | texto ou vazio | vazio = a definir → nó com borda tracejada |
 | `centro_de_custo` | sim (aceita vazio) | texto ou vazio | vazio = a definir → nó com borda tracejada |
 | `observacoes` | não | Markdown livre (multilinha, entre aspas) | corpo do balão de detalhe; wikilinks só navegam, não criam arestas |
-| `associacoes` | não | nomes separados por ` \| ` | só em linhas de **nível customizado**: liga a linha a qualquer outra do mapa (produto, fonte, origem, outro nível custom…), gerando arestas "vem de"; nome inexistente gera aviso |
+| `associacoes` | não | nomes (ou ids) separados por ` \| ` | cria as arestas **"vem de"**, em qualquer nível; resolve como `consome`, mas nome inexistente só gera aviso — nenhum nó é criado |
 
-Problema no catálogo gera **warning** no build (não erro) — o dado entra mesmo assim,
-para o gap ficar visível em vez de escondido.
+`tipo_componente` e `associacoes` são **opcionais na leitura**: um `catalogo.csv` antigo,
+sem essas colunas, abre sem aviso nenhum (elas entram vazias). O serializador sempre grava
+as 15.
 
-## Níveis customizados
+Problema no catálogo gera **warning** no build (não erro) — o componente entra mesmo
+assim, para o gap ficar visível em vez de escondido. A exceção é a linha que o build não
+tem como posicionar (sem nome, sem nível ou de nível inexistente): essa é ignorada, com
+aviso dizendo por quê.
 
-Além dos níveis fixos (Domínio, Produto final, Produto primário, Fonte secundária,
-Fonte, Origem), dá para criar níveis próprios — por exemplo as camadas medallion
-Bronze, Prata e Ouro entre a fonte e a fonte secundária.
+## O que o build gera (`src/data/graph.json`)
+
+```jsonc
+{
+  "niveis": [ { "slug": "raiz", "titulo": "Raiz", "ordem": 0, "builtin": true }, … ],
+  "nodes": [
+    {
+      "id": "final-rar-12m",        // <slug do nível>-<slug do nome>
+      "nome": "RAR 12M",
+      "nivel": "final",             // slug de um nível do bloco `niveis`
+      "tipoComponente": "Default",  // Tabela SQL | Tabela Delta | Excel | Default
+      "dominio": "Risco",
+      "debito": "nao",
+      "status": "producao",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "…",
+      "corpo": "…",                 // opcional: só quando `observacoes` não está vazia
+      "incompleto": true,           // owner OU centroDeCusto vazio
+      "fantasma": true              // opcional: citado em `consome`, sem linha própria
+    }
+  ],
+  "links": [ { "source": "…", "target": "…", "label": "consome" | "vem de" } ]
+}
+```
+
+Todo nó tem essa mesma forma, seja qual for o nível. A saída é **determinística**: nós
+ordenados por `id`, arestas por `source`/`target`/`label`, e o resultado não depende da
+ordem das linhas no CSV — rodar `npm run data` duas vezes dá o mesmo arquivo byte a byte.
+
+## Níveis da cadeia
+
+Os sete níveis do modelo (Raiz, Domínio, Produto final, Produto primário, Fonte
+secundária, Fonte, Origem) são apenas o **padrão**: todos podem ser renomeados,
+reordenados e removidos, e dá para criar níveis próprios — por exemplo as camadas
+medallion Bronze, Prata e Ouro entre a fonte e a fonte secundária.
 
 Cada nível tem **Título** e **Ordem**; a ordem posiciona a coluna na vista de linhagem,
-que é lida da esquerda (produto) para a direita (origem). Os fixos ocupam as ordens 0
+que é lida da esquerda (produto) para a direita (origem). Os padrão ocupam as ordens 0
 (raiz), 10 (domínio), 20 (produto final), 30 (produto primário), 40 (fonte secundária),
 50 (fonte) e 60 (origem) — então Ouro 42, Prata 44 e Bronze 46 entram exatamente entre a
 fonte secundária e a fonte, do mais refinado ao mais cru.
 
-**Nível customizado é nível de DADO, não de metadado.** A linha aceita todos os campos de
-um produto (domínio, origem, fonte, fontes secundárias, consome, débito, status, owner,
-centro de custo) *mais* `associacoes`, e o nó segue as mesmas regras dos produtos quando
-esses campos existem: cor por débito/legado, borda tracejada com owner ou centro de custo
-vazio, arestas de rota e de consumo iguais às de um produto — mudando só a **coluna**.
-Preencher apenas nome e descrição continua valendo: a linha vira um componente simples, na
-cor do nível. Transferir um dado entre níveis, portanto, não quebra quem o consome nem
-apaga a ficha dele.
+**Nível cadastrado não é uma classe à parte.** A linha dele tem exatamente as mesmas
+colunas de qualquer outra, e o nó tem exatamente os mesmos campos: as regras de cor por
+débito, de borda tracejada por owner/centro de custo vazio e de arestas por
+`consome`/`associacoes` valem igual em todos os níveis. Preencher apenas nome e descrição
+continua valendo — o resto fica vazio. Transferir um componente entre níveis muda só o id
+(e a coluna em que ele aparece): não quebra quem o consome nem apaga a ficha dele.
 
-Pelo app (`npm run dev`): botão **≣ Níveis** no topo lista os níveis, cria (Título +
-Ordem), renomeia e remove os customizados — remover um nível em uso é recusado com a
-lista de linhas que o utilizam. Linhas desse nível são cadastradas pelo **+ Novo
-componente** (ou pelo **✎ Editar** de um nó) escolhendo o nível no campo "Tipo de
-componente"; o campo "Associações" liga a linha às demais (coluna `associacoes`). Trocar o
-tipo de uma linha **nunca apaga campo**: o que o nível novo não usa continua na planilha, e
-o formulário avisa antes de salvar o que não couber.
+Pelo app (`npm run dev`): botão **≣ Níveis** no topo lista **todos** os níveis, cria
+(Título + Ordem), renomeia, reordena e remove — inclusive os padrão. Remover um nível em
+uso é recusado, com a lista de linhas que o utilizam. Linhas de nível customizado são
+cadastradas pelo **+ Novo componente** (ou pelo **✎ Editar** de um nó) escolhendo o nível
+no campo "Tipo de componente"; o campo "Associações" liga a linha às demais (coluna
+`associacoes`). Trocar o tipo de uma linha **nunca apaga campo**: o que o nível novo não
+usa continua na planilha, e o formulário avisa antes de salvar o que não couber.
 
-Na planilha, os níveis vivem em **`niveis.csv`** (`titulo;ordem`, só os customizados) e a
-coluna `nivel` do `catalogo.csv` aceita o slug do nível (ex.: `bronze`). Uma coluna só
-vira faixa no grafo quando tem ao menos um componente.
+### Renomear e remover: o `slug` é a chave
+
+Na planilha, os níveis vivem em **`niveis.csv`**, com três colunas: `titulo;ordem;slug`.
+O **slug** é a identidade do nível — é ele que aparece na coluna `nivel` do
+`catalogo.csv` (ex.: `bronze`, `final`) e o que amarra as linhas ao nível:
+
+- **slug vazio** = nível novo; o slug é derivado do título (`Bronze` → `bronze`).
+- **slug preenchido** = esta linha *é* aquele nível, com o título que ela disser.
+  Renomear "Produto final" para "Produto de dados" mantém `final` e **não mexe em nenhuma
+  linha do catálogo** — muda só o rótulo da faixa.
+
+O arquivo tem dois modos, decididos pelo próprio conteúdo (arquivo antigo, de duas
+colunas, segue funcionando sem aviso):
+
+- **legado** — nenhuma linha traz slug de nível padrão: os sete padrão valem e as linhas
+  do arquivo são os customizados, encaixados pela ordem numérica;
+- **explícito** — alguma linha traz slug de nível padrão: o arquivo passa a ser a lista
+  **completa**, e nível padrão que não estiver listado está **removido**. É o que o modal
+  grava a partir da primeira edição.
+
+Remover um nível **leva junto as linhas dele** — e nenhum nível é exceção, nem a `raiz`.
+Por isso o modal recusa remover um nível em uso, listando as linhas que o utilizam: o
+caminho é mover essas linhas para outro nível antes. As arestas que apontavam para os nós
+removidos somem com eles (uma `associacao` órfã vira aviso; um `consome` órfão vira nó
+fantasma). Recriar o nível com o mesmo slug traz tudo de volta.
+
+Uma coluna só vira faixa no grafo quando tem ao menos um componente.
 
 ### Visão limpa: "Mostrar associações"
 
@@ -215,12 +264,14 @@ está grande o suficiente na tela para o glifo ser legível.
 ## Estrutura do projeto
 
 ```
-catalogo.csv                # conteúdo: a planilha do catálogo (uma linha por dado)
-niveis.csv                  # níveis customizados (titulo;ordem) — vazio = só os fixos
+catalogo.csv                # conteúdo: a planilha do catálogo (uma linha por componente)
+niveis.csv                  # níveis da cadeia (titulo;ordem;slug) — vazio = só os padrão
 scripts/
   build-graph.ts            # CLI: lê catalogo.csv e emite src/data/graph.json
-  graph-lib.ts              # lógica pura do build (parser CSV, raiz automática, montagem do grafo)
-  graph-lib.test.ts         # testes (npm test)
+  graph-lib.ts              # lógica pura do build (parser CSV, níveis, montagem do grafo)
+  graph-lib.test.ts         # testes do build (npm test)
+  niveis.test.ts            # testes dos níveis dinâmicos
+  catalogo-serde.test.ts    # testes do round-trip CSV e da validação da API
   vite-plugin-catalogo.ts   # API do dev server: /api/catalogo e /api/niveis (grava os CSVs)
 src/
   data/graph.json           # GERADO pelo build — não editar à mão (mas é commitado)

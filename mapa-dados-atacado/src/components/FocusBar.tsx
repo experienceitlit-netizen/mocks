@@ -14,8 +14,6 @@ interface FocusBarProps {
   path: Crumb[]
   depth: number
   vista: Vista
-  /** O nó focado é um dado com linhagem; esconde o switch quando não. */
-  canNiveis: boolean
   /** Faixas de nível (retângulos + títulos) visíveis na vista Níveis. */
   bandsOn: boolean
   assocOn: boolean
@@ -32,7 +30,6 @@ export default function FocusBar({
   path,
   depth,
   vista,
-  canNiveis,
   bandsOn,
   assocOn,
   onCrumbClick,
@@ -68,28 +65,26 @@ export default function FocusBar({
         ))}
       </nav>
 
-      {canNiveis && (
-        <div className="focus-bar__vista" role="group" aria-label="Tipo de vista">
-          <button
-            type="button"
-            className={vista === 'niveis' ? 'focus-bar__vista--active' : ''}
-            aria-pressed={vista === 'niveis'}
-            onClick={() => onVistaChange('niveis')}
-            title="Linhagem completa em níveis: origem → fonte → produto"
-          >
-            Níveis
-          </button>
-          <button
-            type="button"
-            className={vista === 'forca' ? 'focus-bar__vista--active' : ''}
-            aria-pressed={vista === 'forca'}
-            onClick={() => onVistaChange('forca')}
-            title="Vizinhança em grafo de força, com profundidade ajustável"
-          >
-            Força
-          </button>
-        </div>
-      )}
+      <div className="focus-bar__vista" role="group" aria-label="Tipo de vista">
+        <button
+          type="button"
+          className={vista === 'niveis' ? 'focus-bar__vista--active' : ''}
+          aria-pressed={vista === 'niveis'}
+          onClick={() => onVistaChange('niveis')}
+          title="Linhagem completa em colunas, uma por nível"
+        >
+          Níveis
+        </button>
+        <button
+          type="button"
+          className={vista === 'forca' ? 'focus-bar__vista--active' : ''}
+          aria-pressed={vista === 'forca'}
+          onClick={() => onVistaChange('forca')}
+          title="Vizinhança em grafo de força, com profundidade ajustável"
+        >
+          Força
+        </button>
+      </div>
 
       {vista === 'niveis' && (
         <label

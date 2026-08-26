@@ -1,37 +1,40 @@
 // Contrato de layout da vista em níveis: espaçamento vertical FIXO
 // (NIVEIS_ROW_Y) entre os itens de uma coluna — nunca comprimido pela
 // quantidade — coluna centrada em y=0 e faixa (yMin/yMax) derivada do
-// primeiro/último item, crescendo conforme itens entram (ex.: cadastro de
-// novas fontes secundárias).
+// primeiro/último item, crescendo conforme itens entram.
 import { describe, expect, it } from 'vitest'
-import type { GraphLinkData, GraphNodeData } from './graph-types'
+import type { GraphLinkData, GraphNodeData, NivelDef } from './graph-types'
 import { buildLineage, NIVEIS_ROW_Y } from './lineage'
 
-const RAIZ: GraphNodeData = { id: 'raiz', nome: 'Atacado — Dados', tipo: 'dominio', nivel: 'raiz' }
-const PROD: GraphNodeData = { id: 'prod', nome: 'Produto', nivel: 'final', sistema: null, origem: null }
+const NIVEIS: NivelDef[] = [
+  { slug: 'raiz', titulo: 'Raiz', ordem: 0, builtin: true },
+  { slug: 'final', titulo: 'Produto final', ordem: 20, builtin: true },
+  { slug: 'bronze', titulo: 'Bronze', ordem: 40, builtin: false },
+]
 
-/** Grafo mínimo: raiz agrega um produto final + n tabelas UCS cadastradas
- *  (isoladas, sem associações — entram pelo inventário do foco na raiz). */
-function grafoComFsecs(n: number): { nodes: GraphNodeData[]; links: GraphLinkData[] } {
-  const fsecs: GraphNodeData[] = Array.from({ length: n }, (_, i) => ({
-    id: `fsec-t${i + 1}`,
-    nome: `Teste FS ${i + 1}`,
-    tipo: 'fonte-secundaria',
-    derivado: true,
-    cadastrado: true,
+const RAIZ: GraphNodeData = { id: 'raiz', nome: 'Atacado — Dados', nivel: 'raiz' }
+const PROD: GraphNodeData = { id: 'prod', nome: 'Produto', nivel: 'final' }
+
+/** Grafo mínimo: a entrada consome um produto final + n componentes Bronze
+ *  isolados (sem aresta — entram pelo inventário do foco no nível de entrada). */
+function grafoComBronzes(n: number): { nodes: GraphNodeData[]; links: GraphLinkData[] } {
+  const bronzes: GraphNodeData[] = Array.from({ length: n }, (_, i) => ({
+    id: `bronze-${i + 1}`,
+    nome: `Tabela ${i + 1}`,
+    nivel: 'bronze',
   }))
   return {
-    nodes: [RAIZ, PROD, ...fsecs],
-    links: [{ source: 'raiz', target: 'prod', label: 'agrega' }],
+    nodes: [RAIZ, PROD, ...bronzes],
+    links: [{ source: 'raiz', target: 'prod', label: 'consome' }],
   }
 }
 
-function colunaFsec(n: number) {
-  const { nodes, links } = grafoComFsecs(n)
-  const lineage = buildLineage('raiz', nodes, links)
+function colunaBronze(n: number) {
+  const { nodes, links } = grafoComBronzes(n)
+  const lineage = buildLineage('raiz', nodes, links, NIVEIS)
   if (!lineage) throw new Error('lineage null')
-  const col = lineage.columns.find((c) => c.label === 'Fonte secundária')
-  if (!col) throw new Error('coluna Fonte secundária ausente')
+  const col = lineage.columns.find((c) => c.slug === 'bronze')
+  if (!col) throw new Error('coluna Bronze ausente')
   const ys = lineage.graph.nodes
     .filter((node) => node.fx === col.x)
     .map((node) => node.fy ?? Number.NaN)
@@ -42,7 +45,7 @@ function colunaFsec(n: number) {
 describe('layout vertical das colunas da vista em níveis', () => {
   it('espaçamento entre itens é NIVEIS_ROW_Y, independente da quantidade', () => {
     for (const n of [3, 9]) {
-      const { ys } = colunaFsec(n)
+      const { ys } = colunaBronze(n)
       expect(ys).toHaveLength(n)
       const gaps = ys.slice(1).map((y, i) => y - ys[i])
       expect(gaps).toEqual(Array(n - 1).fill(NIVEIS_ROW_Y))
@@ -50,7 +53,7 @@ describe('layout vertical das colunas da vista em níveis', () => {
   })
 
   it('coluna centrada em y=0 e faixa derivada do primeiro/último item', () => {
-    const { col, ys } = colunaFsec(9)
+    const { col, ys } = colunaBronze(9)
     expect(ys[0] + ys[ys.length - 1]).toBe(0)
     expect(col.yMin).toBe(ys[0])
     expect(col.yMax).toBe(ys[ys.length - 1])
@@ -58,7 +61,7 @@ describe('layout vertical das colunas da vista em níveis', () => {
 
   it('faixa cresce com a quantidade de itens (nunca altura fixa)', () => {
     const altura = (n: number) => {
-      const { col } = colunaFsec(n)
+      const { col } = colunaBronze(n)
       return col.yMax - col.yMin
     }
     expect(altura(3)).toBe(2 * NIVEIS_ROW_Y)
