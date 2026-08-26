@@ -11,6 +11,7 @@ import {
   COLOR_RAIZ,
   COLOR_SISTEMA,
   COLOR_SISTEMA_LEGADO,
+  nivelCustomColor,
 } from './palette'
 
 interface LegendProps {
@@ -24,6 +25,11 @@ interface LegendProps {
   hasDominios: boolean
   /** Grafo já tem fontes secundárias (tabelas UCS) derivadas. */
   hasFsec: boolean
+  /** Níveis customizados COM nós presentes no grafo: cada um vira uma entrada
+   *  própria (em vez de uma linha genérica "nível customizado") porque a cor
+   *  é derivada do slug — a legenda é o único lugar que documenta o mapeamento
+   *  cor → nível para o leitor. */
+  niveisCustom: ReadonlyArray<{ slug: string; titulo: string }>
 }
 
 function Dot({ color }: { color: string }) {
@@ -44,6 +50,7 @@ export default function Legend({
   hasRaiz,
   hasDominios,
   hasFsec,
+  niveisCustom,
 }: LegendProps) {
   return (
     <div className="legend" aria-label="Legenda do grafo">
@@ -98,6 +105,12 @@ export default function Legend({
                 fonte secundária (UCS)
               </li>
             )}
+            {niveisCustom.map((nv) => (
+              <li key={nv.slug}>
+                <span className="legend__fsec" style={{ background: nivelCustomColor(nv.slug) }} />{' '}
+                {nv.titulo} (nível customizado)
+              </li>
+            ))}
             <li>
               <Diamond color={COLOR_ORIGEM} /> origem
             </li>

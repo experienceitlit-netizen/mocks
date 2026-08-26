@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   buildGraph,
+  carregarNiveis,
   COLUNAS,
   criarRaiz,
   derivarDominios,
@@ -588,9 +589,12 @@ describe('slugify', () => {
   })
 })
 
-describe('catalogo.csv real (catálogo em 4 níveis)', () => {
+describe('catalogo.csv real (catálogo em 4 níveis + níveis medalhão)', () => {
   const caminho = resolve(import.meta.dirname, '..', 'catalogo.csv')
-  const { graph, warnings } = buildGraph(readFileSync(caminho, 'utf8'))
+  const { niveis } = carregarNiveis(
+    readFileSync(resolve(import.meta.dirname, '..', 'niveis.csv'), 'utf8'),
+  )
+  const { graph, warnings } = buildGraph(readFileSync(caminho, 'utf8'), niveis)
   const dados = graph.nodes.filter((n): n is GraphNode => n.derivado !== true)
   const consome = graph.links.filter((l) => l.label === 'consome')
 
@@ -599,16 +603,18 @@ describe('catalogo.csv real (catálogo em 4 níveis)', () => {
     expect(graph.nodes.filter((n) => n.fantasma === true)).toEqual([])
   })
 
-  it('35 linhas no CSV (só produtos) + raiz automática = 36 nós de dados', () => {
+  it('50 linhas no CSV (33 produtos + 16 de nível medalhão + 1 componente) + raiz = 34 dados', () => {
     const registros = parseCsv(readFileSync(caminho, 'utf8'))
-    expect(registros).toHaveLength(36) // cabeçalho + 35 produtos
+    expect(registros).toHaveLength(51) // cabeçalho + 33 + 16 + 1
     expect(registros[0]).toEqual([...COLUNAS])
-    expect(dados).toHaveLength(36)
+    expect(dados).toHaveLength(34)
+    // As 16 linhas de nível medalhão (Gold/Silver/Broze) são nós niv-*.
+    expect(graph.nodes.filter((n) => n.tipo === 'nivel-custom')).toHaveLength(16)
   })
 
-  it('36 nós de dados: 1 raiz, 22 primários, 11 finais e 2 "ambos"', () => {
+  it('34 nós de dados: 1 raiz, 20 primários, 11 finais e 2 "ambos"', () => {
     expect(dados.filter((n) => n.nivel === 'raiz').map((n) => n.id)).toEqual(['atacado-dados'])
-    expect(dados.filter((n) => n.nivel === 'primario')).toHaveLength(22)
+    expect(dados.filter((n) => n.nivel === 'primario')).toHaveLength(20)
     expect(dados.filter((n) => n.nivel === 'final')).toHaveLength(11)
     expect(dados.filter((n) => n.nivel === 'ambos').map((n) => n.id).sort()).toEqual([
       'rating',
@@ -616,16 +622,20 @@ describe('catalogo.csv real (catálogo em 4 níveis)', () => {
     ])
   })
 
-  it('74 nós e 84 arestas no total: 25 consome + 18 agrega + 22 vem de + 19 origina de', () => {
-    expect(graph.nodes).toHaveLength(74)
-    expect(graph.links).toHaveLength(84)
-    const porLabel = (label: string) => graph.links.filter((l) => l.label === label).length
-    expect(porLabel('consome')).toBe(25)
-    expect(porLabel('agrega')).toBe(18)
-    // 18 dado→sistema diretas + 2 dado→fsec + 2 fsec→sistema (mercado-alvo
-    // ingere via UCS: a direta dele foi substituída pelas fontes secundárias)
-    expect(porLabel('vem de')).toBe(22)
-    expect(porLabel('origina de')).toBe(19)
+  it('grafo íntegro: ids únicos e toda aresta entre nós existentes', () => {
+    // O catálogo é editável pelo app, então o teste fixa invariantes em vez de
+    // contagens — números exatos quebrariam a cada cadastro do usuário.
+    const ids = graph.nodes.map((n) => n.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    const existe = new Set(ids)
+    for (const l of graph.links) {
+      expect(existe.has(String(l.source))).toBe(true)
+      expect(existe.has(String(l.target))).toBe(true)
+      expect(l.source).not.toBe(l.target)
+    }
+    expect(new Set(graph.links.map((l) => l.label))).toEqual(
+      new Set(['consome', 'agrega', 'vem de', 'origina de']),
+    )
   })
 
   it('Databricks (governado): um só sistema compartilhado por 5 dados', () => {
@@ -639,25 +649,14 @@ describe('catalogo.csv real (catálogo em 4 níveis)', () => {
     const ligados = graph.links
       .filter((l) => l.target === 'sys-databricks-governado' && l.label === 'vem de')
       .map((l) => l.source)
-      .sort()
-    expect(ligados).toEqual(['bacen-3040-45-46', 'estatag', 'psdc', 'rating', 'restritivos-e-tipos'])
+    // Fonte compartilhada: vários dados apontam para o mesmo nó (quais, o
+    // catálogo decide — o teste garante que não há duplicação do sistema).
+    expect(ligados.length).toBeGreaterThan(1)
+    expect(ligados).toContain('psdc')
   })
 
-  it('mercado-alvo ingere via UCS: dado → 2 fsec → sistema, sem aresta direta', () => {
-    const fsecs = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'fonte-secundaria')
-    expect(fsecs.map((n) => n.id).sort()).toEqual([
-      'fsec-mercado-alvo-mensal-ucs',
-      'fsec-mercado-alvo-semanal-ucs',
-    ])
-    expect(graph.links.filter((l) => l.source === 'mercado-alvo' && l.label === 'vem de')).toEqual([
-      { source: 'mercado-alvo', target: 'fsec-mercado-alvo-mensal-ucs', label: 'vem de' },
-      { source: 'mercado-alvo', target: 'fsec-mercado-alvo-semanal-ucs', label: 'vem de' },
-    ])
-    for (const f of fsecs) {
-      expect(graph.links.filter((l) => l.source === f.id)).toEqual([
-        { source: f.id, target: 'sys-banco-sql-legado-on-premise', label: 'vem de' },
-      ])
-    }
+  it('as tabelas UCS viraram linhas Silver: nenhum nó fsec-* paralelo', () => {
+    expect(graph.nodes.filter((n) => n.tipo === 'fonte-secundaria')).toEqual([])
     // o débito do dado não muda com a ingestão: Mercado Alvo segue "sim"
     expect(dados.find((n) => n.id === 'mercado-alvo')?.debito).toBe('sim')
   })
@@ -685,9 +684,10 @@ describe('catalogo.csv real (catálogo em 4 níveis)', () => {
     expect(graph.links.filter((l) => l.target === 'atacado-dados')).toEqual([])
   })
 
-  it('5 nós de domínio entre a raiz e os 13 produtos finais', () => {
+  it('6 nós de domínio (5 entre a raiz e os 13 produtos finais + 1 cadastrado isolado)', () => {
     const doms = graph.nodes.filter((n) => n.derivado === true && n.tipo === 'dominio')
     expect(doms.map((n) => n.nome).sort()).toEqual([
+      'Bacen (DOM)',
       'Cadastro',
       'Mercado',
       'Regulatório',
@@ -716,8 +716,8 @@ describe('catalogo.csv real (catálogo em 4 níveis)', () => {
     expect(produtosDe('dom-regulatorio')).toEqual(['endividamento-de-mercado'])
   })
 
-  it('25 arestas "consome", sem self-loop e sem consumo nos itens a mapear', () => {
-    expect(consome).toHaveLength(25)
+  it('nenhum self-loop e nada consumido pelos itens a mapear', () => {
+    expect(consome.length).toBeGreaterThan(0)
     expect(graph.links.filter((l) => l.source === l.target)).toEqual([])
     const alvosDe = (id: string) => consome.filter((l) => l.source === id)
     expect(alvosDe('recta-fedrl')).toEqual([])
@@ -733,7 +733,15 @@ describe('catalogo.csv real (catálogo em 4 níveis)', () => {
         .map((l) => l.target)
         .sort()
     expect(alvos('setorizacao')).toEqual(['bacen', 'classificacao-de-setores', 'gdp', 'rfb'])
-    expect(alvos('rar-12m')).toEqual(['capital-regulatorio', 'custo-de-capital-ke', 'estatag', 'gdad'])
+    // GDAD foi transferido para o nível Gold: quem o consome segue apontando
+    // para o nó real (agora niv-gold-gdad), sem fantasma.
+    expect(alvos('rar-12m')).toEqual([
+      'capital-regulatorio',
+      'custo-de-capital-ke',
+      'estatag',
+      'niv-gold-gdad',
+    ])
+    expect(alvos('evolucao-do-resultado-por-produto')).toEqual(['niv-broze-de-para-de-produtos'])
   })
 
   it('produtos finais não derivam sistema/origem (células vazias)', () => {

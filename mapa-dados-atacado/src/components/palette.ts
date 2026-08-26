@@ -25,23 +25,55 @@ export const COLOR_FONTE_SECUNDARIA = '#178A94'
 export const PLACEHOLDER_FILL = 'rgba(90, 90, 90, 0.25)'
 export const PLACEHOLDER_STROKE = '#8A8A8A'
 
+/** Tons discretos para níveis customizados: meios-tons deliberadamente fora
+ *  da semântica de débito (vermelho/âmbar/verde), das cores de domínio e dos
+ *  azuis/teal da camada de linhagem. A cor de um nível é estável: derivada do
+ *  hash do slug, não da ordem de cadastro. */
+const NIVEL_CUSTOM_PALETTE = [
+  '#A57C3B', // bronze
+  '#8E9C4B', // oliva
+  '#C4677C', // framboesa
+  '#7D6BC5', // índigo
+  '#5BB0C9', // ciano claro
+  '#D08770', // salmão
+  '#7E9E9B', // verde-acinzentado
+] as const
+
+/** Cor estável de um nível customizado (hash djb2 do slug → paleta). */
+export function nivelCustomColor(slug: string): string {
+  let h = 5381
+  for (const ch of slug) h = (Math.imul(h, 33) ^ (ch.codePointAt(0) ?? 0)) >>> 0
+  return NIVEL_CUSTOM_PALETTE[h % NIVEL_CUSTOM_PALETTE.length]
+}
+
 const LEGADO_RE = /legado|on-premise|planilha|excel/i
 
-/** Cor do nó por precedência: débito sim > avaliar > sistema legado > curado.
- *  Nós derivados (domínio/sistema/origem) têm paleta própria. */
-export function nodeColor(node: GraphNodeData): string {
-  if (isRaiz(node)) return COLOR_RAIZ
-  const kind = nodeKind(node)
-  if (kind === 'dominio') return domainColor(node.nome)
-  if (kind === 'fonte-secundaria') return COLOR_FONTE_SECUNDARIA
-  if (kind === 'sistema') return LEGADO_RE.test(node.nome) ? COLOR_SISTEMA_LEGADO : COLOR_SISTEMA
-  if (kind === 'origem') return COLOR_ORIGEM
-  if (node.fantasma) return COLOR_FANTASMA
+/** Semântica de cor de um dado: débito sim > avaliar > sistema legado > curado. */
+function corPorDebito(node: GraphNodeData): string {
   if (node.debito === 'sim') return COLOR_DEBITO
   if (node.debito === 'avaliar') return COLOR_AVALIAR
   const sistema = (node.sistema ?? '').toLowerCase()
   if (sistema.includes('legado') || sistema.includes('on-premise')) return COLOR_LEGADO
   return COLOR_CURADO
+}
+
+/** Cor do nó por precedência: débito sim > avaliar > sistema legado > curado.
+ *  Nós derivados (domínio/sistema/origem) têm paleta própria. Nível
+ *  customizado é nível de dado: a linha que declara débito entra na semântica
+ *  dos produtos; a que só se identifica (componente simples) fica na cor do
+ *  nível — assim transferir um dado entre níveis não muda a cor dele. */
+export function nodeColor(node: GraphNodeData): string {
+  if (isRaiz(node)) return COLOR_RAIZ
+  const kind = nodeKind(node)
+  if (kind === 'dominio') return domainColor(node.nome)
+  if (kind === 'fonte-secundaria') return COLOR_FONTE_SECUNDARIA
+  if (kind === 'nivel-custom') {
+    return node.debito ? corPorDebito(node) : nivelCustomColor(node.nivelCustom ?? '')
+  }
+  if (kind === 'sistema') return LEGADO_RE.test(node.nome) ? COLOR_SISTEMA_LEGADO : COLOR_SISTEMA
+  if (kind === 'origem') return COLOR_ORIGEM
+  if (node.fantasma) return COLOR_FANTASMA
+  return corPorDebito(node)
 }
 
 /** Cores dos chips de domínio (distintas da semântica de cor dos nós). */

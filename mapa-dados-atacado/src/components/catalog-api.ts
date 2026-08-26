@@ -6,7 +6,9 @@ import type { Debito } from './graph-types'
 
 /** Nível como registrado no CSV (a raiz não tem linha no catálogo).
  *  Além dos produtos (primario/final/ambos), o catálogo aceita linhas de
- *  componente: dominio, origem, fonte (sistema) e fonte-secundaria. */
+ *  componente: dominio, origem, fonte (sistema), fonte-secundaria e qualquer
+ *  slug de nível customizado cadastrado em /api/niveis (`string & {}` mantém
+ *  o autocomplete dos built-ins sem fechar o conjunto). */
 export type NivelRow =
   | 'dominio'
   | 'origem'
@@ -15,6 +17,7 @@ export type NivelRow =
   | 'primario'
   | 'final'
   | 'ambos'
+  | (string & {})
 
 /** 'secundario' é o nome legado de 'final' e ainda pode chegar em CSV/JSON
  *  antigos; fora deste arquivo ele não circula. */
@@ -71,6 +74,9 @@ export interface CatalogoRow {
   /** null = a definir. */
   centro_de_custo: string | null
   observacoes: string
+  /** Só linhas de nível customizado usam: nomes de outros componentes
+   *  não-produto aos quais este se associa (arestas custom→alvo "vem de"). */
+  associacoes: string[]
 }
 
 export interface SaveOk {
@@ -103,9 +109,11 @@ export async function fetchCatalogo(): Promise<CatalogoRow[] | null> {
     )
     if (!ok) return null
     // Nível legado normalizado na entrada: a UI só vê o vocabulário novo.
+    // `associacoes` pode faltar em API anterior à migração de níveis.
     return (rows as (CatalogoRow & { nivel: NivelRowLegado })[]).map((r) => ({
       ...r,
       nivel: normalizeNivelRow(r.nivel),
+      associacoes: Array.isArray(r.associacoes) ? r.associacoes : [],
     }))
   } catch {
     return null
@@ -117,6 +125,66 @@ export async function fetchCatalogo(): Promise<CatalogoRow[] | null> {
  *  rede/resposta ilegível; 400 vem como {ok:false, errors}. */
 export async function saveCatalogo(rows: CatalogoRow[]): Promise<SaveResult> {
   const res = await fetch('/api/catalogo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rows }),
+  })
+  const body: unknown = await res.json().catch(() => null)
+  if (typeof body === 'object' && body !== null && 'ok' in body) {
+    const r = body as { ok: boolean; warnings?: unknown; errors?: unknown; counts?: unknown }
+    if (r.ok) {
+      return {
+        ok: true,
+        warnings: Array.isArray(r.warnings) ? r.warnings.map(String) : [],
+        counts:
+          typeof r.counts === 'object' && r.counts !== null
+            ? (r.counts as Record<string, number>)
+            : {},
+      }
+    }
+    return {
+      ok: false,
+      errors: Array.isArray(r.errors) ? r.errors.map(String) : [`Erro ${res.status} ao salvar.`],
+    }
+  }
+  throw new Error(`Resposta inesperada da API (HTTP ${res.status}).`)
+}
+
+/** Linha de nível customizado como trafegada por GET/POST /api/niveis (SÓ os
+ *  customs — built-ins são fixos; o slug é derivado do título pelo backend). */
+export interface NivelCustomRow {
+  titulo: string
+  ordem: number
+}
+
+/** GET /api/niveis. null quando a API não existe (mesma disciplina de
+ *  feature-detect do fetchCatalogo). */
+export async function fetchNiveis(): Promise<NivelCustomRow[] | null> {
+  try {
+    const res = await fetch('/api/niveis')
+    if (!res.ok) return null
+    const body: unknown = await res.json()
+    if (typeof body !== 'object' || body === null) return null
+    const rows = (body as { rows?: unknown }).rows
+    if (!Array.isArray(rows)) return null
+    const ok = rows.every(
+      (r: unknown) =>
+        typeof r === 'object' &&
+        r !== null &&
+        typeof (r as { titulo?: unknown }).titulo === 'string' &&
+        typeof (r as { ordem?: unknown }).ordem === 'number',
+    )
+    return ok ? (rows as NivelCustomRow[]) : null
+  } catch {
+    return null
+  }
+}
+
+/** POST /api/niveis com o conjunto COMPLETO de níveis customizados (remoção =
+ *  conjunto sem a linha; a API recusa se o nível estiver em uso). Mesma
+ *  disciplina ok/errors do saveCatalogo. */
+export async function saveNiveis(rows: NivelCustomRow[]): Promise<SaveResult> {
+  const res = await fetch('/api/niveis', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rows }),

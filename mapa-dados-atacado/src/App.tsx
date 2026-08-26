@@ -13,10 +13,19 @@ import Legend from './components/Legend'
 import TableView from './components/TableView'
 import type { Counts } from './components/Filters'
 import type { Debito, GraphJson, GraphNodeData, SimLink, SimNode } from './components/graph-types'
-import { isDerivado, isDominio, isRaiz, linkEndId, nodeKind } from './components/graph-types'
+import {
+  NIVEIS_BUILTIN,
+  isCamadaLinhagem,
+  isDerivado,
+  isDominio,
+  isRaiz,
+  linkEndId,
+  nodeKind,
+} from './components/graph-types'
 import { buildLineage, buildLineageTree } from './components/lineage'
 import CatalogForm from './components/CatalogForm'
 import type { FormTarget } from './components/CatalogForm'
+import NiveisModal from './components/NiveisModal'
 import type { CatalogoRow, NivelRow } from './components/catalog-api'
 import { fetchCatalogo, isProdutoRow } from './components/catalog-api'
 import './App.css'
@@ -82,7 +91,17 @@ const DBLCLICK_MS = 350
 
 function App() {
   // O JSON gerado tipa `debito` como string larga; o schema real é GraphJson.
-  const { nodes, links } = graphJson as GraphJson
+  const { nodes, links, niveis: niveisJson } = graphJson as GraphJson
+
+  // Níveis da cadeia ordenados por `ordem` (colunas da vista Níveis, select
+  // do form). graph.json sem o bloco (build antigo) cai nos built-ins fixos.
+  const niveis = useMemo(
+    () =>
+      niveisJson !== undefined && niveisJson.length > 0
+        ? [...niveisJson].sort((a, b) => a.ordem - b.ordem)
+        : [...NIVEIS_BUILTIN],
+    [niveisJson],
+  )
 
   // A lib de força muta os objetos (injeta x/y) — clona uma única vez.
   const simData = useMemo<{ nodes: SimNode[]; links: SimLink[] }>(
@@ -172,6 +191,22 @@ function App() {
     [nodes],
   )
 
+  // Níveis customizados com nós presentes no grafo (entradas da legenda).
+  const niveisCustomPresentes = useMemo(() => {
+    const presentes = new Set(
+      nodes.filter((n) => nodeKind(n) === 'nivel-custom').map((n) => n.nivelCustom ?? ''),
+    )
+    return niveis
+      .filter((nv) => !nv.builtin && presentes.has(nv.slug))
+      .map((nv) => ({ slug: nv.slug, titulo: nv.titulo }))
+  }, [nodes, niveis])
+
+  // Título de um nível customizado pelo slug (chip do balão).
+  const nivelTituloDe = useCallback(
+    (slug: string) => niveis.find((nv) => nv.slug === slug)?.titulo ?? slug,
+    [niveis],
+  )
+
   const dominios = useMemo(
     () =>
       [
@@ -218,6 +253,8 @@ function App() {
   // null = fechado; FormTarget = cadastro em branco, edição de linha ou
   // cadastro pré-preenchido de um componente derivado.
   const [catalogForm, setCatalogForm] = useState<FormTarget | null>(null)
+  // Modal "≣ Níveis" (gerenciar níveis da cadeia; só em modo edição).
+  const [niveisOpen, setNiveisOpen] = useState(false)
   useEffect(() => {
     let alive = true
     void fetchCatalogo().then((rows) => {
@@ -254,13 +291,12 @@ function App() {
 
   // --- subgrafo visível (camadas + modo foco) ---
   const visibleIds = useMemo(() => {
-    // Fora da simulação, não só esmaecidos: derivados saem quando a camada
-    // está desligada. Domínios são sempre visíveis (são o caminho da raiz aos
-    // produtos finais) e o nó em foco também, mesmo derivado.
+    // Fora da simulação, não só esmaecidos: as camadas de linhagem saem quando
+    // a camada está desligada. Domínios e níveis customizados são sempre
+    // visíveis (são o caminho da raiz aos produtos finais e colunas de dado) e
+    // o nó em foco também, mesmo derivado.
     const allowed = new Set(
-      nodes
-        .filter((n) => layersOn || !isDerivado(n) || isDominio(n) || n.id === focusId)
-        .map((n) => n.id),
+      nodes.filter((n) => layersOn || !isCamadaLinhagem(n) || n.id === focusId).map((n) => n.id),
     )
     if (!focusId || !allowed.has(focusId)) return allowed
 
@@ -295,7 +331,7 @@ function App() {
         for (const l of links) {
           if (!reached.has(l.source) || reached.has(l.target)) continue
           const alvo = nodesById.get(l.target)
-          if (alvo && isDerivado(alvo)) reached.add(l.target)
+          if (alvo && isCamadaLinhagem(alvo)) reached.add(l.target)
         }
       }
     }
@@ -315,8 +351,8 @@ function App() {
   // Vista em níveis: linhagem montante completa do nó focado, em colunas.
   // null quando o foco é um derivado (sem linhagem própria) — cai na força.
   const lineage = useMemo(
-    () => (focusId && vista === 'niveis' ? buildLineage(focusId, nodes, links) : null),
-    [focusId, vista, nodes, links],
+    () => (focusId && vista === 'niveis' ? buildLineage(focusId, nodes, links, niveis) : null),
+    [focusId, vista, nodes, links, niveis],
   )
 
   const graphData = lineage ? lineage.graph : visibleData
@@ -328,8 +364,9 @@ function App() {
     const contains: GraphNodeData[] = []
     const inDesc: GraphNodeData[] = []
     for (const n of nodes) {
-      // Dados e domínios sempre; sistemas/origens só com a camada visível.
-      if (isDerivado(n) && !isDominio(n) && !layersOn) continue
+      // Dados, domínios e níveis customizados sempre; sistemas, origens e
+      // fontes secundárias só com a camada visível.
+      if (isCamadaLinhagem(n) && !layersOn) continue
       const nome = norm(n.nome)
       if (nome.startsWith(normQuery)) starts.push(n)
       else if (nome.includes(normQuery)) contains.push(n)
@@ -510,6 +547,7 @@ function App() {
   const escRef = useRef(() => {})
   escRef.current = () => {
     if (catalogForm) setCatalogForm(null)
+    else if (niveisOpen) setNiveisOpen(false)
     else if (aba === 'tabela') setAba('mapa')
     else if (selectedId) setSelectedId(null)
     else if (pinnedId) setPinnedId(null)
@@ -557,6 +595,14 @@ function App() {
       )
       return row ? { modo: 'editar', nome: row.nome, nivel: row.nivel } : null
     }
+    // Componente de nível customizado: a linha tem nivel = slug do nível.
+    if (kind === 'nivel-custom') {
+      const slug = selectedNode.nivelCustom ?? ''
+      const row = catalogRows.find((r) => r.nivel === slug && r.nome === selectedNode.nome)
+      return row
+        ? { modo: 'editar', nome: row.nome, nivel: row.nivel }
+        : { modo: 'cadastrar', nome: selectedNode.nome, nivel: slug }
+    }
     // Forma do nó → nível da linha de componente ('sistema' grava como 'fonte').
     const nivel: NivelRow = kind === 'sistema' ? 'fonte' : kind
     const row = catalogRows.find((r) => r.nivel === nivel && r.nome === selectedNode.nome)
@@ -575,16 +621,21 @@ function App() {
     () => nodes.filter((n) => nodeKind(n) === 'sistema').map((n) => n.nome),
     [nodes],
   )
-
-  // Árvore de linhagem do painel (só dados reais têm rota própria; a raiz
-  // teria a árvore inteira — o painel dela lista só o que agrega).
-  const selectedLineage = useMemo(
-    () =>
-      selectedNode && !isDerivado(selectedNode) && !selectedNode.fantasma && !isRaiz(selectedNode)
-        ? buildLineageTree(selectedNode.id, nodes, links)
-        : null,
-    [selectedNode, nodes, links],
+  // Alvos possíveis das associações de um nível custom: todos os componentes
+  // não-produto do grafo (domínio/origem/sistema/fsec/custom; a raiz é 'dado').
+  const componentesGrafo = useMemo(
+    () => nodes.filter((n) => nodeKind(n) !== 'dado').map((n) => n.nome),
+    [nodes],
   )
+
+  // Árvore de linhagem do painel (dados reais e níveis customizados têm rota
+  // própria; a raiz teria a árvore inteira — o painel dela lista só o que
+  // agrega, e sistemas/origens não têm montante).
+  const selectedLineage = useMemo(() => {
+    if (!selectedNode || selectedNode.fantasma === true || isRaiz(selectedNode)) return null
+    const proprio = !isDerivado(selectedNode) || nodeKind(selectedNode) === 'nivel-custom'
+    return proprio ? buildLineageTree(selectedNode.id, nodes, links) : null
+  }, [selectedNode, nodes, links])
 
   const { outgoing, incoming } = useMemo(() => {
     const out: Connection[] = []
@@ -651,9 +702,10 @@ function App() {
   )
 
   // Foco num sistema/origem não tem linhagem própria: sem switch, sempre na
-  // vista de força. Domínios têm (raiz → domínio → produtos → cadeias).
+  // vista de força. Domínios têm (raiz → domínio → produtos → cadeias) e
+  // níveis customizados também (são dados, com rota e insumos próprios).
   const focusedNode = focusId ? (nodesById.get(focusId) ?? null) : null
-  const canNiveis = focusedNode !== null && (!isDerivado(focusedNode) || isDominio(focusedNode))
+  const canNiveis = focusedNode !== null && !isCamadaLinhagem(focusedNode)
 
   return (
     <div className="app">
@@ -705,13 +757,22 @@ function App() {
           </button>
         </nav>
         {catalogRows !== null && (
-          <button
-            type="button"
-            className="topbar__new"
-            onClick={() => openCatalogForm({ modo: 'novo' })}
-          >
-            + Novo componente
-          </button>
+          <>
+            <button
+              type="button"
+              className="topbar__new"
+              onClick={() => openCatalogForm({ modo: 'novo' })}
+            >
+              + Novo componente
+            </button>
+            <button
+              type="button"
+              className="topbar__new topbar__niveis"
+              onClick={() => setNiveisOpen(true)}
+            >
+              ≣ Níveis
+            </button>
+          </>
         )}
         {aba === 'mapa' && (
           <SearchBox
@@ -774,6 +835,7 @@ function App() {
           hasRaiz={RAIZ_ID !== null}
           hasDominios={hasDominios}
           hasFsec={hasFsec}
+          niveisCustom={niveisCustomPresentes}
         />
       )}
 
@@ -785,6 +847,7 @@ function App() {
           derivadoDados={derivadoDados}
           lineage={selectedLineage}
           isFocused={selectedId === focusId}
+          nivelTituloDe={nivelTituloDe}
           resolveWikiLink={resolveWikiLink}
           onNavigate={(id) => select(id, true)}
           onFocus={focusOn}
@@ -799,10 +862,20 @@ function App() {
           key={formSeq.current}
           rows={catalogRows}
           target={catalogForm}
+          niveis={niveis}
           origensGrafo={origensGrafo}
           fontesGrafo={fontesGrafo}
+          componentesGrafo={componentesGrafo}
           onSaved={refreshCatalogo}
           onClose={() => setCatalogForm(null)}
+        />
+      )}
+
+      {niveisOpen && (
+        <NiveisModal
+          niveis={niveis}
+          onSaved={refreshCatalogo}
+          onClose={() => setNiveisOpen(false)}
         />
       )}
 

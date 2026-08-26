@@ -7,7 +7,7 @@ import type { ReactNode } from 'react'
 import type { GraphNodeData } from './graph-types'
 import { isDerivado, isDominio, isRaiz, nodeKind } from './graph-types'
 import type { LineageEntry, LineageSource } from './lineage'
-import { DEBITO_LABEL, NIVEL_LABEL, domainColor } from './palette'
+import { DEBITO_LABEL, NIVEL_LABEL, domainColor, nivelCustomColor } from './palette'
 import Markdown from './Markdown'
 
 export interface Connection {
@@ -34,6 +34,8 @@ interface NodeBalloonProps {
   lineage: LineageEntry | null
   /** O nó já é o centro do modo foco (esconde o botão Focar). */
   isFocused: boolean
+  /** Título de um nível customizado pelo slug (chip do nó custom). */
+  nivelTituloDe(slug: string): string
   resolveWikiLink(target: string): string | null
   onNavigate(id: string): void
   /** Entra em modo foco neste nó (ou re-foca, se já em foco). */
@@ -194,12 +196,20 @@ function CadastroInfo({
   node,
   resolveWikiLink,
   onNavigate,
-}: Pick<NodeBalloonProps, 'node' | 'resolveWikiLink' | 'onNavigate'>) {
+  rota = false,
+}: Pick<NodeBalloonProps, 'node' | 'resolveWikiLink' | 'onNavigate'> & {
+  /** Linha de nível customizado que declara campos de dado: mostra a rota
+   *  (origem/sistema/status) junto da governança, como num produto. */
+  rota?: boolean
+}) {
   return (
     <>
       {node.descricao && <p className="node-balloon__descricao">{node.descricao}</p>}
       {node.cadastrado === true && (
         <div className="fields">
+          {rota && <Field label="Origem">{node.origem ?? '—'}</Field>}
+          {rota && <Field label="Sistema">{node.sistema ?? '—'}</Field>}
+          {rota && node.status && <Field label="Status">{node.status}</Field>}
           <Field label="Owner">{node.owner ? node.owner : <Missing />}</Field>
           <Field label="Centro de custo">
             {node.centroDeCusto ? node.centroDeCusto : <Missing />}
@@ -223,6 +233,7 @@ function BalloonContent({
   derivadoDados,
   lineage,
   isFocused,
+  nivelTituloDe,
   resolveWikiLink,
   onNavigate,
   onFocus,
@@ -323,6 +334,63 @@ function BalloonContent({
           showLabel={false}
         />
         {incoming.length === 0 && outgoing.length === 0 && (
+          <p className="ghost-note">Sem conexões mapeadas.</p>
+        )}
+      </>
+    )
+  }
+
+  // Linha de nível customizado: chip com o título do nível na cor derivada do
+  // slug. Nível customizado é nível de DADO — a linha que declara débito traz
+  // também os chips de domínio/débito, a rota e a linhagem, como um produto; a
+  // que só se identifica fica como componente do mapa. As conexões (consumo e
+  // associações "vem de") aparecem nas duas direções, clicáveis.
+  if (kind === 'nivel-custom') {
+    const slug = node.nivelCustom ?? ''
+    const cor = nivelCustomColor(slug)
+    const ehDado = node.debito !== undefined
+    return (
+      <>
+        <header className="node-balloon__header">
+          <h2>{node.nome}</h2>
+          <div className="chips">
+            {node.dominio && (
+              <span
+                className="chip"
+                style={{ borderColor: domainColor(node.dominio), color: domainColor(node.dominio) }}
+              >
+                {node.dominio}
+              </span>
+            )}
+            <span className="chip" style={{ borderColor: cor, color: cor }}>
+              {nivelTituloDe(slug)}
+            </span>
+            {ehDado && (
+              <span className={`chip chip--debito-${debito}`}>Débito: {DEBITO_LABEL[debito]}</span>
+            )}
+          </div>
+        </header>
+
+        <Actions node={node} isFocused={isFocused} onFocus={onFocus} onEdit={onEdit} />
+        <CadastroInfo
+          node={node}
+          resolveWikiLink={resolveWikiLink}
+          onNavigate={onNavigate}
+          rota={ehDado}
+        />
+
+        {lineage && lineage.insumos.length > 0 && (
+          <section className="connections lineage">
+            <h3>Linhagem</h3>
+            <ul className="lineage__tree">
+              <LineageBranch entry={lineage} isRoot onNavigate={onNavigate} />
+            </ul>
+          </section>
+        )}
+
+        <ConnectionList title="Consome / vem de →" items={outgoing} onNavigate={onNavigate} showLabel />
+        <ConnectionList title="← Consumido por" items={incoming} onNavigate={onNavigate} showLabel />
+        {outgoing.length === 0 && incoming.length === 0 && (
           <p className="ghost-note">Sem conexões mapeadas.</p>
         )}
       </>

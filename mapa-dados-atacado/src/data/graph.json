@@ -1,21 +1,67 @@
 {
-  "nodes": [
+  "niveis": [
     {
-      "id": "account",
-      "nome": "Account",
-      "tipo": "produto",
-      "nivel": "final",
-      "dominio": "Cadastro",
-      "debito": "nao",
-      "owner": null,
-      "centroDeCusto": null,
-      "descricao": "conta do cliente no Salesforce",
-      "sistema": null,
-      "origem": null,
-      "status": "producao",
-      "incompleto": true,
-      "corpo": "Conta (Account) do cliente no Salesforce, a representação comercial da pessoa jurídica usada pelo time de relacionamento do Atacado. É construída sobre a identificação oficial do cadastro corporativo — sem débito herdado, pois toda a cadeia de entrada é curada.\n\nConsome [[PSDC]]."
+      "slug": "raiz",
+      "titulo": "Raiz",
+      "ordem": 0,
+      "builtin": true
     },
+    {
+      "slug": "dominio",
+      "titulo": "Domínio",
+      "ordem": 10,
+      "builtin": true
+    },
+    {
+      "slug": "final",
+      "titulo": "Produto final",
+      "ordem": 20,
+      "builtin": true
+    },
+    {
+      "slug": "primario",
+      "titulo": "Produto primário",
+      "ordem": 30,
+      "builtin": true
+    },
+    {
+      "slug": "fonte-secundaria",
+      "titulo": "Fonte secundária",
+      "ordem": 40,
+      "builtin": true
+    },
+    {
+      "slug": "gold",
+      "titulo": "Gold",
+      "ordem": 43,
+      "builtin": false
+    },
+    {
+      "slug": "silver",
+      "titulo": "Silver",
+      "ordem": 44,
+      "builtin": false
+    },
+    {
+      "slug": "broze",
+      "titulo": "Broze",
+      "ordem": 45,
+      "builtin": false
+    },
+    {
+      "slug": "fonte",
+      "titulo": "Fonte (sistema)",
+      "ordem": 50,
+      "builtin": true
+    },
+    {
+      "slug": "origem",
+      "titulo": "Origem",
+      "ordem": 60,
+      "builtin": true
+    }
+  ],
+  "nodes": [
     {
       "id": "ajustes-dos-analistas",
       "nome": "Ajustes dos analistas",
@@ -49,22 +95,6 @@
       "corpo": "Portfólio de dados da Diretoria Comercial Atacado — ponto de entrada do mapa. Agrega todos os produtos finais do catálogo, as visões consumidas diretamente pelas equipes comerciais e de gestão. Não é um dado em si: é o nó-raiz que organiza a navegação do portfólio.\n\nAgrega [[Account|agrega]], [[Faturamento|agrega]], [[Segmentação e Encarteiramento|agrega]], [[Setorização|agrega]], [[Localização|agrega]], [[Evolução do Resultado|agrega]], [[Evolução do Resultado por produto|agrega]], [[RAR 12M|agrega]], [[Estoque (carteira)|agrega]], [[Resultado|agrega]], [[Endividamento de mercado|agrega]], [[Rating|agrega]] e [[Restritivos e tipos|agrega]]."
     },
     {
-      "id": "bacen",
-      "nome": "Bacen",
-      "tipo": "insumo",
-      "nivel": "primario",
-      "dominio": "Mercado",
-      "debito": "avaliar",
-      "owner": null,
-      "centroDeCusto": null,
-      "descricao": "dados de apoio à classificação",
-      "sistema": "a confirmar",
-      "origem": "Banco Central",
-      "status": "investigacao",
-      "incompleto": true,
-      "corpo": "Dados do Banco Central usados como apoio à classificação de clientes (setorização e localização). A fonte e a curadoria ainda estão sendo confirmadas, por isso o item está em investigação e o débito segue como \"a avaliar\"."
-    },
-    {
       "id": "bacen-3040-45-46",
       "nome": "BACEN 3040/45/46",
       "tipo": "insumo",
@@ -75,7 +105,7 @@
       "centroDeCusto": null,
       "descricao": "operações de crédito reguladas",
       "sistema": "Databricks (governado)",
-      "origem": "BACEN",
+      "origem": null,
       "status": "producao",
       "incompleto": true,
       "corpo": "Bases regulatórias do BACEN (documentos 3040, 3045 e 3046) com as operações de crédito reguladas do sistema financeiro. Chegam ao banco por transferência corporativa de arquivos e dão ao Atacado visão de endividamento e share dos clientes no mercado de crédito. O uso como insumo do endividamento de mercado foi inferido e precisa ser validado com o negócio."
@@ -143,22 +173,6 @@
       "status": "transicao",
       "incompleto": true,
       "corpo": "Taxa de custo de capital (KE) aplicada no cálculo do retorno ajustado ao risco. Hoje é obtida de forma provisória a partir do banco de dados do crédito — uma rota de empréstimo que caracteriza o débito técnico e mantém o dado em transição até que uma fonte oficial seja definida; o próprio domínio do dado ainda está por definir."
-    },
-    {
-      "id": "de-para-de-produtos",
-      "nome": "De-para de produtos",
-      "tipo": "insumo",
-      "nivel": "primario",
-      "dominio": "Mercado",
-      "debito": "sim",
-      "owner": null,
-      "centroDeCusto": null,
-      "descricao": "clusterização de produtos do Atacado",
-      "sistema": "planilha Excel (exploratório)",
-      "origem": "Atacado — analistas",
-      "status": "producao",
-      "incompleto": true,
-      "corpo": "De-para construído pelos analistas do Atacado para clusterizar os produtos e dar visão agregada por família de produto na EVOL. É um artefato exploratório mantido em planilha Excel — útil na análise, mas ainda sem rota governada, o que caracteriza o débito. Há um MVP no Salesforce com destino planejado no lake."
     },
     {
       "id": "debentures",
@@ -351,168 +365,6 @@
       "corpo": "Estimativa de faturamento informada pelo gerente de relacionamento (RM) diretamente na conta do cliente no Salesforce. É a visão declarada do porte do cliente, governada na plataforma, com a proveniência do dado ainda em definição. Convive com o porte observado de bureau como contraponto de mercado."
     },
     {
-      "id": "fsec-adat",
-      "nome": "ADAT",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false,
-      "cadastrado": true,
-      "descricao": "",
-      "owner": null,
-      "centroDeCusto": null
-    },
-    {
-      "id": "fsec-bacen-feature",
-      "nome": "Bacen (Feature)",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false,
-      "cadastrado": true,
-      "descricao": "",
-      "owner": null,
-      "centroDeCusto": null
-    },
-    {
-      "id": "fsec-cambio",
-      "nome": "Cambio",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false,
-      "cadastrado": true,
-      "descricao": "",
-      "owner": null,
-      "centroDeCusto": null
-    },
-    {
-      "id": "fsec-carteira",
-      "nome": "Carteira",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false,
-      "cadastrado": true,
-      "descricao": "",
-      "owner": null,
-      "centroDeCusto": null
-    },
-    {
-      "id": "fsec-cash",
-      "nome": "Cash",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false,
-      "cadastrado": true,
-      "descricao": "",
-      "owner": null,
-      "centroDeCusto": null
-    },
-    {
-      "id": "fsec-clientes-feature",
-      "nome": "Clientes (Feature)",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false,
-      "cadastrado": true,
-      "descricao": "...",
-      "owner": null,
-      "centroDeCusto": null
-    },
-    {
-      "id": "fsec-mercado-alvo-mensal-ucs",
-      "nome": "Mercado Alvo Mensal - UCS",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false
-    },
-    {
-      "id": "fsec-mercado-alvo-semanal-ucs",
-      "nome": "Mercado Alvo Semanal - UCS",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false
-    },
-    {
-      "id": "fsec-producao-e-estoque-feature",
-      "nome": "Produção e Estoque (Feature)",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false,
-      "cadastrado": true,
-      "descricao": "",
-      "owner": null,
-      "centroDeCusto": null
-    },
-    {
-      "id": "fsec-rar",
-      "nome": "RAR",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false,
-      "cadastrado": true,
-      "descricao": "",
-      "owner": null,
-      "centroDeCusto": null
-    },
-    {
-      "id": "fsec-rating-feature",
-      "nome": "Rating (Feature)",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false,
-      "cadastrado": true,
-      "descricao": "",
-      "owner": null,
-      "centroDeCusto": null
-    },
-    {
-      "id": "fsec-restritivos",
-      "nome": "Restritivos",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false,
-      "cadastrado": true,
-      "descricao": "",
-      "owner": null,
-      "centroDeCusto": null
-    },
-    {
-      "id": "fsec-resultado",
-      "nome": "Resultado",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false,
-      "cadastrado": true,
-      "descricao": "",
-      "owner": null,
-      "centroDeCusto": null
-    },
-    {
-      "id": "fsec-sanitizacao",
-      "nome": "Sanitização",
-      "tipo": "fonte-secundaria",
-      "derivado": true,
-      "incompleto": false,
-      "cadastrado": true,
-      "descricao": "",
-      "owner": null,
-      "centroDeCusto": null
-    },
-    {
-      "id": "gdad",
-      "nome": "GDAD",
-      "tipo": "insumo",
-      "nivel": "primario",
-      "dominio": "Resultado",
-      "debito": "nao",
-      "owner": null,
-      "centroDeCusto": null,
-      "descricao": "resultado realizado",
-      "sistema": "Databricks (dado curado)",
-      "origem": "resultado gerencial",
-      "status": "producao",
-      "incompleto": true,
-      "corpo": "Resultado gerencial realizado por cliente e produto, disponível como dado curado no Databricks. É a base primária de resultado do Atacado: alimenta tanto os ajustes analíticos da Evolução do Resultado quanto o cálculo do RAR 12M."
-    },
-    {
       "id": "gdp",
       "nome": "GDP",
       "tipo": "insumo",
@@ -570,15 +422,215 @@
       "owner": null,
       "centroDeCusto": null,
       "descricao": "lista de clientes-alvo da atuação",
-      "sistema": "banco SQL legado (on-premise)",
-      "origem": "base comercial legada",
+      "sistema": null,
+      "origem": null,
       "status": "producao",
       "incompleto": true,
-      "fontesSecundarias": [
-        "Mercado Alvo Semanal - UCS",
-        "Mercado Alvo Mensal - UCS"
-      ],
       "corpo": "Lista de clientes-alvo que delimita onde o Atacado atua e prioriza a prospecção comercial. Vive em um banco SQL legado on-premise, o que caracteriza o débito técnico: o dado é vivo, mas a rota precisa migrar para a plataforma corporativa."
+    },
+    {
+      "id": "niv-broze-adat",
+      "nome": "ADAT",
+      "tipo": "nivel-custom",
+      "nivelCustom": "broze",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "",
+      "owner": null,
+      "centroDeCusto": null
+    },
+    {
+      "id": "niv-broze-cash",
+      "nome": "Cash",
+      "tipo": "nivel-custom",
+      "nivelCustom": "broze",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "",
+      "owner": null,
+      "centroDeCusto": null
+    },
+    {
+      "id": "niv-broze-de-para-de-produtos",
+      "nome": "De-para de produtos",
+      "tipo": "nivel-custom",
+      "nivelCustom": "broze",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "clusterização de produtos do Atacado",
+      "owner": null,
+      "centroDeCusto": null,
+      "corpo": "De-para construído pelos analistas do Atacado para clusterizar os produtos e dar visão agregada por família de produto na EVOL. É um artefato exploratório mantido em planilha Excel — útil na análise, mas ainda sem rota governada, o que caracteriza o débito. Há um MVP no Salesforce com destino planejado no lake.",
+      "dominio": "Mercado",
+      "debito": "sim",
+      "status": "producao",
+      "sistema": "planilha Excel (exploratório)",
+      "origem": "Atacado — analistas"
+    },
+    {
+      "id": "niv-gold-clientes-feature",
+      "nome": "Clientes (Feature)",
+      "tipo": "nivel-custom",
+      "nivelCustom": "gold",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "...",
+      "owner": null,
+      "centroDeCusto": null
+    },
+    {
+      "id": "niv-gold-gdad",
+      "nome": "GDAD",
+      "tipo": "nivel-custom",
+      "nivelCustom": "gold",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "resultado realizado",
+      "owner": null,
+      "centroDeCusto": null,
+      "corpo": "Resultado gerencial realizado por cliente e produto, disponível como dado curado no Databricks. É a base primária de resultado do Atacado: alimenta tanto os ajustes analíticos da Evolução do Resultado quanto o cálculo do RAR 12M.",
+      "dominio": "Resultado",
+      "debito": "nao",
+      "status": "producao",
+      "sistema": "Databricks (dado curado)",
+      "origem": "resultado gerencial"
+    },
+    {
+      "id": "niv-gold-rating-feature",
+      "nome": "Rating (Feature)",
+      "tipo": "nivel-custom",
+      "nivelCustom": "gold",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "",
+      "owner": null,
+      "centroDeCusto": null
+    },
+    {
+      "id": "niv-silver-bacen-feature",
+      "nome": "Bacen (Feature)",
+      "tipo": "nivel-custom",
+      "nivelCustom": "silver",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "",
+      "owner": null,
+      "centroDeCusto": null
+    },
+    {
+      "id": "niv-silver-cambio",
+      "nome": "Cambio",
+      "tipo": "nivel-custom",
+      "nivelCustom": "silver",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "",
+      "owner": null,
+      "centroDeCusto": null
+    },
+    {
+      "id": "niv-silver-carteira",
+      "nome": "Carteira",
+      "tipo": "nivel-custom",
+      "nivelCustom": "silver",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "",
+      "owner": null,
+      "centroDeCusto": null
+    },
+    {
+      "id": "niv-silver-mercado-alvo-mensal-ucs",
+      "nome": "Mercado Alvo Mensal - UCS",
+      "tipo": "nivel-custom",
+      "nivelCustom": "silver",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "",
+      "owner": null,
+      "centroDeCusto": null
+    },
+    {
+      "id": "niv-silver-mercado-alvo-semanal-ucs",
+      "nome": "Mercado Alvo Semanal - UCS",
+      "tipo": "nivel-custom",
+      "nivelCustom": "silver",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "",
+      "owner": null,
+      "centroDeCusto": null
+    },
+    {
+      "id": "niv-silver-producao-e-estoque-feature",
+      "nome": "Produção e Estoque (Feature)",
+      "tipo": "nivel-custom",
+      "nivelCustom": "silver",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "",
+      "owner": null,
+      "centroDeCusto": null
+    },
+    {
+      "id": "niv-silver-rar",
+      "nome": "RAR",
+      "tipo": "nivel-custom",
+      "nivelCustom": "silver",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "",
+      "owner": null,
+      "centroDeCusto": null
+    },
+    {
+      "id": "niv-silver-restritivos",
+      "nome": "Restritivos",
+      "tipo": "nivel-custom",
+      "nivelCustom": "silver",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "",
+      "owner": null,
+      "centroDeCusto": null
+    },
+    {
+      "id": "niv-silver-resultado",
+      "nome": "Resultado",
+      "tipo": "nivel-custom",
+      "nivelCustom": "silver",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "",
+      "owner": null,
+      "centroDeCusto": null
+    },
+    {
+      "id": "niv-silver-sanitizacao",
+      "nome": "Sanitização",
+      "tipo": "nivel-custom",
+      "nivelCustom": "silver",
+      "derivado": true,
+      "incompleto": true,
+      "cadastrado": true,
+      "descricao": "",
+      "owner": null,
+      "centroDeCusto": null
     },
     {
       "id": "org-anbima-mercado",
@@ -611,27 +663,6 @@
     {
       "id": "org-atacado-classificacao",
       "nome": "Atacado — classificação",
-      "tipo": "origem",
-      "derivado": true,
-      "incompleto": false
-    },
-    {
-      "id": "org-bacen",
-      "nome": "BACEN",
-      "tipo": "origem",
-      "derivado": true,
-      "incompleto": false
-    },
-    {
-      "id": "org-banco-central",
-      "nome": "Banco Central",
-      "tipo": "origem",
-      "derivado": true,
-      "incompleto": false
-    },
-    {
-      "id": "org-base-comercial-legada",
-      "nome": "base comercial legada",
       "tipo": "origem",
       "derivado": true,
       "incompleto": false
@@ -913,13 +944,6 @@
       "incompleto": false
     },
     {
-      "id": "sys-banco-sql-legado-on-premise",
-      "nome": "banco SQL legado (on-premise)",
-      "tipo": "sistema",
-      "derivado": true,
-      "incompleto": false
-    },
-    {
       "id": "sys-base-sql-on-premise",
       "nome": "base SQL on-premise",
       "tipo": "sistema",
@@ -992,11 +1016,6 @@
   ],
   "links": [
     {
-      "source": "account",
-      "target": "psdc",
-      "label": "consome"
-    },
-    {
       "source": "ajustes-dos-analistas",
       "target": "sys-planilha-processo-manual",
       "label": "vem de"
@@ -1027,11 +1046,6 @@
       "label": "agrega"
     },
     {
-      "source": "bacen",
-      "target": "org-banco-central",
-      "label": "origina de"
-    },
-    {
       "source": "bacen-3040-45-46",
       "target": "sys-databricks-governado",
       "label": "vem de"
@@ -1057,11 +1071,6 @@
       "label": "vem de"
     },
     {
-      "source": "de-para-de-produtos",
-      "target": "sys-planilha-excel-exploratorio",
-      "label": "vem de"
-    },
-    {
       "source": "debentures",
       "target": "sys-webscraping-debentures-com-br",
       "label": "vem de"
@@ -1070,11 +1079,6 @@
       "source": "def-cambio",
       "target": "sys-base-sql-on-premise",
       "label": "vem de"
-    },
-    {
-      "source": "dom-cadastro",
-      "target": "account",
-      "label": "agrega"
     },
     {
       "source": "dom-cadastro",
@@ -1168,17 +1172,17 @@
     },
     {
       "source": "evolucao-do-resultado",
-      "target": "gdad",
-      "label": "consome"
-    },
-    {
-      "source": "evolucao-do-resultado",
       "target": "gorc",
       "label": "consome"
     },
     {
+      "source": "evolucao-do-resultado",
+      "target": "niv-gold-gdad",
+      "label": "consome"
+    },
+    {
       "source": "evolucao-do-resultado-por-produto",
-      "target": "de-para-de-produtos",
+      "target": "niv-broze-de-para-de-produtos",
       "label": "consome"
     },
     {
@@ -1197,21 +1201,6 @@
       "label": "vem de"
     },
     {
-      "source": "fsec-mercado-alvo-mensal-ucs",
-      "target": "sys-banco-sql-legado-on-premise",
-      "label": "vem de"
-    },
-    {
-      "source": "fsec-mercado-alvo-semanal-ucs",
-      "target": "sys-banco-sql-legado-on-premise",
-      "label": "vem de"
-    },
-    {
-      "source": "gdad",
-      "target": "sys-databricks-dado-curado",
-      "label": "vem de"
-    },
-    {
       "source": "gdp",
       "target": "org-gdp-departamento",
       "label": "origina de"
@@ -1220,11 +1209,6 @@
       "source": "gorc",
       "target": "org-resultado-a-detalhar",
       "label": "origina de"
-    },
-    {
-      "source": "localizacao",
-      "target": "bacen",
-      "label": "consome"
     },
     {
       "source": "localizacao",
@@ -1243,12 +1227,42 @@
     },
     {
       "source": "mercado-alvo",
-      "target": "fsec-mercado-alvo-mensal-ucs",
-      "label": "vem de"
+      "target": "niv-silver-mercado-alvo-mensal-ucs",
+      "label": "consome"
     },
     {
       "source": "mercado-alvo",
-      "target": "fsec-mercado-alvo-semanal-ucs",
+      "target": "niv-silver-mercado-alvo-semanal-ucs",
+      "label": "consome"
+    },
+    {
+      "source": "niv-broze-de-para-de-produtos",
+      "target": "sys-planilha-excel-exploratorio",
+      "label": "vem de"
+    },
+    {
+      "source": "niv-gold-gdad",
+      "target": "niv-silver-mercado-alvo-mensal-ucs",
+      "label": "consome"
+    },
+    {
+      "source": "niv-gold-gdad",
+      "target": "sys-databricks-dado-curado",
+      "label": "vem de"
+    },
+    {
+      "source": "niv-silver-bacen-feature",
+      "target": "org-cadastro-corporativo",
+      "label": "vem de"
+    },
+    {
+      "source": "niv-silver-mercado-alvo-mensal-ucs",
+      "target": "sys-databricks-governado",
+      "label": "vem de"
+    },
+    {
+      "source": "niv-silver-mercado-alvo-semanal-ucs",
+      "target": "sys-databricks-governado",
       "label": "vem de"
     },
     {
@@ -1288,7 +1302,7 @@
     },
     {
       "source": "rar-12m",
-      "target": "gdad",
+      "target": "niv-gold-gdad",
       "label": "consome"
     },
     {
@@ -1323,11 +1337,6 @@
     },
     {
       "source": "setorizacao",
-      "target": "bacen",
-      "label": "consome"
-    },
-    {
-      "source": "setorizacao",
       "target": "classificacao-de-setores",
       "label": "consome"
     },
@@ -1344,11 +1353,6 @@
     {
       "source": "sys-banco-de-dados-do-credito",
       "target": "org-credito-provisorio",
-      "label": "origina de"
-    },
-    {
-      "source": "sys-banco-sql-legado-on-premise",
-      "target": "org-base-comercial-legada",
       "label": "origina de"
     },
     {
@@ -1374,11 +1378,6 @@
     {
       "source": "sys-databricks-governado",
       "target": "org-area-de-risco",
-      "label": "origina de"
-    },
-    {
-      "source": "sys-databricks-governado",
-      "target": "org-bacen",
       "label": "origina de"
     },
     {

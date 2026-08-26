@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  carregarNiveis,
   parseCatalogoRows,
   serializarCatalogo,
   validarCatalogo,
@@ -26,6 +27,7 @@ const row = (extra: Partial<CatalogoRow>): CatalogoRow => ({
   owner: null,
   centro_de_custo: null,
   observacoes: '',
+  associacoes: [],
   ...extra,
 })
 
@@ -64,7 +66,7 @@ describe('serializarCatalogo — round-trip', () => {
     })
   })
 
-  it('componente com os defaults do form (debito "avaliar", status/dominio vazios) valida sem warning e grava debito vazio', () => {
+  it('componente com os defaults do form valida sem warning e mantém o débito gravado', () => {
     const comp = row({
       nome: 'Origem Teste',
       nivel: 'origem',
@@ -76,22 +78,26 @@ describe('serializarCatalogo — round-trip', () => {
     })
     expect(validarCatalogo([comp])).toEqual({ errors: [], warnings: [] })
     const csv = serializarCatalogo([comp])
-    expect(csv).toContain('\r\nOrigem Teste;origem;;;;;;d;;;;;\r\n')
-    expect(parseCatalogoRows(csv)[0]).toEqual({ ...comp, debito: '' })
+    // O formulário é o mesmo em todos os níveis: o débito escolhido fica na
+    // linha (round-trip fiel), mesmo num componente.
+    expect(csv).toContain('\r\nOrigem Teste;origem;;;;;;d;avaliar;;;;;\r\n')
+    expect(parseCatalogoRows(csv)[0]).toEqual(comp)
   })
 
   it('formato canônico: BOM, cabeçalho padrão, ";", CRLF e aspas mínimas', () => {
     const csv = serializarCatalogo([row({ nome: 'A', observacoes: 'sem aspas necessárias' })])
     expect(csv.startsWith('\uFEFF' + 'nome;nivel;dominio;origem;fonte_sistema;')).toBe(true)
     expect(csv.endsWith('\r\n')).toBe(true)
-    expect(csv).toContain('\r\nA;primario;Risco;o;s;;;d;nao;producao;;;sem aspas necessárias\r\n')
+    expect(csv).toContain('\r\nA;primario;Risco;o;s;;;d;nao;producao;;;sem aspas necessárias;\r\n')
   })
 })
 
 describe('validarCatalogo', () => {
   it('catálogo real passa sem erros nem warnings', () => {
-    const original = readFileSync(resolve(import.meta.dirname, '..', 'catalogo.csv'), 'utf8')
-    expect(validarCatalogo(parseCatalogoRows(original))).toEqual({ errors: [], warnings: [] })
+    const raiz = resolve(import.meta.dirname, '..')
+    const original = readFileSync(resolve(raiz, 'catalogo.csv'), 'utf8')
+    const { niveis } = carregarNiveis(readFileSync(resolve(raiz, 'niveis.csv'), 'utf8'))
+    expect(validarCatalogo(parseCatalogoRows(original), niveis)).toEqual({ errors: [], warnings: [] })
   })
 
   it('nome duplicado (case-insensitive) é erro, apontando as duas linhas', () => {
@@ -136,13 +142,13 @@ describe('validarCatalogo', () => {
     ])
   })
 
-  it('consome de componente é ignorado e componente não conta como alvo de consome', () => {
+  it('consome de componente built-in é ignorado; o componente é alvo válido de consome', () => {
     const { errors, warnings } = validarCatalogo([
       row({ nome: 'Databricks', nivel: 'fonte', debito: '', consome: ['Não Existe'] }),
       row({ nome: 'Alfa', consome: ['Databricks'] }),
     ])
     expect(errors).toEqual([])
-    expect(warnings).toEqual(['"Alfa": consome "Databricks", que não existe no catálogo — o build criará um nó fantasma'])
+    expect(warnings).toEqual([])
   })
 
   it('consome inexistente é WARNING (vira fantasma), não erro; resolve por nome ou id', () => {

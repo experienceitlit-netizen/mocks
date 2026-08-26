@@ -8,12 +8,13 @@
 // Quando o campo não tem nó correspondente (ex.: "a confirmar"), sintetiza um
 // placeholder só na UI, um por dado, para a cadeia sempre mostrar o nível
 // origem → fonte → produto.
-import type { GraphLinkData, GraphNodeData, SimLink, SimNode } from './graph-types'
-import { isRaiz, nodeKind, normalizeNivel } from './graph-types'
+import type { GraphLinkData, GraphNodeData, NivelDef, SimLink, SimNode } from './graph-types'
+import { isRaiz, NIVEIS_BUILTIN, nodeKind, normalizeNivel } from './graph-types'
 
-/** Sistema/origem/fonte secundária não entram na árvore de dados (têm coluna
- *  própria no fim); nós de domínio derivados entram — são um nível entre a
- *  raiz e os finais. */
+/** Sistema/origem/fonte secundária são camadas de linhagem: não entram na
+ *  árvore de dados (têm coluna própria). Nós de domínio derivados entram — são
+ *  um nível entre a raiz e os finais — e nós de nível customizado também: são
+ *  dados como qualquer outro, só que numa coluna cadastrada pelo usuário. */
 function isSysOrg(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): boolean {
   const kind = nodeKind(node)
   return kind === 'sistema' || kind === 'origem' || kind === 'fonte-secundaria'
@@ -23,19 +24,35 @@ function isSysOrg(node: Pick<GraphNodeData, 'tipo' | 'derivado'>): boolean {
 export const NIVEIS_COL_X = 250
 export const NIVEIS_ROW_Y = 70
 
-/** Níveis semânticos da cadeia, na ordem fixa esquerda → direita da vista.
- *  Cada nó cai num nível pelo que ele É (não pela distância em saltos), então
- *  p.ex. todos os sistemas dividem a mesma coluna mesmo quando só parte dos
- *  dados passa por fonte secundária. Só níveis com algum nó ganham coluna. */
-const NIVEL_LABELS = [
-  '', // raiz: rotulada com o nome do próprio nó ("Atacado — Dados")
-  'Domínio',
-  'Produto final',
-  'Produto primário',
-  'Fonte secundária',
-  'Fonte (sistema)',
-  'Origem',
-] as const
+/** Slug do nível semântico de um nó da vista: cada nó cai num nível pelo que
+ *  ele É (não pela distância em saltos), então p.ex. todos os sistemas dividem
+ *  a mesma coluna mesmo quando só parte dos dados passa por fonte secundária.
+ *  A ordem esquerda → direita vem do bloco `niveis` do graph.json (campo
+ *  `ordem`), não mais de uma lista fixa — níveis customizados entram na coluna
+ *  do seu `nivelCustom`, na posição cadastrada. */
+function nivelSlugDe(n: GraphNodeData, consumidoPorDado: ReadonlySet<string>): string {
+  if (isRaiz(n)) return 'raiz'
+  switch (nodeKind(n)) {
+    case 'dominio':
+      return 'dominio'
+    case 'fonte-secundaria':
+      return 'fonte-secundaria'
+    case 'sistema': // inclui placeholders ph-sistema-*
+      return 'fonte'
+    case 'origem': // inclui placeholders ph-origem-*
+      return 'origem'
+    case 'nivel-custom':
+      return n.nivelCustom ?? 'fonte-secundaria'
+    default: {
+      // "Ambos" conta no nível em que aparece na cadeia: insumo de outro dado
+      // → produto primário; só agregado por raiz/domínio → produto final.
+      const nivel = normalizeNivel(n.nivel)
+      if (nivel === 'final') return 'final'
+      if (nivel === 'ambos') return consumidoPorDado.has(n.id) ? 'primario' : 'final'
+      return 'primario' // primário (e dado sem nivel declarado)
+    }
+  }
+}
 
 /** Faixa vertical de uma coluna da vista em níveis (coordenadas de grafo,
  *  yMin/yMax são centros do primeiro e do último nó — o padding visual do
@@ -179,14 +196,17 @@ export function buildLineageTree(
 }
 
 /** Linhagem completa com layout em colunas semânticas, lidas da esquerda para
- *  a direita: nó focado à esquerda (x=0) e uma coluna por nível da cadeia
- *  presente na sub-árvore (raiz → domínio → final → primário → fonte
- *  secundária → fonte → origem). Uma aresta pode atravessar colunas: dado sem
- *  fonte secundária liga direto na coluna de fontes, cruzando a de fsec. */
+ *  a direita: nó focado à esquerda e uma coluna por nível da cadeia presente
+ *  na sub-árvore, na ordem do bloco `niveis` do graph.json (built-ins raiz →
+ *  domínio → final → primário → fonte secundária → fonte → origem, com níveis
+ *  customizados intercalados pelo campo `ordem`). Uma aresta pode atravessar
+ *  colunas: dado sem fonte secundária liga direto na coluna de fontes,
+ *  cruzando a de fsec. */
 export function buildLineage(
   rootId: string,
   nodes: readonly GraphNodeData[],
   links: readonly GraphLinkData[],
+  niveis: readonly NivelDef[] = NIVEIS_BUILTIN,
 ): Lineage | null {
   const root = buildLineageTree(rootId, nodes, links)
   if (!root) return null
@@ -251,49 +271,44 @@ export function buildLineage(
     for (const n of nodes) {
       if (n.cadastrado === true && !nodeById.has(n.id)) addNode(n)
     }
+    // Associações dos componentes de nível custom (arestas custom→alvo
+    // "vem de" do build): visíveis quando os dois lados estão na vista —
+    // customs nunca são alcançados pela árvore de "consome", então só aqui
+    // (inventário da raiz) suas arestas aparecem.
+    for (const l of links) {
+      if ((l.label ?? 'consome') !== 'vem de') continue
+      const fonte = nodeById.get(l.source)
+      if (!fonte || nodeKind(fonte) !== 'nivel-custom') continue
+      if (nodeById.has(l.target)) addLink(l.source, l.target, 'vem de')
+    }
   }
 
-  // Nível semântico de cada nó (índice em NIVEL_LABELS). "Ambos" conta no
-  // nível em que aparece na cadeia: insumo de outro dado → produto primário;
-  // só agregado por raiz/domínio (ou o próprio focado) → produto final.
+  // Slug do nível de cada nó → ordem numérica do bloco `niveis`. Slug fora do
+  // bloco (dado ainda não migrado) cai depois do último nível conhecido.
   const consumidoPorDado = new Set<string>()
   for (const l of graphLinks) {
     const fonte = nodeById.get(l.source)
-    if (fonte && nodeKind(fonte) === 'dado' && !isRaiz(fonte)) consumidoPorDado.add(l.target)
+    if (!fonte || isRaiz(fonte)) continue
+    const kind = nodeKind(fonte)
+    if (kind === 'dado' || kind === 'nivel-custom') consumidoPorDado.add(l.target)
   }
-  const nivelDe = (n: GraphNodeData): number => {
-    if (isRaiz(n)) return 0
-    switch (nodeKind(n)) {
-      case 'dominio':
-        return 1
-      case 'fonte-secundaria':
-        return 4
-      case 'sistema': // inclui placeholders ph-sistema-*
-        return 5
-      case 'origem': // inclui placeholders ph-origem-*
-        return 6
-      default: {
-        const nivel = normalizeNivel(n.nivel)
-        if (nivel === 'final') return 2
-        if (nivel === 'ambos') return consumidoPorDado.has(n.id) ? 3 : 2
-        return 3 // primário (e dado sem nivel declarado)
-      }
-    }
-  }
+  const nivelBySlug = new Map(niveis.map((nv) => [nv.slug, nv]))
+  const ordemMax = Math.max(0, ...niveis.map((nv) => nv.ordem))
+  const ordemDe = (slug: string): number => nivelBySlug.get(slug)?.ordem ?? ordemMax + 1
 
   // Colunas da esquerda para a direita: só os níveis presentes na sub-árvore
   // (nível vazio não vira coluna); espaçamento vertical uniforme por coluna,
   // centrado, na ordem de visita da árvore.
-  const porNivel = new Map<number, SimNode[]>()
+  const porSlug = new Map<string, SimNode[]>()
   for (const n of nodeById.values()) {
-    const nv = nivelDe(n)
-    if (!porNivel.has(nv)) porNivel.set(nv, [])
-    porNivel.get(nv)?.push(n)
+    const slug = nivelSlugDe(n, consumidoPorDado)
+    if (!porSlug.has(slug)) porSlug.set(slug, [])
+    porSlug.get(slug)?.push(n)
   }
-  const niveisPresentes = [...porNivel.keys()].sort((a, b) => a - b)
+  const slugsPresentes = [...porSlug.keys()].sort((a, b) => ordemDe(a) - ordemDe(b))
   const columns: LineageColumn[] = []
-  niveisPresentes.forEach((nv, col) => {
-    const coluna = porNivel.get(nv) ?? []
+  slugsPresentes.forEach((slug, col) => {
+    const coluna = porSlug.get(slug) ?? []
     const x = col * NIVEIS_COL_X
     coluna.forEach((n, i) => {
       const y = (i - (coluna.length - 1) / 2) * NIVEIS_ROW_Y
@@ -304,7 +319,9 @@ export function buildLineage(
     })
     const meiaAltura = ((coluna.length - 1) / 2) * NIVEIS_ROW_Y
     columns.push({
-      label: nv === 0 ? root.data.nome : NIVEL_LABELS[nv],
+      // A coluna da raiz é rotulada com o nome do próprio nó ("Atacado —
+      // Dados"); as demais, com o título do nível no bloco `niveis`.
+      label: slug === 'raiz' ? root.data.nome : (nivelBySlug.get(slug)?.titulo ?? slug),
       x,
       yMin: -meiaAltura,
       yMax: meiaAltura,

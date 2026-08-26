@@ -287,10 +287,11 @@ export default function Graph({
         // Quadrado arredondado na cor do domínio (nível raiz → domínios).
         const s = r * 0.95
         ctx.roundRect(x - s, y - s, 2 * s, 2 * s, 3)
-      } else if (kind === 'fonte-secundaria') {
+      } else if (kind === 'fonte-secundaria' || kind === 'nivel-custom') {
         // Quadrado de cantos bem arredondados: meio-termo entre o quadrado
         // do sistema e o círculo do dado (a tabela UCS fica entre os dois na
-        // cadeia), na cor teal própria da paleta.
+        // cadeia). Fonte secundária na cor teal própria; componente de nível
+        // custom reusa a forma na cor derivada do slug do nível.
         const s = r * 0.9
         ctx.roundRect(x - s, y - s, 2 * s, 2 * s, s * 0.55)
       } else if (kind === 'sistema') {
@@ -319,9 +320,18 @@ export default function Graph({
           ctx.stroke()
           ctx.setLineDash([])
         } else {
-          // Derivados: preenchimento sólido, nunca borda de incompletude.
+          // Derivados: preenchimento sólido. Só nós de nível customizado podem
+          // vir incompletos (são linhas de dado, com owner e centro de custo).
           ctx.fillStyle = nodeColor(node)
           ctx.fill()
+          if (node.incompleto === true) {
+            // Gap de governança: borda branca tracejada, como nos produtos.
+            ctx.setLineDash([3 / scale, 2.2 / scale])
+            ctx.strokeStyle = '#FFFFFF'
+            ctx.lineWidth = 1.6 / scale
+            ctx.stroke()
+            ctx.setLineDash([])
+          }
           // Tabelas UCS e sistemas Databricks ganham o glifo de "tijolos".
           const databricks =
             kind === 'fonte-secundaria' ||

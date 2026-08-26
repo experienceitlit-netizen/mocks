@@ -2,20 +2,31 @@
 //   GET  /api/catalogo → {"rows": CatalogoRow[]} lido do catalogo.csv na hora
 //   POST /api/catalogo {"rows": CatalogoRow[]} → valida, grava o catalogo.csv
 //        e regenera src/data/graph.json (mesmo formato do npm run data).
-// O build estático/standalone não passa por aqui — o CSV segue sendo a fonte.
+//   GET  /api/niveis → {"rows": NivelRow[]} (SÓ os níveis customizados) lido
+//        do niveis.csv na hora; os built-in são fixos no código.
+//   POST /api/niveis {"rows": NivelRow[]} → valida (inclusive remoção de
+//        nível em uso no catálogo), grava o niveis.csv e regenera o graph.json.
+// O build estático/standalone não passa por aqui — os CSVs seguem sendo a fonte.
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { Plugin } from 'vite'
 import {
   buildGraph,
+  carregarNiveis,
+  defsDeNiveis,
   normalizarNivel,
   parseCatalogoRows,
+  parseNiveisRows,
   serializarCatalogo,
+  serializarNiveis,
   validarCatalogo,
+  validarNiveis,
+  validarNiveisContraCatalogo,
   type CatalogoRow,
   type Debito,
   type Nivel,
+  type NivelRow,
 } from './graph-lib.ts'
 
 const LIMITE_BODY = 2 * 1024 * 1024 // ~2MB
@@ -72,8 +83,46 @@ export function rowsDoBody(body: unknown): { rows: CatalogoRow[]; errors: string
       owner: textoOuNull('owner'),
       centro_de_custo: textoOuNull('centro_de_custo'),
       observacoes: texto('observacoes'),
+      associacoes: lista('associacoes'),
     }
     if (ok) rows.push(row)
+  })
+  return { rows, errors }
+}
+
+/** Valida a FORMA do body do POST /api/niveis ({"rows": [{titulo, ordem}]})
+ *  e materializa NivelRow[]; a validação de conteúdo (título/ordem únicos) é
+ *  do validarNiveis. `ordem` aceita number ou string numérica ("42.5"). */
+export function niveisDoBody(body: unknown): { rows: NivelRow[]; errors: string[] } {
+  const errors: string[] = []
+  if (typeof body !== 'object' || body === null || !Array.isArray((body as { rows?: unknown }).rows)) {
+    return { rows: [], errors: ['body deve ser um objeto {"rows": [{titulo, ordem}]}'] }
+  }
+  const rows: NivelRow[] = []
+  const brutas = (body as { rows: unknown[] }).rows
+  brutas.forEach((bruta, i) => {
+    if (typeof bruta !== 'object' || bruta === null || Array.isArray(bruta)) {
+      errors.push(`rows[${i}]: deve ser um objeto {titulo, ordem}`)
+      return
+    }
+    const registro = bruta as Record<string, unknown>
+    let ok = true
+    const titulo = registro.titulo ?? ''
+    if (typeof titulo !== 'string') {
+      errors.push(`rows[${i}].titulo: deve ser string`)
+      ok = false
+    }
+    const bruto = registro.ordem
+    let ordem = Number.NaN
+    if (typeof bruto === 'number') {
+      ordem = bruto
+    } else if (typeof bruto === 'string' && bruto.trim() !== '') {
+      ordem = Number(bruto)
+    } else if (bruto !== undefined && bruto !== null) {
+      errors.push(`rows[${i}].ordem: deve ser number (ou string numérica)`)
+      ok = false
+    }
+    if (ok) rows.push({ titulo: (titulo as string).trim(), ordem })
   })
   return { rows, errors }
 }
@@ -109,7 +158,94 @@ export function catalogoApiPlugin(): Plugin {
     configureServer(server) {
       const raiz = server.config.root
       const caminhoCsv = join(raiz, 'catalogo.csv')
+      const caminhoNiveis = join(raiz, 'niveis.csv')
       const caminhoGraph = join(raiz, 'src', 'data', 'graph.json')
+
+      // niveis.csv ausente = nenhum nível custom (mesma tolerância do build).
+      const lerNiveisTexto = async (): Promise<string> => {
+        try {
+          return await readFile(caminhoNiveis, 'utf8')
+        } catch (erro) {
+          if ((erro as NodeJS.ErrnoException).code === 'ENOENT') return ''
+          throw erro
+        }
+      }
+
+      const gravarGraph = async (graph: unknown): Promise<void> => {
+        await mkdir(dirname(caminhoGraph), { recursive: true })
+        await writeFile(caminhoGraph, JSON.stringify(graph, null, 2) + '\n')
+      }
+
+      server.middlewares.use('/api/niveis', (req, res) => {
+        void (async () => {
+          if (req.method === 'GET') {
+            responderJson(res, 200, { rows: parseNiveisRows(await lerNiveisTexto()) })
+            return
+          }
+
+          if (req.method !== 'POST') {
+            res.setHeader('Allow', 'GET, POST')
+            responderJson(res, 405, { ok: false, errors: [`método ${req.method} não suportado — use GET ou POST`] })
+            return
+          }
+
+          let texto: string
+          try {
+            texto = await lerBody(req)
+          } catch (erro) {
+            if (erro instanceof Error && erro.message === 'LIMITE') {
+              responderJson(res, 413, { ok: false, errors: ['body excede o limite de 2MB'] })
+              return
+            }
+            throw erro
+          }
+
+          let body: unknown
+          try {
+            body = JSON.parse(texto)
+          } catch {
+            responderJson(res, 400, { ok: false, errors: ['body não é JSON válido'] })
+            return
+          }
+
+          const { rows, errors: errosForma } = niveisDoBody(body)
+          if (errosForma.length > 0) {
+            responderJson(res, 400, { ok: false, errors: errosForma })
+            return
+          }
+          const { errors, warnings } = validarNiveis(rows)
+          if (errors.length > 0) {
+            responderJson(res, 400, { ok: false, errors, warnings })
+            return
+          }
+          // Remoção de nível ainda usado por linhas do catálogo é erro.
+          const csvCatalogo = await readFile(caminhoCsv, 'utf8')
+          const errosUso = validarNiveisContraCatalogo(rows, parseCatalogoRows(csvCatalogo))
+          if (errosUso.length > 0) {
+            responderJson(res, 400, { ok: false, errors: errosUso, warnings })
+            return
+          }
+
+          const csvNiveis = serializarNiveis(rows)
+          const { graph, warnings: warningsBuild } = buildGraph(csvCatalogo, defsDeNiveis(rows))
+          await writeFile(caminhoNiveis, csvNiveis)
+          await gravarGraph(graph)
+
+          const todos = [...new Set([...warnings, ...warningsBuild])]
+          responderJson(res, 200, {
+            ok: true,
+            warnings: todos,
+            counts: { nos: graph.nodes.length, arestas: graph.links.length, niveis: graph.niveis.length },
+          })
+        })().catch((erro: unknown) => {
+          server.config.logger.error(`[catalogo-api] ${String(erro)}`)
+          if (!res.headersSent) {
+            responderJson(res, 500, { ok: false, errors: [`erro interno: ${String(erro)}`] })
+          } else {
+            res.end()
+          }
+        })
+      })
 
       server.middlewares.use('/api/catalogo', (req, res) => {
         void (async () => {
@@ -149,24 +285,24 @@ export function catalogoApiPlugin(): Plugin {
             responderJson(res, 400, { ok: false, errors: errosForma })
             return
           }
-          const { errors, warnings } = validarCatalogo(rows)
+          const { niveis, warnings: warningsNiveis } = carregarNiveis(await lerNiveisTexto())
+          const { errors, warnings } = validarCatalogo(rows, niveis)
           if (errors.length > 0) {
             responderJson(res, 400, { ok: false, errors, warnings })
             return
           }
 
           const csv = serializarCatalogo(rows)
-          const { graph, warnings: warningsBuild } = buildGraph(csv)
+          const { graph, warnings: warningsBuild } = buildGraph(csv, niveis)
           await writeFile(caminhoCsv, csv)
-          await mkdir(dirname(caminhoGraph), { recursive: true })
-          await writeFile(caminhoGraph, JSON.stringify(graph, null, 2) + '\n')
+          await gravarGraph(graph)
 
           // warnings de validação e de build se sobrepõem (fantasmas); dedup mantendo a ordem
-          const todos = [...new Set([...warnings, ...warningsBuild])]
+          const todos = [...new Set([...warningsNiveis, ...warnings, ...warningsBuild])]
           responderJson(res, 200, {
             ok: true,
             warnings: todos,
-            counts: { nos: graph.nodes.length, arestas: graph.links.length },
+            counts: { nos: graph.nodes.length, arestas: graph.links.length, niveis: graph.niveis.length },
           })
         })().catch((erro: unknown) => {
           server.config.logger.error(`[catalogo-api] ${String(erro)}`)
