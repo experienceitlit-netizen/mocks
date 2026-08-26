@@ -48,8 +48,12 @@ const FOCUS_ZOOM = 2.5
 /** Teto de zoom após zoomToFit: subgrafos pequenos não viram close extremo. */
 const MAX_FIT_ZOOM = 4
 
+/** Ajuste fino do tamanho dos nós, aplicado ao raio inteiro (a área de clique
+ *  e as faixas acompanham, porque derivam do mesmo raio). */
+const ESCALA_NO = 1.25
+
 function radiusOf(degree: number): number {
-  return 4 + Math.sqrt(degree) * 2.2
+  return (4 + Math.sqrt(degree) * 2.2) * ESCALA_NO
 }
 
 /** Grau de cortesia de nós sem aresta: um componente recém-cadastrado nasce do
