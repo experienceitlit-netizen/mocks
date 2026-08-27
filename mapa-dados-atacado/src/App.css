@@ -1250,6 +1250,31 @@
   padding-left: 1.1rem;
 }
 
+/* Como confirmar quando não há botões (a confirmação do atalho de teclado). */
+.catalog-form__danger-dica {
+  color: #f0c2c9;
+  font-weight: 600;
+}
+
+.catalog-form__danger kbd {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  border: 1px solid #7a3a45;
+  background: rgba(255, 255, 255, 0.07);
+  font-family: inherit;
+  font-size: 0.95em;
+}
+
+.catalog-form__danger-erro {
+  color: #ff9aa8;
+}
+
+/* O mesmo painel dentro do balão: topo do corpo, abaixo do × que flutua. */
+.node-balloon__body > .catalog-form__danger {
+  clear: right;
+  margin: 0 0 0.85rem;
+}
+
 .catalog-form__cancel {
   padding: 0.35rem 0.8rem;
   border-radius: 6px;

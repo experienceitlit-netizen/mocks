@@ -19,6 +19,7 @@ import type { CatalogoRow, SaveOk } from './catalog-api'
 import type { CatalogStore } from './catalog-store'
 import type { Referencia } from './catalog-delete'
 import { removerComponente } from './catalog-delete'
+import DeleteConfirm from './DeleteConfirm'
 import type { RowFormState } from './catalog-form-row'
 import { montarRow } from './catalog-form-row'
 import type { Debito, NivelDef, TipoComponente } from './graph-types'
@@ -626,28 +627,7 @@ export default function CatalogForm({
               </div>
 
               {confirmarExclusao !== null && (
-                <div className="catalog-form__danger" role="alert">
-                  <strong>Excluir "{subtitulo}" do catálogo?</strong>
-                  {confirmarExclusao.length === 0 ? (
-                    <p>Nenhum outro componente cita este — nada mais será alterado.</p>
-                  ) : (
-                    <>
-                      <p>
-                        {confirmarExclusao.length === 1
-                          ? 'Uma menção também será removida:'
-                          : `${confirmarExclusao.length} menções também serão removidas:`}
-                      </p>
-                      <ul>
-                        {confirmarExclusao.map((r) => (
-                          <li key={`${r.nome}-${r.campo}`}>
-                            {r.nome} — {r.campo}
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                  <p>Não dá para desfazer pelo app (o histórico do Git guarda a versão anterior).</p>
-                </div>
+                <DeleteConfirm nome={subtitulo ?? nome} referencias={confirmarExclusao} />
               )}
 
               {errors.length > 0 && (

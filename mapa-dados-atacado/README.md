@@ -338,12 +338,19 @@ cadeia inteira dele). Companheiro do **Mostrar níveis**, que esconde as faixas.
 
 ### Excluir um componente
 
-O **✎ Editar** de uma linha já cadastrada traz o botão **🗑 Excluir**. O primeiro clique
-mostra o que sai junto: a linha e **cada menção a ela** nas outras linhas (`Consome/
-Upstream`, `Associações`, `Fontes secundárias` e a rota de quem a citava como origem ou
-fonte). O segundo confirma e grava. Limpar as menções é o ponto: sem isso, quem consumia o
-componente ficaria apontando para um nó fantasma. A exclusão não tem desfazer no app — o
-histórico do Git guarda a versão anterior do `catalogo.csv`.
+Há dois caminhos, com a **mesma** confirmação: ela nomeia o componente e lista o que sai
+junto — a linha e **cada menção a ela** nas colunas que geram aresta (`Consome/Upstream` e
+`Associações`). Limpar as menções é o ponto: sem isso, quem consumia o componente ficaria
+apontando para um nó fantasma. (Wikilink em `observacoes` não gera aresta e não é mexido.)
+
+- **Pelo formulário**: o **✎ Editar** de uma linha já cadastrada traz o botão **🗑
+  Excluir**. O primeiro clique mostra o painel de confirmação, o segundo grava.
+- **Pelo teclado**: `Delete` (ou `Backspace`) com um componente em evidência no mapa abre a
+  mesma confirmação dentro do balão dele; **`Enter` confirma** e **`Esc` cancela**. Ver
+  [Navegação](#navegação) para as regras de quando a tecla vale.
+
+A exclusão não tem desfazer no app — o histórico do Git guarda a versão anterior do
+`catalogo.csv`.
 
 ## Cores e bordas do grafo
 
@@ -402,6 +409,9 @@ src/
     catalog-api.ts          # cliente da API do dev server (/api/catalogo, /api/niveis)
     catalog-store.ts        # interface de persistência + store HTTP (o modo de sempre)
     catalog-store-local.ts  # store que grava CSV sem servidor: valida, grava, remonta o grafo
+    catalog-delete.ts       # exclusão pura: tira a linha e as menções a ela
+    DeleteConfirm.tsx       # painel de confirmação da exclusão (formulário e atalho de teclado)
+    delete-shortcut.ts      # regras do atalho Delete/Backspace: qual componente e quando vale
     fs-access.ts            # File System Access: escolher pasta, ler/gravar, lembrar o handle
     graph-build.ts          # re-export de scripts/graph-lib.ts para o bundle do front-end
     useFonteCatalogo.ts     # escolha do modo no mount (HTTP → arquivo local → importar)
@@ -434,9 +444,17 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
   funcionando e sobrepõe o destaque fixado enquanto durar.
 - **Duplo clique** num nó (ou o botão **"⌖ Focar neste nó"** do balão) entra no **modo
   foco** (ou re-foca, empilhando no **breadcrumb** do caminho navegado), com botão
-  "Ver mapa completo" para sair (`Esc` sai em estágios: fecha o balão, depois desfixa o
-  destaque, depois sai do foco). O clique esquerdo simples, também no foco, só fixa o
-  destaque — os detalhes ficam no botão direito.
+  "Ver mapa completo" para sair (`Esc` sai em estágios: cancela a exclusão pendente, fecha
+  o formulário, fecha o balão, depois desfixa o destaque, depois sai do foco). O clique
+  esquerdo simples, também no foco, só fixa o destaque — os detalhes ficam no botão direito.
+- **`Delete` (ou `Backspace`)** com um componente **em evidência** — o do balão aberto e,
+  na falta dele, o fixado pelo clique — pede a **exclusão** dele: o balão abre junto com a
+  confirmação (nome + as menções que saem junto, ver [Excluir um
+  componente](#excluir-um-componente)), `Enter` grava e `Esc` cancela. A tecla só age
+  **onde ela não atrapalha nada**: fica quieta enquanto o cursor está num campo de texto
+  (aí ela apaga texto, como sempre), com o formulário, o modal de níveis ou a aba Tabela
+  abertos, no modo somente leitura e em componente **fantasma** (citado, sem linha própria
+  no catálogo — não há o que excluir).
   O foco tem duas vistas, no switch da barra:
   - **Níveis** (padrão): a linhagem montante **completa** do nó focado, lida da
     **esquerda para a direita** — o focado na extrema esquerda e a cadeia se abrindo à

@@ -15,7 +15,13 @@ function Dot({ color }: { color: string }) {
   return <span className="legend__dot" style={{ background: color }} />
 }
 
-export default function Legend() {
+interface LegendProps {
+  /** Modo edição ativo (há store): a dica do atalho de exclusão só aparece
+   *  onde a tecla faz alguma coisa. */
+  podeExcluir?: boolean
+}
+
+export default function Legend({ podeExcluir = false }: LegendProps) {
   return (
     <div className="legend" aria-label="Legenda do grafo">
       <ul>
@@ -55,9 +61,14 @@ export default function Legend() {
         <li className="legend__hint">
           o nível de cada componente é a coluna em que ele aparece
         </li>
-        <li className="legend__hint legend__hint--last">
+        <li className={podeExcluir ? 'legend__hint' : 'legend__hint legend__hint--last'}>
           botão direito no nó = detalhes · clique fixa o destaque
         </li>
+        {podeExcluir && (
+          <li className="legend__hint legend__hint--last">
+            Delete (ou Backspace) no nó em evidência = excluir · Enter confirma
+          </li>
+        )}
       </ul>
     </div>
   )

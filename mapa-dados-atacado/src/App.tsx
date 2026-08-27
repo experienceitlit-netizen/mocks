@@ -31,6 +31,11 @@ import { buildLineage, buildLineageTree } from './components/lineage'
 import CatalogForm from './components/CatalogForm'
 import type { FormTarget } from './components/CatalogForm'
 import NiveisModal from './components/NiveisModal'
+import DeleteConfirm from './components/DeleteConfirm'
+import type { Referencia } from './components/catalog-delete'
+import { removerComponente } from './components/catalog-delete'
+import type { AlvoExclusao } from './components/delete-shortcut'
+import { alvoDoAtalho, ehCampoDeTexto, ehTeclaExcluir } from './components/delete-shortcut'
 import type { CatalogoRow } from './components/catalog-api'
 import FonteBar from './components/FonteBar'
 import { useFonteCatalogo } from './components/useFonteCatalogo'
@@ -116,6 +121,14 @@ function toggled<T>(set: ReadonlySet<T>, value: T): Set<T> {
 
 /** Janela entre dois cliques no mesmo nó para contar como duplo clique. */
 const DBLCLICK_MS = 350
+
+/** Exclusão pedida pelo teclado e ainda não confirmada. Guarda o que a
+ *  pergunta mostra (as menções que saem junto) e o erro da última tentativa de
+ *  gravar — tudo morre junto quando a pergunta é cancelada. */
+interface PedidoExclusao extends AlvoExclusao {
+  referencias: Referencia[]
+  erro: string | null
+}
 
 function App() {
   // Grafo montado no cliente (modo arquivo local); null = usar o graph.json
@@ -512,13 +525,97 @@ function App() {
     window.history.replaceState(null, '', url)
   }, [aba, selectedId, focusId, depth, vista, entradaId])
 
-  // Esc em estágios: cancela o formulário de edição, senão fecha o balão,
-  // senão desfixa o destaque, senão sai do foco. Na aba Tabela, volta ao mapa
-  // (o estado do mapa é invisível ali — não mexe nele). Handlers globais leem
-  // o estado via ref (registro único).
+  // --- exclusão pelo teclado ---
+  // Delete (e Backspace, o hábito do macOS) sobre o componente em evidência
+  // pede a exclusão dele; Enter confirma e Esc cancela. O balão abre junto com
+  // a pergunta: ninguém confirma o que não está vendo.
+  const [exclusaoPendente, setExclusaoPendente] = useState<PedidoExclusao | null>(null)
+  const [excluindo, setExcluindo] = useState(false)
+
+  // A pergunta vale para o nó que estava em evidência quando ela subiu: se a
+  // seleção muda, um modal abre, a tela vira tabela ou o modo de edição some,
+  // ela sai de cena em vez de confirmar outra coisa.
+  useEffect(() => {
+    if (exclusaoPendente === null) return
+    const valida =
+      selectedId === exclusaoPendente.id &&
+      catalogForm === null &&
+      !niveisOpen &&
+      aba === 'mapa' &&
+      store !== null
+    if (!valida) setExclusaoPendente(null)
+  }, [exclusaoPendente, selectedId, catalogForm, niveisOpen, aba, store])
+
+  const executarExclusao = useCallback(
+    async (pedido: PedidoExclusao) => {
+      if (store === null) return
+      const falhar = (msg: string) =>
+        setExclusaoPendente((p) => (p !== null && p.id === pedido.id ? { ...p, erro: msg } : p))
+      setExcluindo(true)
+      try {
+        // Base FRESCA do catálogo, como no formulário: um save anterior nesta
+        // sessão não recarrega a página, então as rows do estado podem estar
+        // atrás do CSV.
+        const atuais = (await store.lerCatalogo()) ?? catalogRows ?? []
+        const r = removerComponente(atuais, { nome: pedido.nome, nivel: pedido.nivel })
+        if (!r.encontrada) {
+          falhar(`"${pedido.nome}" não está mais no catálogo.`)
+          return
+        }
+        const res = await store.salvarCatalogo(r.rows)
+        if (res.ok) {
+          // Fecha a pergunta e o balão; o foco/seleção que apontavam para o nó
+          // sumido são descartados pelo efeito sobre nodesById.
+          setExclusaoPendente(null)
+          setSelectedId(null)
+          setPinnedId(null)
+          refreshCatalogo()
+        } else {
+          falhar(res.errors.join(' · '))
+        }
+      } catch (err) {
+        falhar(err instanceof Error ? err.message : 'Falha ao excluir.')
+      } finally {
+        setExcluindo(false)
+      }
+    },
+    [store, catalogRows, refreshCatalogo],
+  )
+
+  // Handlers globais leem o estado por ref (o listener é registrado uma vez).
+  const teclaExcluirRef = useRef<(e: KeyboardEvent) => void>(() => {})
+  teclaExcluirRef.current = (e) => {
+    // Digitando em um campo, Delete/Backspace são do texto; com o formulário,
+    // o modal de níveis ou a tabela na tela, a tecla não é do mapa.
+    if (catalogForm !== null || niveisOpen || aba !== 'mapa') return
+    if (ehCampoDeTexto(document.activeElement)) return
+    const alvo = alvoDoAtalho({ selectedId, pinnedId, nodesById, rows: catalogRows })
+    if (alvo === null) return
+    e.preventDefault()
+    select(alvo.id) // abre o balão do alvo (e assume o destaque do fixado)
+    setExclusaoPendente({
+      ...alvo,
+      referencias: removerComponente(catalogRows ?? [], alvo).referencias,
+      erro: null,
+    })
+  }
+
+  const teclaConfirmarRef = useRef<(e: KeyboardEvent) => void>(() => {})
+  teclaConfirmarRef.current = (e) => {
+    if (exclusaoPendente === null || excluindo) return
+    if (ehCampoDeTexto(document.activeElement)) return
+    e.preventDefault()
+    void executarExclusao(exclusaoPendente)
+  }
+
+  // Esc em estágios: cancela a exclusão pendente, senão o formulário de edição,
+  // senão fecha o balão, senão desfixa o destaque, senão sai do foco. Na aba
+  // Tabela, volta ao mapa (o estado do mapa é invisível ali — não mexe nele).
+  // Handlers globais leem o estado via ref (registro único).
   const escRef = useRef(() => {})
   escRef.current = () => {
-    if (catalogForm) setCatalogForm(null)
+    if (exclusaoPendente) setExclusaoPendente(null)
+    else if (catalogForm) setCatalogForm(null)
     else if (niveisOpen) setNiveisOpen(false)
     else if (aba === 'tabela') setAba('mapa')
     else if (selectedId) setSelectedId(null)
@@ -545,7 +642,14 @@ function App() {
       if (id) graphRef.current?.focusNode(id)
     }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') escRef.current()
+      if (e.key === 'Escape') {
+        escRef.current()
+        return
+      }
+      // Combinação com modificador é atalho do sistema/navegador, não do mapa.
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (ehTeclaExcluir(e.key)) teclaExcluirRef.current(e)
+      else if (e.key === 'Enter') teclaConfirmarRef.current(e)
     }
     window.addEventListener('popstate', onPopState)
     window.addEventListener('keydown', onKeyDown)
@@ -747,7 +851,7 @@ function App() {
         />
       )}
 
-      {aba === 'mapa' && <Legend />}
+      {aba === 'mapa' && <Legend podeExcluir={catalogRows !== null} />}
 
       {aba === 'mapa' && selectedNode && (
         <NodeBalloon
@@ -761,6 +865,24 @@ function App() {
           onNavigate={(id) => select(id, true)}
           onFocus={focusOn}
           onEdit={editTarget ? () => openCatalogForm(editTarget) : undefined}
+          confirmacao={
+            exclusaoPendente !== null && exclusaoPendente.id === selectedId ? (
+              <DeleteConfirm
+                nome={exclusaoPendente.nome}
+                referencias={exclusaoPendente.referencias}
+                dica={
+                  excluindo ? (
+                    'Excluindo…'
+                  ) : (
+                    <>
+                      <kbd>Enter</kbd> confirma · <kbd>Esc</kbd> cancela
+                    </>
+                  )
+                }
+                erro={exclusaoPendente.erro}
+              />
+            ) : undefined
+          }
           onClose={() => setSelectedId(null)}
           getAnchor={getBalloonAnchor}
         />

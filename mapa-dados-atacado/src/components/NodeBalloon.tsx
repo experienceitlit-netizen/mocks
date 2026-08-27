@@ -42,6 +42,9 @@ interface NodeBalloonProps {
   /** Abre o formulário de edição/cadastro do catálogo. Só vem definido no modo
    *  edição (dev server com /api/catalogo). */
   onEdit?: () => void
+  /** Confirmação pendente sobre este nó (exclusão pelo teclado): entra no topo
+   *  do corpo, antes dos detalhes, para ser lida sem rolar. */
+  confirmacao?: ReactNode
   onClose(): void
   /** Âncora em coordenadas de tela; null se o nó não está no grafo atual. */
   getAnchor(): BalloonAnchor | null
@@ -241,8 +244,9 @@ function clamp(v: number, min: number, max: number): number {
 }
 
 export default function NodeBalloon(props: NodeBalloonProps) {
-  const { onClose, getAnchor, node } = props
+  const { onClose, getAnchor, node, confirmacao } = props
   const boxRef = useRef<HTMLElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   const arrowRef = useRef<HTMLSpanElement>(null)
 
   // Posiciona o balão colado ao nó, com FLIP de lado para caber na viewport.
@@ -311,13 +315,21 @@ export default function NodeBalloon(props: NodeBalloonProps) {
     return () => cancelAnimationFrame(raf)
   }, [place])
 
+  // O corpo rola: uma confirmação que aparece com o balão já rolado ficaria
+  // acima da área visível.
+  const temConfirmacao = confirmacao !== undefined && confirmacao !== null
+  useEffect(() => {
+    if (temConfirmacao && bodyRef.current) bodyRef.current.scrollTop = 0
+  }, [temConfirmacao])
+
   return (
     <aside className="node-balloon" ref={boxRef} role="dialog" aria-label={`Detalhes de ${node.nome}`}>
       <span className="node-balloon__arrow" ref={arrowRef} aria-hidden="true" />
-      <div className="node-balloon__body">
+      <div className="node-balloon__body" ref={bodyRef}>
         <button type="button" className="node-balloon__close" onClick={onClose} aria-label="Fechar">
           ×
         </button>
+        {confirmacao}
         <BalloonContent {...props} />
       </div>
     </aside>
