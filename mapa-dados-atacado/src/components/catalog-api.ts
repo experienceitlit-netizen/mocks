@@ -9,14 +9,19 @@ import { TIPO_COMPONENTE_PADRAO, TIPOS_COMPONENTE } from './graph-types'
  *  COMPONENTE: o `nivel` (slug) diz a que camada ele pertence e
  *  `tipo_componente` o que ele é fisicamente. */
 export interface CatalogoRow {
+  /** Chave ESTÁVEL da linha, e id do nó no grafo: não muda ao renomear nem ao
+   *  trocar de nível. "" = linha nova, ainda sem id — a gravação gera um a
+   *  partir do nome. O formulário nunca escreve neste campo. */
+  id: string
   nome: string
   /** Slug do nível — qualquer um do bloco `niveis`, sem valor especial. */
   nivel: string
   tipo_componente: TipoComponente
   dominio: string
-  /** Nomes consumidos por este componente (arestas "consome"). */
+  /** Ids consumidos por este componente (arestas "consome"). Um NOME ainda é
+   *  aceito (catálogo antigo, edição na planilha) e vira id na gravação. */
   consome: string[]
-  /** Nomes a que este componente se associa (arestas "vem de"). */
+  /** Ids a que este componente se associa (arestas "vem de"). */
   associacoes: string[]
   descricao: string
   /** "" = não declarado (linha antiga); o formulário sempre grava um valor. */
@@ -73,6 +78,7 @@ export async function fetchCatalogo(): Promise<CatalogoRow[] | null> {
     // Campos do contrato normalizados na entrada: a UI só vê valores válidos.
     return (rows as CatalogoRow[]).map((r) => ({
       ...r,
+      id: typeof r.id === 'string' ? r.id : '',
       nivel: typeof r.nivel === 'string' ? r.nivel : '',
       tipo_componente: normalizeTipoComponente(r.tipo_componente),
       consome: asStringArray(r.consome),

@@ -6,7 +6,6 @@
 // store de edição — em somente leitura, `rows` é null e o atalho não existe.
 import type { CatalogoRow } from './catalog-api'
 import type { GraphNodeData } from './graph-types'
-import { nivelDe } from './graph-types'
 
 /** Teclas que iniciam a exclusão do componente em evidência. Backspace entra
  *  junto com Delete: é o hábito de quem vem do macOS. */
@@ -28,9 +27,9 @@ export function ehCampoDeTexto(
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
 }
 
-/** Linha do catálogo que o atalho excluiria (nome + nível a identificam). */
+/** Linha do catálogo que o atalho excluiria. O `id` do nó no grafo É o id da
+ *  linha, então ele identifica a linha e abre o balão da confirmação. */
 export interface AlvoExclusao {
-  /** Id do nó no grafo, para abrir o balão junto com a confirmação. */
   id: string
   nome: string
   nivel: string
@@ -56,7 +55,7 @@ export function alvoDoAtalho(params: {
   if (id === null) return null
   const node = nodesById.get(id)
   if (node === undefined) return null
-  const nivel = nivelDe(node)
-  const row = rows.find((r) => r.nivel === nivel && r.nome === node.nome)
+  // O id do nó é o da linha: fantasma não casa com nenhuma e não tem alvo.
+  const row = rows.find((r) => r.id === id)
   return row === undefined ? null : { id, nome: row.nome, nivel: row.nivel }
 }

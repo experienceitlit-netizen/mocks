@@ -28,7 +28,10 @@ const TIPOS_COMPONENTE_MSG = TIPOS_COMPONENTE.map((t) => `"${t}"`).join(', ')
  * coluna, ícone) faz isso pelo campo `nivel`, na UI.
  */
 export interface GraphNode {
-  /** `<slug do nível>-<slug do nome>`: mesma regra em todos os níveis. */
+  /** Id da LINHA do catálogo (coluna `id`): a chave estável do componente.
+   *  Não muda ao renomear nem ao trocar de nível — é o que mantém as ligações
+   *  de pé. Nó fantasma, que não tem linha, ganha um id derivado do nome com o
+   *  prefixo {@link PREFIXO_FANTASMA}. */
   id: string
   nome: string
   /** slug de um nível ativo (built-in ou cadastrado no niveis.csv). */
@@ -69,9 +72,9 @@ export interface Graph {
  *  referências que ela declara, ainda não resolvidas. */
 export interface ParsedRow {
   node: GraphNode
-  /** nomes (ou ids) da coluna "consome" */
+  /** ids (ou nomes, por compatibilidade) da coluna "consome" */
   consome: string[]
-  /** nomes (ou ids) da coluna "associacoes" */
+  /** ids (ou nomes, por compatibilidade) da coluna "associacoes" */
   associacoes: string[]
 }
 
@@ -517,7 +520,7 @@ export type Debito = 'sim' | 'nao' | 'avaliar'
 
 /**
  * Linha do catalogo.csv na forma bruta: um campo por coluna, sem nada derivado
- * (id, incompleto etc. são calculados só no build). Células vazias de
+ * (incompleto etc. é calculado só no build). Células vazias de
  * owner/centro_de_custo/origem/fonte_sistema viram null; as listas ("A | B")
  * viram arrays. É o formato trocado com a API do dev server
  * (GET/POST /api/catalogo).
@@ -526,6 +529,10 @@ export type Debito = 'sim' | 'nao' | 'avaliar'
  * pelo `nivel` dela, não por um formato de linha diferente.
  */
 export interface CatalogoRow {
+  /** Chave ESTÁVEL e imutável da linha (ver {@link atribuirIds}). É o id do nó
+   *  no grafo e o alvo das referências de `consome`/`associacoes`. "" = ainda
+   *  não tem id: o build e a gravação geram um a partir do nome. */
+  id: string
   nome: string
   /** slug de um nível ativo (built-in ou cadastrado no niveis.csv). */
   nivel: string
@@ -547,8 +554,8 @@ export interface CatalogoRow {
 /**
  * Colunas do catalogo.csv, na ordem canônica do cabeçalho.
  *
- * `tipo_componente` e `associacoes` são opcionais na LEITURA (CSV legado sem
- * elas parseia sem warning), mas o serializador sempre escreve as 12.
+ * `id`, `tipo_componente` e `associacoes` são opcionais na LEITURA (CSV legado
+ * sem elas parseia sem warning), mas o serializador sempre escreve as 13.
  *
  * As colunas `origem`, `fonte_sistema` e `fontes_secundarias` existiram
  * enquanto fonte e origem eram campos de um produto; viraram níveis próprios e
@@ -556,6 +563,7 @@ export interface CatalogoRow {
  * ignoradas e não voltam na regravação.
  */
 export const COLUNAS = [
+  'id',
   'nome',
   'nivel',
   'tipo_componente',
@@ -570,8 +578,10 @@ export const COLUNAS = [
   'associacoes',
 ] as const
 
-/** Colunas que podem faltar do cabeçalho sem warning (legado). */
-const COLUNAS_OPCIONAIS = new Set<string>(['tipo_componente', 'associacoes'])
+/** Colunas que podem faltar do cabeçalho sem warning: `id` porque o build o
+ *  gera do nome (é o que deixa acrescentar linhas na planilha sem saber de
+ *  ids), as outras duas por serem posteriores ao formato original. */
+const COLUNAS_OPCIONAIS = new Set<string>(['id', 'tipo_componente', 'associacoes'])
 
 /** Colunas de versões anteriores do catálogo: um arquivo que ainda as traga é
  *  lido sem reclamação (elas são ignoradas e não voltam na regravação). */
@@ -591,17 +601,54 @@ export function slugify(nome: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+/** Base de id para nome que não sobra nenhuma letra ou número ao slugificar. */
+const ID_SEM_NOME = 'componente'
+
+/** Prefixo do id de um nó FANTASMA (citado em `consome` sem linha própria).
+ *  Ele não tem linha, logo não tem id no arquivo: o build deriva um, e o
+ *  prefixo mantém esse id fora do espaço dos ids de verdade. */
+export const PREFIXO_FANTASMA = 'fantasma-'
+
+/** Primeiro id livre a partir de `base`: `base`, `base-2`, `base-3`… `usados`
+ *  é atualizado com o id devolvido. */
+function reservarId(base: string, usados: Set<string>): string {
+  const raiz = base === '' ? ID_SEM_NOME : base
+  let id = raiz
+  let n = 1
+  while (usados.has(id)) id = `${raiz}-${++n}`
+  usados.add(id)
+  return id
+}
+
 /**
- * Id do nó que uma linha materializa: `<slug do nível>-<slug do nome>`, sem
- * exceção para nível nenhum. É o que permite o MESMO nome existir em níveis
- * diferentes ("Resultado" produto final e "Resultado" silver são dois
- * componentes, com ids `final-resultado` e `silver-resultado`).
+ * Id de cada linha, na ordem em que elas aparecem no arquivo.
  *
- * O slug do nível já vem em kebab-case (validado em {@link checarNivel}), e é
- * usado como está.
+ * O id é a chave ESTÁVEL do componente: a célula preenchida vale como está e
+ * nunca é reescrita — renomear a linha, mudá-la de nível ou de tipo não mexe
+ * nela. Célula VAZIA ganha um id gerado do nome ("RAR 12M" → `rar-12m`), único
+ * globalmente, com sufixo numérico em caso de colisão (`rar-12m-2`). É essa
+ * tolerância que deixa acrescentar linhas na planilha à mão sem saber de ids:
+ * a próxima gravação preenche a célula.
+ *
+ * Ids declarados são reservados ANTES de gerar qualquer um, então acrescentar
+ * uma linha no meio do arquivo não muda o id de ninguém.
  */
-export function idDaLinha(nivel: string, nome: string): string {
-  return `${nivel.trim()}-${slugify(nome)}`
+export function atribuirIds(entradas: readonly { id: string; nome: string }[]): string[] {
+  const usados = new Set<string>()
+  for (const e of entradas) {
+    const id = e.id.trim()
+    if (id !== '') usados.add(id)
+  }
+  return entradas.map((e) => {
+    const id = e.id.trim()
+    return id !== '' ? id : reservarId(slugify(e.nome), usados)
+  })
+}
+
+/** Linhas com a coluna `id` preenchida (as que já tinham passam intactas). */
+export function preencherIds(rows: readonly CatalogoRow[]): CatalogoRow[] {
+  const ids = atribuirIds(rows)
+  return rows.map((row, i) => (row.id === ids[i] ? row : { ...row, id: ids[i] }))
 }
 
 /** Chave de comparação de nomes: sem acentos, minúscula e trimada (a pontuação
@@ -728,6 +775,21 @@ export function parseCatalogo(
     }
   }
 
+  // Ids atribuídos ANTES de qualquer descarte e sobre as mesmas células que o
+  // parseCatalogoRows enxerga: é o que garante que o id que o build usa e o que
+  // a gravação escreve no arquivo sejam o mesmo (uma linha ignorada aqui segue
+  // reservando o id dela, para não roubar o de ninguém quando voltar).
+  const celulaBruta = (registro: string[], col: Coluna): string => {
+    const i = indice.get(col)
+    return i === undefined ? '' : (registro[i] ?? '').trim()
+  }
+  const ids = atribuirIds(
+    registros.slice(1).map((registro) => ({
+      id: celulaBruta(registro, 'id'),
+      nome: celulaBruta(registro, 'nome'),
+    })),
+  )
+
   const ativos = new Set(niveis.map((n) => n.slug))
   const rows: ParsedRow[] = []
   for (let r = 1; r < registros.length; r++) {
@@ -776,7 +838,7 @@ export function parseCatalogo(
     const centroDeCusto = textoOuNull('centro_de_custo')
 
     const node: GraphNode = {
-      id: idDaLinha(nivel, nome),
+      id: ids[r - 1],
       nome,
       nivel,
       tipoComponente: tipo,
@@ -825,6 +887,9 @@ export function parseCatalogoRows(texto: string): CatalogoRow[] {
       return v === '' ? null : v
     }
     return {
+      // Cru: a célula vazia continua vazia aqui, e só é preenchida na gravação
+      // (serializarCatalogo) ou no build — nunca na leitura.
+      id: celula('id'),
       nome: celula('nome'),
       nivel: celula('nivel'),
       tipo_componente: celula('tipo_componente'),
@@ -855,14 +920,20 @@ function celulaCsv(valor: string): string {
  * colunas valem em qualquer nível — nada é canonizado por nível, porque nível
  * não muda a forma da linha.
  *
+ * A coluna `id` sai sempre preenchida: linha sem id ganha um aqui (ver
+ * {@link atribuirIds}) — gravou, tem id. É a única canonização com efeito
+ * semântico do serializador, e existe para que nenhum caminho de escrita possa
+ * esquecê-la.
+ *
  * Round-trip garantido: parseCatalogoRows(serializarCatalogo(rows)) devolve
- * rows (para valores já trimados, como os que saem do próprio parse) e
- * serializarCatalogo(parseCatalogoRows(csv)) reproduz um arquivo canônico byte
- * a byte.
+ * rows (para valores já trimados e com id, como os que saem de um arquivo já
+ * gravado) e serializarCatalogo(parseCatalogoRows(csv)) reproduz um arquivo
+ * canônico byte a byte.
  */
-export function serializarCatalogo(rows: CatalogoRow[]): string {
-  const linhas = rows.map((row) => {
+export function serializarCatalogo(rows: readonly CatalogoRow[]): string {
+  const linhas = preencherIds(rows).map((row) => {
     const celulas: Record<Coluna, string> = {
+      id: row.id,
       nome: row.nome,
       nivel: row.nivel,
       tipo_componente: row.tipo_componente,
@@ -889,11 +960,13 @@ export interface ValidacaoCatalogo {
 /**
  * Valida linhas brutas antes de gravar o catálogo (POST /api/catalogo).
  *
- * Erros (impedem a gravação): nome vazio; nivel vazio ou fora dos níveis
- * ativos; tipo_componente fora de {@link TIPOS_COMPONENTE}; debito preenchido
- * com algo que não seja sim/nao/avaliar; nome duplicado DENTRO do mesmo nível
- * (mesmo slug — cobre diferenças só de caixa/acento). O mesmo nome em níveis
- * diferentes é permitido: são componentes diferentes.
+ * Erros (impedem a gravação): nome vazio; `id` repetido (é a chave da linha);
+ * nivel vazio ou fora dos níveis ativos; tipo_componente fora de
+ * {@link TIPOS_COMPONENTE}; debito preenchido com algo que não seja
+ * sim/nao/avaliar; nome duplicado DENTRO do mesmo nível (mesmo slug — cobre
+ * diferenças só de caixa/acento). O mesmo nome em níveis diferentes é
+ * permitido: são componentes diferentes. `id` VAZIO é aceito — a gravação
+ * gera um.
  *
  * Warnings (não impedem): `consome` que não resolve contra nenhuma linha — o
  * build criará um nó fantasma — e `associacoes` que não resolve, que o build
@@ -909,6 +982,7 @@ export function validarCatalogo(
   const warnings: string[] = []
   const ativos = new Set(niveis.map((n) => n.slug))
   const porChave = new Map<string, { nome: string; linha: number }>()
+  const porId = new Map<string, { nome: string; linha: number }>()
 
   rows.forEach((row, i) => {
     const linha = i + 2
@@ -917,14 +991,31 @@ export function validarCatalogo(
       errors.push(`linha ${linha}: "nome" é obrigatório`)
       return
     }
+    // Id repetido é a única falha estrutural nova: duas linhas com a mesma
+    // chave seriam o mesmo componente, e as referências não teriam como saber
+    // de qual delas se trata.
+    const id = row.id.trim()
+    if (id !== '') {
+      const anteriorId = porId.get(id)
+      if (anteriorId !== undefined) {
+        errors.push(
+          `linha ${linha} ("${nome}"): id "${id}" duplicado — colide com "${anteriorId.nome}" (linha ${anteriorId.linha});` +
+            ` o id é a chave da linha e não pode se repetir`,
+        )
+      } else {
+        porId.set(id, { nome, linha })
+      }
+    }
     const nivel = row.nivel.trim()
     if (nivel === '') {
       errors.push(`linha ${linha} ("${nome}"): "nivel" é obrigatório (${nivelsMsg(niveis)})`)
     } else if (!ativos.has(nivel)) {
       errors.push(`linha ${linha} ("${nome}"): nivel "${row.nivel}" inválido (${nivelsMsg(niveis)})`)
     }
-    // Namespace de nome é POR NÍVEL: o que identifica um componente é o par
-    // (nível, nome), que é exatamente o id dele.
+    // Nome repetido no mesmo nível não é mais ambiguidade de identidade (o id
+    // resolve isso), mas continua sendo erro no app: quem escolhe o alvo de uma
+    // ligação escolhe por NOME, e dois rótulos iguais na mesma coluna do mapa
+    // não têm como ser distinguidos a olho.
     const chave = `${nivel}\u0000${slugify(nome)}`
     const anterior = porChave.get(chave)
     if (anterior !== undefined) {
@@ -950,13 +1041,15 @@ export function validarCatalogo(
   })
 
   // Referências resolvem como no build: por id OU por nome de QUALQUER linha,
-  // sem distinguir caixa nem acentos.
+  // sem distinguir caixa nem acentos. Linha ainda sem id entra só pelo nome —
+  // ninguém tem como citar um id que não existe no arquivo.
   const conhecidos = new Set<string>()
   for (const row of rows) {
     const nome = row.nome.trim()
     if (nome === '') continue
     conhecidos.add(chaveNome(nome))
-    conhecidos.add(idDaLinha(row.nivel, nome))
+    const id = row.id.trim()
+    if (id !== '') conhecidos.add(id)
   }
   const conhece = (alvo: string): boolean =>
     conhecidos.has(chaveNome(alvo)) || conhecidos.has(alvo.trim())
@@ -982,9 +1075,16 @@ export function validarCatalogo(
 
 // ---------------------------------------------------------------------------
 // Resolução de referências entre linhas (`consome`, `associacoes`): toda
-// referência aponta para QUALQUER linha do catálogo, de qualquer nível. Mudar
-// um componente de nível muda só o id dele; quem o referencia continua achando
-// pelo nome.
+// referência aponta para QUALQUER linha do catálogo, de qualquer nível.
+//
+// A célula guarda o ID do alvo, que é imutável: renomear um componente ou
+// movê-lo de nível não mexe em quem aponta para ele. A resolução tenta, nesta
+// ordem:
+//   1. id exato — o caso normal;
+//   2. NOME (sem distinguir caixa nem acentos) — compatibilidade com o formato
+//      antigo e com quem edita a planilha à mão; resolve, mas avisa, e a
+//      próxima gravação troca a célula pelo id;
+//   3. nada — fantasma em `consome`, warning em `associacoes`.
 // ---------------------------------------------------------------------------
 
 /** Candidato de uma referência: id do nó final e o nível a que ele pertence
@@ -995,13 +1095,22 @@ export interface AlvoRef {
   nivel: string
 }
 
+/** Resultado de uma resolução: o alvo escolhido, os homônimos que disputaram e
+ *  por qual caminho o texto casou. `porNome` true = a célula guarda um nome (ou
+ *  um id que não existe mais) e será normalizada para id na próxima gravação. */
+export interface ResolucaoRef {
+  alvo: AlvoRef | null
+  candidatos: AlvoRef[]
+  porNome: boolean
+}
+
 export interface IndiceAlvos {
   /** Acrescenta alvos (id repetido é ignorado: o primeiro vence). */
   adicionar(alvos: readonly AlvoRef[]): void
   /** Resolve por id e, sem casar, por nome sem distinguir caixa nem acentos.
    *  `candidatos` traz todos os homônimos — vence o de menor ordem de nível
    *  (empate: menor id). */
-  resolver(texto: string, excluirId?: string): { alvo: AlvoRef | null; candidatos: AlvoRef[] }
+  resolver(texto: string, excluirId?: string): ResolucaoRef
 }
 
 export function criarIndiceAlvos(
@@ -1033,21 +1142,68 @@ export function criarIndiceAlvos(
     resolver(texto, excluirId) {
       const bruto = texto.trim()
       const exato = porId.get(bruto)
-      if (exato !== undefined && exato.id !== excluirId) return { alvo: exato, candidatos: [exato] }
+      if (exato !== undefined && exato.id !== excluirId) {
+        return { alvo: exato, candidatos: [exato], porNome: false }
+      }
       const candidatos = (porNome.get(chaveNome(bruto)) ?? []).filter((a) => a.id !== excluirId)
-      return { alvo: candidatos[0] ?? null, candidatos }
+      const alvo = candidatos[0] ?? null
+      return { alvo, candidatos, porNome: alvo !== null }
     },
   }
 }
 
 /**
+ * Linhas com `consome` e `associacoes` já em ids: toda referência que resolve
+ * (por id ou por nome) vira o id do alvo; a que não resolve fica como está —
+ * nome inventado continua virando fantasma, e apagá-lo aqui esconderia o gap.
+ *
+ * Roda sobre linhas que já têm id ({@link preencherIds} antes), e é o que
+ * cumpre a promessa do warning de resolução por nome: gravou, normalizou.
+ */
+export function normalizarReferencias(
+  rows: readonly CatalogoRow[],
+  niveis: readonly NivelInfo[] = NIVEIS_PADRAO,
+): CatalogoRow[] {
+  const indice = criarIndiceAlvos(
+    niveis,
+    rows
+      .filter((r) => r.id.trim() !== '' && r.nome.trim() !== '')
+      .map((r) => ({ id: r.id.trim(), nome: r.nome.trim(), nivel: r.nivel.trim() })),
+  )
+  // Mesma disciplina do build: `consome` resolve contra tudo e `associacoes`
+  // se exclui, para uma linha não se associar a si mesma por homonímia.
+  const converter = (lista: readonly string[], excluirId?: string): string[] =>
+    lista.map((ref) => indice.resolver(ref, excluirId).alvo?.id ?? ref)
+
+  return rows.map((row) => ({
+    ...row,
+    consome: converter(row.consome),
+    associacoes: converter(row.associacoes, row.id.trim()),
+  }))
+}
+
+/**
+ * Linhas prontas para gravar: ids preenchidos e referências em id. É o passo
+ * que todo caminho de escrita (POST /api/catalogo e store local) executa antes
+ * de serializar — o mesmo tratamento, venha o save do dev server ou do
+ * navegador.
+ */
+export function canonizarCatalogo(
+  rows: readonly CatalogoRow[],
+  niveis: readonly NivelInfo[] = NIVEIS_PADRAO,
+): CatalogoRow[] {
+  return normalizarReferencias(preencherIds(rows), niveis)
+}
+
+/**
  * Nó fantasma: alvo de `consome` que não tem linha no catálogo. Fica no mapa
  * (é justamente o buraco que o mapa precisa mostrar) no nível do fim da
- * cadeia — de onde vem o que ainda não foi catalogado.
+ * cadeia — de onde vem o que ainda não foi catalogado. Sem linha ele não tem
+ * id de verdade: quem chama deriva um com {@link PREFIXO_FANTASMA}.
  */
-function nodeFantasma(nomeAlvo: string, nivel: string): GraphNode {
+function nodeFantasma(nomeAlvo: string, nivel: string, id: string): GraphNode {
   return {
-    id: idDaLinha(nivel, nomeAlvo),
+    id,
     nome: nomeAlvo,
     nivel,
     tipoComponente: TIPO_COMPONENTE_DEFAULT,
@@ -1066,12 +1222,12 @@ function nodeFantasma(nomeAlvo: string, nivel: string): GraphNode {
  * Monta o grafo a partir do texto do catalogo.csv.
  *
  * - um nó por LINHA do catálogo, em qualquer nível — nada é derivado de campo;
- * - id = `<slug do nível>-<slug do nome>`; duas linhas com o mesmo id (mesmo
- *   nome no mesmo nível) viram warning e a repetida é ignorada;
+ * - id do nó = id da LINHA (coluna `id`, gerada do nome quando vazia); duas
+ *   linhas com o mesmo id viram warning e a repetida é ignorada;
  * - `consome` vira aresta "consome" e `associacoes` vira aresta "vem de";
- *   ambas resolvem contra QUALQUER linha, por id ou por nome (sem distinguir
- *   caixa nem acentos). Nome homônimo em vários níveis → warning, e vence o
- *   nível de menor ordem;
+ *   ambas resolvem contra QUALQUER linha, por id e, por compatibilidade, por
+ *   nome (com warning: a próxima gravação normaliza a célula). Nome homônimo
+ *   em vários níveis → warning, e vence o nível de menor ordem;
  * - `consome` que não resolve vira nó fantasma (+ warning); `associacoes` que
  *   não resolve vira só warning, sem criar nó — não dá para adivinhar em que
  *   nível ele existiria;
@@ -1095,13 +1251,33 @@ export function buildGraph(csv: string, niveis: readonly NivelInfo[] = NIVEIS_PA
   for (const p of ordenadas) {
     if (porId.has(p.node.id)) {
       warnings.push(
-        `nome duplicado "${p.node.nome}" no nível "${p.node.nivel}" (id "${p.node.id}") — a linha repetida foi ignorada`,
+        `id duplicado "${p.node.id}": a linha "${p.node.nome}" (nível "${p.node.nivel}") foi ignorada` +
+          ` — o id é a chave da linha e não pode se repetir`,
       )
       continue
     }
     nodes.push(p.node)
     porId.set(p.node.id, p.node)
     aceitas.push(p)
+  }
+
+  // Nome repetido dentro de um nível não impede mais nada — as duas linhas têm
+  // ids próprios e viram dois nós —, mas o mapa mostra dois rótulos iguais na
+  // mesma coluna, e o formulário recusa criar isso. Vale o aviso.
+  const linhasPorNome = new Map<string, GraphNode[]>()
+  for (const p of aceitas) {
+    const chave = `${p.node.nivel} ${slugify(p.node.nome)}`
+    const lista = linhasPorNome.get(chave) ?? []
+    lista.push(p.node)
+    linhasPorNome.set(chave, lista)
+  }
+  for (const iguais of linhasPorNome.values()) {
+    if (iguais.length < 2) continue
+    warnings.push(
+      `nome duplicado "${iguais[0].nome}" no nível "${iguais[0].nivel}" (ids ${iguais
+        .map((n) => `"${n.id}"`)
+        .join(', ')}) — são componentes distintos, mas com o mesmo rótulo no mapa`,
+    )
   }
 
   const indice = criarIndiceAlvos(
@@ -1117,24 +1293,30 @@ export function buildGraph(csv: string, niveis: readonly NivelInfo[] = NIVEIS_PA
   const fantasmas: GraphNode[] = []
   // Um fantasma por nome referenciado, seja qual for o número de consumidores.
   const idFantasmaPorNome = new Map<string, string>()
+  // Ids já ocupados (linhas aceitas + fantasmas já criados): o id derivado de
+  // um fantasma nunca pode roubar o de uma linha.
+  const idsUsados = new Set<string>(porId.keys())
+
+  /** Aviso de referência que casou por NOME: funciona, mas é o formato antigo —
+   *  a célula guarda um rótulo, não a chave, e a gravação seguinte a troca. */
+  const avisoPorNome = (origem: string, campo: string, ref: string, alvo: AlvoRef): string =>
+    `"${origem}": ${campo} "${ref}" resolvido por NOME (id "${alvo.id}") —` +
+    ` a ligação por nome quebra ao renomear; a próxima gravação normaliza a célula para o id`
 
   for (const p of aceitas) {
-    for (const nomeAlvo of p.consome) {
-      const { alvo, candidatos } = indice.resolver(nomeAlvo)
+    for (const ref of p.consome) {
+      const { alvo, candidatos, porNome } = indice.resolver(ref)
       if (alvo === null) {
-        const chave = chaveNome(nomeAlvo)
+        const chave = chaveNome(ref)
         let id = idFantasmaPorNome.get(chave)
         if (id === undefined) {
-          const fantasma = nodeFantasma(nomeAlvo, nivelFantasma)
+          const idFantasma = reservarId(PREFIXO_FANTASMA + slugify(ref), idsUsados)
+          const fantasma = nodeFantasma(ref, nivelFantasma, idFantasma)
           warnings.push(
-            `consome quebrado: "${nomeAlvo}" em "${p.node.nome}" não corresponde a nenhuma linha do catálogo — criado nó fantasma "${fantasma.id}"`,
+            `consome quebrado: "${ref}" em "${p.node.nome}" não corresponde a nenhuma linha do catálogo — criado nó fantasma "${fantasma.id}"`,
           )
-          // Nome com pontuação diferente pode slugificar igual ao de uma linha
-          // já aceita: nesse caso a aresta aponta para ela, sem duplicar o nó.
-          if (!porId.has(fantasma.id)) {
-            porId.set(fantasma.id, fantasma)
-            fantasmas.push(fantasma)
-          }
+          porId.set(fantasma.id, fantasma)
+          fantasmas.push(fantasma)
           id = fantasma.id
           idFantasmaPorNome.set(chave, id)
         }
@@ -1143,27 +1325,29 @@ export function buildGraph(csv: string, niveis: readonly NivelInfo[] = NIVEIS_PA
       }
       if (candidatos.length > 1) {
         warnings.push(
-          `"${p.node.nome}": consome "${nomeAlvo}", nome de ${candidatos.length} linhas do catálogo — usando "${alvo.nome}" (${alvo.nivel})`,
+          `"${p.node.nome}": consome "${ref}", nome de ${candidatos.length} linhas do catálogo — usando "${alvo.nome}" (${alvo.nivel})`,
         )
       }
+      if (porNome) warnings.push(avisoPorNome(p.node.nome, 'consome', ref, alvo))
       links.push({ source: p.node.id, target: alvo.id, label: 'consome' })
     }
   }
 
   for (const p of aceitas) {
-    for (const nomeAlvo of p.associacoes) {
-      const { alvo, candidatos } = indice.resolver(nomeAlvo, p.node.id)
+    for (const ref of p.associacoes) {
+      const { alvo, candidatos, porNome } = indice.resolver(ref, p.node.id)
       if (alvo === null) {
         warnings.push(
-          `"${p.node.nome}": associação "${nomeAlvo}" não corresponde a nenhum componente do mapa — ignorada (nenhum nó criado)`,
+          `"${p.node.nome}": associação "${ref}" não corresponde a nenhum componente do mapa — ignorada (nenhum nó criado)`,
         )
         continue
       }
       if (candidatos.length > 1) {
         warnings.push(
-          `"${p.node.nome}": associação "${nomeAlvo}" é ambígua (${candidatos.length} componentes) — usando "${alvo.nome}" (${alvo.nivel})`,
+          `"${p.node.nome}": associação "${ref}" é ambígua (${candidatos.length} componentes) — usando "${alvo.nome}" (${alvo.nivel})`,
         )
       }
+      if (porNome) warnings.push(avisoPorNome(p.node.nome, 'associação', ref, alvo))
       links.push({ source: p.node.id, target: alvo.id, label: 'vem de' })
     }
   }

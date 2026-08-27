@@ -64,6 +64,7 @@ const semNiveis = (...removidos: string[]) =>
 const MEDALHAO = [nivelRow('Bronze', 46), nivelRow('Prata', 44), nivelRow('Ouro', 42)]
 
 const catalogoRow = (extra: Partial<CatalogoRow>): CatalogoRow => ({
+  id: '',
   nome: 'X',
   nivel: 'primario',
   tipo_componente: '',
@@ -477,17 +478,20 @@ describe('validarNiveisContraCatalogo (remoção de nível em uso)', () => {
   })
 })
 
-describe('catalogo.csv — colunas opcionais (tipo_componente e associacoes)', () => {
-  it('arquivo legado sem as duas parseia sem warning; ambas saem vazias', () => {
-    const legado = COLUNAS.filter((c) => c !== 'associacoes' && c !== 'tipo_componente')
+describe('catalogo.csv — colunas opcionais (id, tipo_componente e associacoes)', () => {
+  it('arquivo legado sem as três parseia sem warning; todas saem vazias', () => {
+    const legado = COLUNAS.filter((c) => c !== 'id' && c !== 'associacoes' && c !== 'tipo_componente')
     const texto = legado.join(';') + '\r\n' + 'Alfa;primario;Risco;o;s;;;d;nao;producao;;;\r\n'
     expect(parseCatalogo(texto).warnings).toEqual([])
-    expect(parseCatalogoRows(texto)[0]).toMatchObject({ tipo_componente: '', associacoes: [] })
+    expect(parseCatalogoRows(texto)[0]).toMatchObject({ id: '', tipo_componente: '', associacoes: [] })
     expect(parseCatalogo(texto).rows[0].node.tipoComponente).toBe('Default')
+    // Sem id no arquivo, o build gera um do nome — o nó existe do mesmo jeito.
+    expect(parseCatalogo(texto).rows[0].node.id).toBe('alfa')
   })
 
   it('round-trip: tipo_componente e associacoes "A | B" vão e voltam', () => {
     const row = catalogoRow({
+      id: 'tabela-raw-x',
       nome: 'Tabela Raw X',
       nivel: 'bronze',
       tipo_componente: 'Tabela Delta',
@@ -501,7 +505,14 @@ describe('catalogo.csv — colunas opcionais (tipo_componente e associacoes)', (
 
   it('as duas colunas valem em qualquer nível, sem canonização por nível', () => {
     const rows = ['primario', 'fonte', 'fonte-secundaria', 'raiz'].map((nivel) =>
-      catalogoRow({ nome: `N-${nivel}`, nivel, debito: '', tipo_componente: 'Excel', associacoes: ['Alfa'] }),
+      catalogoRow({
+        id: `n-${nivel}`,
+        nome: `N-${nivel}`,
+        nivel,
+        debito: '',
+        tipo_componente: 'Excel',
+        associacoes: ['alfa'],
+      }),
     )
     expect(parseCatalogoRows(serializarCatalogo(rows))).toEqual(rows)
   })
@@ -521,10 +532,14 @@ describe('buildGraph com níveis cadastrados', () => {
       NIVEIS,
     )
     expect(warnings).toEqual([])
-    expect(graph.nodes.map((n) => n.id)).toEqual(['bronze-tabela-raw-x', 'final-produto'])
+    expect(graph.nodes.map((n) => n.id)).toEqual(['produto', 'tabela-raw-x'])
     // Mesmo schema, mesmos campos: nível cadastrado não é uma classe à parte.
     expect(Object.keys(graph.nodes[0]).sort()).toEqual(Object.keys(graph.nodes[1]).sort())
-    expect(graph.nodes[0]).toMatchObject({ nivel: 'bronze', descricao: 'raw', tipoComponente: 'Default' })
+    expect(graph.nodes.find((n) => n.id === 'tabela-raw-x')).toMatchObject({
+      nivel: 'bronze',
+      descricao: 'raw',
+      tipoComponente: 'Default',
+    })
   })
 
   it('associação resolve por nome (case/acento-insensitive) e gera aresta "vem de"', () => {
@@ -535,55 +550,54 @@ describe('buildGraph com níveis cadastrados', () => {
       ),
       NIVEIS,
     )
-    expect(warnings).toEqual([])
-    expect(arestas(graph)).toEqual(['bronze-tabela-raw-x -vem de-> prata-adat'])
+    // Resolveu, com o aviso de que a célula guarda um nome e não a chave.
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('resolvido por NOME (id "adat")')
+    expect(arestas(graph)).toEqual(['tabela-raw-x -vem de-> adat'])
   })
 
   it('associação entre níveis cadastrados (Ouro vem de Prata vem de Bronze)', () => {
     const { graph, warnings } = buildGraph(
       csv(
-        completo({ nome: 'O', nivel: 'ouro', debito: '', associacoes: 'P' }),
-        completo({ nome: 'P', nivel: 'prata', debito: '', associacoes: 'B' }),
+        completo({ nome: 'O', nivel: 'ouro', debito: '', associacoes: 'p' }),
+        completo({ nome: 'P', nivel: 'prata', debito: '', associacoes: 'b' }),
         completo({ nome: 'B', nivel: 'bronze', debito: '' }),
       ),
       NIVEIS,
     )
     expect(warnings).toEqual([])
-    expect(arestas(graph)).toEqual(['ouro-o -vem de-> prata-p', 'prata-p -vem de-> bronze-b'])
+    expect(arestas(graph)).toEqual(['o -vem de-> p', 'p -vem de-> b'])
   })
 
   it('consome cruza níveis cadastrados e built-in livremente, nos dois sentidos', () => {
     const { graph, warnings } = buildGraph(
       csv(
-        completo({ nome: 'Final F', nivel: 'final', consome: 'Prata P' }),
-        completo({ nome: 'Prata P', nivel: 'prata', debito: '', consome: 'Origem O' }),
-        completo({ nome: 'Origem O', nivel: 'origem', debito: '', consome: 'Final F' }),
+        completo({ nome: 'Final F', nivel: 'final', consome: 'prata-p' }),
+        completo({ nome: 'Prata P', nivel: 'prata', debito: '', consome: 'origem-o' }),
+        completo({ nome: 'Origem O', nivel: 'origem', debito: '', consome: 'final-f' }),
       ),
       NIVEIS,
     )
     expect(warnings).toEqual([])
     expect(arestas(graph)).toEqual([
-      'final-final-f -consome-> prata-prata-p',
-      'origem-origem-o -consome-> final-final-f',
-      'prata-prata-p -consome-> origem-origem-o',
+      'final-f -consome-> prata-p',
+      'origem-o -consome-> final-f',
+      'prata-p -consome-> origem-o',
     ])
   })
 
-  it('mudar um componente de nível preserva as arestas de quem o cita pelo nome', () => {
-    const consumidor = completo({ nome: 'Alfa', nivel: 'final', consome: 'Mercado Alvo - UCS' })
-    const comoPrata = buildGraph(
-      csv(consumidor, completo({ nome: 'Mercado Alvo - UCS', nivel: 'prata', debito: '' })),
-      NIVEIS,
-    )
-    const comoBronze = buildGraph(
-      csv(consumidor, completo({ nome: 'Mercado Alvo - UCS', nivel: 'bronze', debito: '' })),
-      NIVEIS,
-    )
+  it('mudar um componente de nível preserva as arestas de quem o cita', () => {
+    const consumidor = completo({ id: 'alfa', nome: 'Alfa', nivel: 'final', consome: 'mercado-alvo-ucs' })
+    const alvo = (nivel: string) =>
+      completo({ id: 'mercado-alvo-ucs', nome: 'Mercado Alvo - UCS', nivel, debito: '' })
+    const comoPrata = buildGraph(csv(consumidor, alvo('prata')), NIVEIS)
+    const comoBronze = buildGraph(csv(consumidor, alvo('bronze')), NIVEIS)
+
     expect(comoPrata.warnings).toEqual([])
     expect(comoBronze.warnings).toEqual([])
-    // Só o id do alvo (e a coluna dele) muda; a ligação continua de pé.
-    expect(arestas(comoPrata.graph)).toEqual(['final-alfa -consome-> prata-mercado-alvo-ucs'])
-    expect(arestas(comoBronze.graph)).toEqual(['final-alfa -consome-> bronze-mercado-alvo-ucs'])
+    // Só a COLUNA do alvo muda; o id — e portanto a aresta — é o mesmo.
+    expect(arestas(comoBronze.graph)).toEqual(arestas(comoPrata.graph))
+    expect(arestas(comoPrata.graph)).toEqual(['alfa -consome-> mercado-alvo-ucs'])
   })
 
   it('nome duplicado DENTRO do nível cadastrado gera warning e a repetida é ignorada', () => {
@@ -594,10 +608,14 @@ describe('buildGraph com níveis cadastrados', () => {
       ),
       NIVEIS,
     )
-    expect(graph.nodes).toHaveLength(1)
-    expect(graph.nodes[0].descricao).toBe('primeira')
+    // Duas linhas, dois ids, dois nós — e o aviso do rótulo repetido.
+    expect(graph.nodes.map((n) => [n.id, n.descricao])).toEqual([
+      ['tabela-raw', 'primeira'],
+      ['tabela-raw-2', 'segunda'],
+    ])
     expect(warnings).toEqual([
-      'nome duplicado "tabela raw" no nível "bronze" (id "bronze-tabela-raw") — a linha repetida foi ignorada',
+      'nome duplicado "Tabela Raw" no nível "bronze" (ids "tabela-raw", "tabela-raw-2")' +
+        ' — são componentes distintos, mas com o mesmo rótulo no mapa',
     ])
   })
 
@@ -611,11 +629,15 @@ describe('buildGraph com níveis cadastrados', () => {
       NIVEIS,
     )
     expect(warnings).toEqual([])
-    expect(graph.nodes.map((n) => n.id)).toEqual(['bronze-resultado', 'final-resultado', 'prata-resultado'])
+    expect(graph.nodes.map((n) => [n.id, n.nivel])).toEqual([
+      ['resultado', 'bronze'],
+      ['resultado-2', 'prata'],
+      ['resultado-3', 'final'],
+    ])
   })
 
   it('determinismo: mesma saída independentemente da ordem das linhas', () => {
-    const a = completo({ nome: 'O', nivel: 'ouro', debito: '', associacoes: 'P', consome: 'Final F' })
+    const a = completo({ nome: 'O', nivel: 'ouro', debito: '', associacoes: 'p', consome: 'final-f' })
     const b = completo({ nome: 'P', nivel: 'prata', debito: '' })
     const c = completo({ nome: 'Final F', nivel: 'final' })
     expect(buildGraph(csv(c, b, a), NIVEIS).graph).toEqual(buildGraph(csv(a, b, c), NIVEIS).graph)
@@ -626,9 +648,9 @@ describe('buildGraph com built-in editado ou removido', () => {
   // Uma linha por nível da ponta à ponta da cadeia, ligadas por consome e
   // associacoes: é o que mostra que remover um nível só apaga as linhas DELE.
   const CATALOGO = csv(
-    completo({ nome: 'Portfólio', nivel: 'raiz', debito: '', consome: 'Alfa' }),
-    completo({ nome: 'Alfa', nivel: 'final', consome: 'Beta' }),
-    completo({ nome: 'Beta', nivel: 'primario', associacoes: 'Risco' }),
+    completo({ nome: 'Portfólio', nivel: 'raiz', debito: '', consome: 'alfa' }),
+    completo({ nome: 'Alfa', nivel: 'final', consome: 'beta' }),
+    completo({ nome: 'Beta', nivel: 'primario', associacoes: 'risco' }),
     completo({ nome: 'Risco', nivel: 'dominio', debito: '' }),
   )
   const PADRAO = carregarNiveis('').niveis
@@ -640,11 +662,11 @@ describe('buildGraph com built-in editado ou removido', () => {
   it('cadeia completa (referência dos casos abaixo)', () => {
     const { graph, warnings } = buildGraph(CATALOGO, PADRAO)
     expect(warnings).toEqual([])
-    expect(ids(graph)).toEqual(['dominio-risco', 'final-alfa', 'primario-beta', 'raiz-portfolio'])
+    expect(ids(graph)).toEqual(['alfa', 'beta', 'portfolio', 'risco'])
     expect(arestas(graph)).toEqual([
-      'final-alfa -consome-> primario-beta',
-      'primario-beta -vem de-> dominio-risco',
-      'raiz-portfolio -consome-> final-alfa',
+      'alfa -consome-> beta',
+      'beta -vem de-> risco',
+      'portfolio -consome-> alfa',
     ])
   })
 
@@ -672,27 +694,21 @@ describe('buildGraph com built-in editado ou removido', () => {
 
   it('remover um nível leva só as linhas DELE — e a raiz não é exceção', () => {
     const { graph, warnings } = buildGraph(CATALOGO, semNiveis('raiz'))
-    expect(ids(graph)).toEqual(['dominio-risco', 'final-alfa', 'primario-beta'])
+    expect(ids(graph)).toEqual(['alfa', 'beta', 'risco'])
     expect(warnings).toEqual([
       'catalogo.csv linha 2 ("Portfólio"): nível "raiz" não existe na cadeia' +
         ' (use um destes: dominio, final, primario, fonte-secundaria, fonte, origem) — linha ignorada',
     ])
     // O resto da cadeia segue de pé, com as arestas que não passavam pela raiz.
-    expect(arestas(graph)).toEqual([
-      'final-alfa -consome-> primario-beta',
-      'primario-beta -vem de-> dominio-risco',
-    ])
+    expect(arestas(graph)).toEqual(['alfa -consome-> beta', 'beta -vem de-> risco'])
   })
 
   it('remover `dominio` desfaz também a associação que apontava para lá', () => {
     const { graph, warnings } = buildGraph(CATALOGO, semNiveis('dominio'))
-    expect(ids(graph)).not.toContain('dominio-risco')
-    expect(arestas(graph)).toEqual([
-      'final-alfa -consome-> primario-beta',
-      'raiz-portfolio -consome-> final-alfa',
-    ])
+    expect(ids(graph)).not.toContain('risco')
+    expect(arestas(graph)).toEqual(['alfa -consome-> beta', 'portfolio -consome-> alfa'])
     expect(warnings).toHaveLength(2)
-    expect(warnings[1]).toContain('associação "Risco" não corresponde a nenhum componente')
+    expect(warnings[1]).toContain('associação "risco" não corresponde a nenhum componente')
   })
 
   it('remover um nível vazio não mexe em nada', () => {
@@ -703,7 +719,7 @@ describe('buildGraph com built-in editado ou removido', () => {
   })
 
   it('determinismo: remover nível não depende da ordem das linhas', () => {
-    const a = completo({ nome: 'Alfa', nivel: 'final', consome: 'Beta' })
+    const a = completo({ nome: 'Alfa', nivel: 'final', consome: 'beta' })
     const b = completo({ nome: 'Beta', nivel: 'primario' })
     const niveis = semNiveis('dominio', 'fonte-secundaria')
     expect(buildGraph(csv(b, a), niveis).graph).toEqual(buildGraph(csv(a, b), niveis).graph)
@@ -854,14 +870,22 @@ describe('catálogo e niveis.csv reais', () => {
   })
 
   it('sem o niveis.csv, as linhas dos níveis cadastrados caem em "nível não existe"', () => {
-    const { graph, warnings } = buildGraph(catalogoReal)
+    // Fixture própria: o catálogo do projeto é dado vivo (o usuário cadastra e
+    // exclui pelo app), então contas sobre ele quebram sozinhas.
+    const csv =
+      '\uFEFFid;nome;nivel;tipo_componente;dominio;consome;descricao;debito;status;owner;centro_de_custo;observacoes;associacoes\r\n' +
+      'a;A;primario;Default;;;;;;;;;\r\n' +
+      'b;B;gold;Default;;;;;;;;;\r\n' +
+      'c;C;gold;Default;;;;;;;;;\r\n'
+    const niveisCsv = '\uFEFFtitulo;ordem;slug;cor_fundo;cor_borda\r\nGold;43;gold;;\r\n'
+
+    const comNiveis = buildGraph(csv, carregarNiveis(niveisCsv).niveis).graph
+    expect(comNiveis.nodes).toHaveLength(3)
+
+    const { graph, warnings } = buildGraph(csv)
     expect(graph.niveis).toEqual(NIVEIS_BUILTIN.map((n) => ({ ...n, builtin: true })))
-    // Uma linha por nó que vivia num nível cadastrado: some do mapa e avisa.
-    const comNiveis = buildGraph(catalogoReal, carregarNiveis(niveisReal).niveis).graph
-    const slugsBuiltin = new Set(NIVEIS_BUILTIN.map((n) => n.slug))
-    const foraDoBuiltin = comNiveis.nodes.filter((n) => !slugsBuiltin.has(n.nivel)).length
-    expect(foraDoBuiltin).toBeGreaterThan(0)
-    expect(warnings.filter((w) => w.includes('não existe na cadeia'))).toHaveLength(foraDoBuiltin)
-    expect(graph.nodes).toHaveLength(comNiveis.nodes.length - foraDoBuiltin)
+    // As duas linhas de nível cadastrado somem do mapa, cada uma com seu aviso.
+    expect(graph.nodes.map((n) => n.id)).toEqual(['a'])
+    expect(warnings.filter((w) => w.includes('não existe na cadeia'))).toHaveLength(2)
   })
 })

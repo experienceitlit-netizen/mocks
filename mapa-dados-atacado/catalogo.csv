@@ -1,100 +1,15 @@
-﻿nome;nivel;tipo_componente;dominio;consome;descricao;debito;status;owner;centro_de_custo;observacoes;associacoes
-Ajustes dos analistas;primario;Default;Resultado;;correções e reclassificações de resultado;sim;producao;;;Correções e reclassificações aplicadas pelos analistas do Atacado sobre o resultado realizado, refletindo a visão de gestão. O processo hoje é manual, apoiado em planilha e sem trilha de auditoria — é aí que se concentra o débito técnico da rota.;
-BACEN 3040/45/46;gold;Default;Regulatorio;;operações de crédito reguladas;nao;producao;;;Bases regulatórias do BACEN (documentos 3040, 3045 e 3046) com as operações de crédito reguladas do sistema financeiro. Chegam ao banco por transferência corporativa de arquivos e dão ao Atacado visão de endividamento e share dos clientes no mercado de crédito. O uso como insumo do endividamento de mercado foi inferido e precisa ser validado com o negócio.;
-Capital Regulatório;primario;Default;Risco;;base de capital do RAR;avaliar;investigacao;;;"Base de capital regulatório alocado por cliente/operação, insumo direto do denominador do RAR 12M. A área de capital/risco é a origem, mas a fonte e a curadoria ainda estão sendo confirmadas — enquanto isso o item permanece em investigação e o débito como ""a avaliar"".";
-Classificação de localização;primario;Default;Mercado;;de-para geográfico mantido pelo Atacado;sim;producao;;;De-para geográfico mantido pela equipe de classificação do Atacado, que traduz o endereço cadastral dos clientes na praça de cobrança do relacionamento. Assim como o de-para setorial, vive em planilha Excel sem trilha de auditoria — o débito está na rota, que precisa ser automatizada.;
-Classificação de setores;primario;Default;Mercado;;de-para de setores mantido pelo Atacado;sim;producao;;;De-para de setores mantido pela equipe de classificação do Atacado, que traduz os CNAEs e demais sinais das fontes externas no setor eleito de cada grupo. Hoje o de-para vive em planilha Excel, sem trilha de auditoria — o débito técnico está na rota, que precisa ser automatizada em um processo governado.;
-Custo de Capital (KE);primario;Default;Risco;;taxa de custo de capital;sim;transicao;;;"Taxa de custo de capital (KE) aplicada no cálculo do retorno ajustado ao risco. Hoje é obtida de forma provisória a partir do banco de dados do crédito — uma rota de empréstimo que caracteriza o débito técnico e mantém o dado em transição até que uma fonte oficial seja definida; o próprio domínio do dado ainda está por definir.";
-De-para de produtos;broze;Default;Mercado;;clusterização de produtos do Atacado;sim;producao;;;De-para construído pelos analistas do Atacado para clusterizar os produtos e dar visão agregada por família de produto na EVOL. É um artefato exploratório mantido em planilha Excel — útil na análise, mas ainda sem rota governada, o que caracteriza o débito. Há um MVP no Salesforce com destino planejado no lake.;
-Debêntures;primario;Default;Regulatorio;;posições de debêntures do mercado;sim;producao;;;Posições de debêntures do mercado, com dados públicos da ANBIMA. A captura hoje é feita por webscraping do site debentures.com.br — uma rota frágil e não oficial que caracteriza o débito técnico. O uso como insumo do endividamento de mercado foi inferido e precisa ser validado com o negócio.;
-DEF_CAMBIO;primario;Default;Resultado;;resultado e saldos de empréstimos e câmbio;sim;producao;;;Base das operações de empréstimos (DEF) e câmbio, consumida pelo Atacado. Há a hipótese de que a estrutura carregue também os saldos (estoque de carteira) além do resultado — hipótese a validar. Dois domínios misturados na mesma estrutura e a base SQL on-premise, fora da plataforma curada, caracterizam o débito técnico.;
-Endividamento de mercado;final;Default;Regulatorio;;endividamento dos clientes no mercado;sim;investigacao;;;"Visão do endividamento dos clientes no mercado, combinando as operações de crédito reguladas do BACEN com as posições de debêntures do mercado de capitais. O produto secundário foi inferido a partir dos insumos e precisa ser validado com o negócio, por isso está em investigação. O débito ""sim"" é herdado da cadeia das Debêntures, capturadas por webscraping frágil.
-
-Consome [[BACEN 3040/45/46]] e [[Debêntures]].";
-ESTATAG;primario;Default;Risco;;componente de risco do RAR;nao;producao;;;Componente de risco utilizado no cálculo do RAR 12M, produzido pela área de risco e disponível como produto de dados curado no Databricks. Entrega a parcela estatística de perda esperada que ajusta o resultado realizado na visão de retorno ao risco.;
-Estoque (carteira);final;Default;Resultado;;saldos e posições da carteira do Atacado;sim;investigacao;;;"Estoque da carteira do Atacado: saldos e posições por cliente e produto. A composição ainda está em investigação — há a hipótese de que o DEF_CAMBIO carregue os saldos de empréstimos e câmbio (a validar) e um gap de mapeamento nos sistemas de produto (cash, captação e tesouraria). O débito ""sim"" é herdado da cadeia do DEF_CAMBIO, base SQL on-premise com dois domínios misturados.
-
-Consome [[DEF_CAMBIO]] e [[posições por produto]].";
-Evolução do Resultado;final;Default;Resultado;;resultado ajustado pelos analistas (EVOL);sim;producao;;;"Resultado gerencial ajustado pelos analistas do Atacado (EVOL): sobre o realizado, aplicam-se correções e reclassificações que refletem a visão de gestão. O débito ""sim"" é herdado da cadeia dos Ajustes dos analistas, processo manual em planilha sem trilha de auditoria; o GORC contribui com débito ainda ""a avaliar"".
-
-Consome [[GDAD]], [[GORC]] e [[Ajustes dos analistas]].";
-Evolução do Resultado por produto;final;Default;Resultado;;EVOL clusterizada por família de produto;sim;producao;;;"Visão da Evolução do Resultado agregada por família de produto, obtida aplicando a clusterização dos analistas sobre a EVOL. O débito ""sim"" é herdado da cadeia do De-para de produtos, planilha Excel exploratória ainda sem rota governada (há MVP no Salesforce com destino no lake).
-
-Consome [[De-para de produtos]].";
-Faturamento;final;Default;Cadastro;;visão consolidada do porte do cliente;nao;producao;;;"Visão consolidada do faturamento e do porte do cliente, combinando a estimativa declarada pelo RM com o porte observado por fontes externas de mercado. Sem débito herdado: nenhuma das cadeias de entrada carrega débito técnico.
-
-Consome [[Faturamento declarado]] e [[Porte observado]].";
-Faturamento declarado;primario;Default;Cadastro;;estimativa informada pelo RM na conta;nao;producao;;;Estimativa de faturamento informada pelo gerente de relacionamento (RM) diretamente na conta do cliente no Salesforce. É a visão declarada do porte do cliente, governada na plataforma, com a proveniência do dado ainda em definição. Convive com o porte observado de bureau como contraponto de mercado.;
-GDAD;gold;Default;Resultado;;resultado realizado;nao;producao;;;Resultado gerencial realizado por cliente e produto, disponível como dado curado no Databricks. É a base primária de resultado do Atacado: alimenta tanto os ajustes analíticos da Evolução do Resultado quanto o cálculo do RAR 12M.;
-GDP;primario;Default;Mercado;;dados de apoio à classificação;avaliar;investigacao;;GDP;Dados fornecidos pelo departamento GDP como apoio à classificação de clientes do Atacado (setorização e localização). O centro de custo é conhecido (o próprio GDP), mas o sistema de origem e a forma de consumo ainda precisam ser confirmados com o departamento, mantendo o item em investigação.;
-GORC;primario;Default;Resultado;;fonte de resultado complementar;avaliar;investigacao;;;"Fonte de resultado complementar ao GDAD, usada nos ajustes de resultado da Evolução. A origem exata ainda precisa ser detalhada com as áreas produtoras e o sistema onde o dado vive está por confirmar, por isso o item está em investigação e o débito segue como ""a avaliar"".";
-Localização;final;Default;Mercado;;praça de cobrança do cliente;sim;producao;;;"Praça de cobrança de cada cliente, definindo a alocação geográfica do relacionamento comercial. O débito ""sim"" é herdado da cadeia da Classificação de localização, cujo de-para geográfico vive em planilha Excel sem trilha de auditoria.
-
-Consome [[RFB]], [[Bacen]], [[GDP]] e [[Classificação de localização]].";
-Mercado Alvo;primario;Default;Mercado;;lista de clientes-alvo da atuação;sim;producao;;;Lista de clientes-alvo que delimita onde o Atacado atua e prioriza a prospecção comercial. Vive em um banco SQL legado on-premise, o que caracteriza o débito técnico: o dado é vivo, mas a rota precisa migrar para a plataforma corporativa.;
-PCAM-57;primario;Default;A definir;;conteúdo a mapear;avaliar;investigacao;;;Tabela departamental utilizada em rotinas do Atacado cujo dono, conteúdo e domínio ainda não foram identificados. Entrou no catálogo para forçar o mapeamento: é candidata típica a dado órfão, sem owner nem centro de custo conhecidos e sem produto secundário associado.;
-Porte observado;primario;Default;Cadastro;;porte e faturamento por fontes de mercado;nao;transicao;;;Porte e faturamento observados de fontes externas de mercado (bureaus e agências de informação). Complementa a visão declarada pelo RM com uma referência independente do porte real do cliente. A integração com os fornecedores está em validação nas frentes de segurança e governança, por isso o dado permanece em transição até a rota definitiva ser aprovada.;
-posições por produto;primario;Default;A definir;;saldos e posições dos sistemas de produto;avaliar;investigacao;;;Saldos e posições vindos dos sistemas de produto que compõem o estoque (carteira) do Atacado. É um gap de mapeamento conhecido: cash, captação e tesouraria ainda precisam ser mapeados, com sistema e rota a identificar, por isso o item está em investigação.;
-PSDC;primario;Default;Cadastro;;identificação oficial: CNPJ, grupos, centro de custo;nao;producao;;PSDC;O PSDC é a fonte oficial de identificação dos clientes pessoa jurídica: CNPJ, composição de grupos econômicos e centro de custo. É um produto de dados curado no Databricks, mantido pelo cadastro corporativo, e serve de base para a conta (Account) do cliente no Salesforce.;
-RAR 12M;final;Default;Resultado;;retorno ajustado ao risco 12 meses;sim;producao;;;"Retorno ajustado ao risco consolidado em 12 meses, principal indicador de rentabilidade do Atacado. Combina resultado realizado, componentes de risco e base de capital. O débito ""sim"" é herdado da cadeia do Custo de Capital (KE), obtido por rota provisória do banco de dados do crédito; o Capital Regulatório contribui com débito ainda ""a avaliar"".
-
-Consome [[GDAD]], [[ESTATAG]], [[Capital Regulatório]] e [[Custo de Capital (KE)]].";
-Rating;final;Default;Risco;;classificação de risco do cliente;nao;producao;;;Classificação de risco de crédito do cliente, produzida pela área de risco e publicada como produto de dados no Databricks. O dado curado é consumido diretamente pelo Atacado — é ao mesmo tempo o produto primário e o secundário, sem transformação intermediária. Serving via API está no roadmap.;
-RECTA_FEDRL;primario;Default;A definir;;conteúdo a mapear;avaliar;investigacao;;;Tabela departamental referenciada em processos do Atacado cujo dono, conteúdo e domínio ainda precisam ser identificados. Está no catálogo justamente para dar visibilidade ao gap: enquanto ninguém reivindica a origem, o dado permanece em investigação, sem produto secundário associado.;
-Restritivos e tipos;final;Default;Risco;;impedimentos e restrições;nao;producao;;;Impedimentos e restrições associados aos clientes (restritivos e seus tipos), mantidos pela área de risco como produto de dados no Databricks, curado e disponível. O dado é consumido diretamente pelo Atacado — primário e secundário ao mesmo tempo, sem transformação intermediária — para filtrar a atuação comercial e evitar ofertas a clientes com restrições vigentes.;
-Resultado;final;Default;Resultado;;resultado de empréstimos e câmbio na visão do Atacado;sim;producao;;;"Parcela de resultado das operações de empréstimos (DEF) e câmbio consumida na visão de resultado por cliente do Atacado. O débito ""sim"" é herdado da cadeia do DEF_CAMBIO: base SQL on-premise que mistura resultado e saldos na mesma estrutura.
-
-Consome [[DEF_CAMBIO]].";
-RFB;primario;Default;Mercado;;situação cadastral e CNAEs do CNPJ;nao;producao;;;Dados públicos da Receita Federal do Brasil sobre os CNPJs: situação cadastral, CNAE principal e CNAEs secundários. Disponível como dado curado no Databricks, é o principal insumo externo para a classificação setorial e geográfica dos clientes do Atacado.;
-Segmentação e Encarteiramento;final;Default;Mercado;;segmentos e carteiras da atuação comercial;sim;producao;;;"Definição dos segmentos de atuação e do encarteiramento dos clientes entre as equipes comerciais do Atacado. Herda débito ""sim"" da cadeia do Mercado Alvo, que ainda vive em banco SQL legado on-premise em migração para a plataforma corporativa.
-
-Consome [[Mercado Alvo]].";
-Setorização;final;Default;Mercado;;setor eleito do grupo (melhor CNAE por risco);sim;producao;;;"Setor eleito de cada grupo econômico: entre os CNAEs do grupo, elege-se o melhor sob a ótica de risco. O dado é um ativo legítimo do Atacado; o débito ""sim"" é herdado da cadeia da Classificação de setores, cujo de-para vive em planilha Excel sem trilha de auditoria.
-
-Consome [[RFB]], [[Bacen]], [[GDP]] e [[Classificação de setores]].";
-Clientes (Feature);gold;Default;;;...;;;;;;
-Produção e Estoque (Feature);silver;Default;;;;;;;;;
-Rating (Feature);gold;Default;;;;;;;;;
-Resultado;silver;Default;;;;;;;;;
-Bacen (Feature);silver;Default;;;;;;;;;
-RAR;silver;Default;;;;;;;;;
-Carteira;silver;Default;;;;;;;;;
-Sanitização;silver;Default;;;;;;;;;
-Cambio;silver;Default;;;;;;;;;
-Cash;broze;Default;;;;;;;;;
-Restritivos;silver;Default;;;;;;;;;
-ADAT;broze;Default;;;;;;;;;
-Mercado Alvo Mensal - UCS;silver;Default;;;;;;;;;
-Mercado Alvo Semanal - UCS;silver;Default;;;;;;;;;
-ANBIMA / mercado;origem;Default;;;;;;;;;
-área de risco;origem;Default;;;;;;;;;
-Atacado — ajustes;origem;Default;;;;;;;;;
-Atacado — analistas;origem;Default;;;;;;;;;
-Atacado — classificação;origem;Default;;;;;;;;;
-cadastro corporativo;origem;Default;;;;;;;;;
-capital / risco;origem;Default;;;;;;;;;
-crédito (provisório);origem;Default;;;;;;;;;
-DEF e Câmbio;origem;Default;;;;;;;;;
-fornecedores externos;origem;Default;;;;;;;;;
-GDP (departamento);origem;Default;;;;;;;;;
-Receita Federal;origem;Default;;;;;;;;;
-resultado (a detalhar);origem;Default;;;;;;;;;
-resultado gerencial;origem;Default;;;;;;;;;
-RM (relacionamento);origem;Default;;;;;;;;;
-sistemas de produto (a mapear);origem;Default;;;;;;;;;
-banco de dados do crédito;fonte;Default;;;;;;;;;
-base SQL on-premise;fonte;Default;;;;;;;;;
-bureaus / agências (integração);fonte;Default;;;;;;;;;
-Databricks (dado curado);fonte;Default;;;;;;;;;
-Databricks (governado);fonte;Default;;;;;;;;;
-planilha Excel (de-para);fonte;Default;;;;;;;;;
-planilha Excel (exploratório);fonte;Default;;;;;;;;;
-planilha / processo manual;fonte;Default;;;;;;;;;
-Salesforce (Account);fonte;Default;;;;;;;;;
-tabela departamental;fonte;Default;;;;;;;;;
-webscraping (debentures.com.br);fonte;Default;;;;;;;;;
-Cadastro;dominio;Default;;;;avaliar;producao;;;;
-Mercado;dominio;Default;;;;;;;;;
-Regulatório;dominio;Default;;;;;;;;;
-Resultado;dominio;Default;;;;;;;;;
-Risco;dominio;Default;;;;;;;;;
+﻿id;nome;nivel;tipo_componente;dominio;consome;descricao;debito;status;owner;centro_de_custo;observacoes;associacoes
+bacen-3040-45-46;BACEN 3040/45/46/47;gold;Default;Regulatorio;;operações de crédito reguladas;nao;producao;Fulano de Tal;;Bases regulatórias do BACEN (documentos 3040, 3045 e 3046) com as operações de crédito reguladas do sistema financeiro. Chegam ao banco por transferência corporativa de arquivos e dão ao Atacado visão de endividamento e share dos clientes no mercado de crédito. O uso como insumo do endividamento de mercado foi inferido e precisa ser validado com o negócio.;
+de-para-de-produtos;De-para de produtos;broze;Default;Mercado;;clusterização de produtos do Atacado;sim;producao;;;De-para construído pelos analistas do Atacado para clusterizar os produtos e dar visão agregada por família de produto na EVOL. É um artefato exploratório mantido em planilha Excel — útil na análise, mas ainda sem rota governada, o que caracteriza o débito. Há um MVP no Salesforce com destino planejado no lake.;
+gdad;GDAD;gold;Default;Resultado;;resultado realizado;nao;producao;;;Resultado gerencial realizado por cliente e produto, disponível como dado curado no Databricks. É a base primária de resultado do Atacado: alimenta tanto os ajustes analíticos da Evolução do Resultado quanto o cálculo do RAR 12M.;
+recta-fedrl;RECTA_FEDRL;broze;Default;A definir;;conteúdo a mapear;avaliar;investigacao;;;Tabela departamental referenciada em processos do Atacado cujo dono, conteúdo e domínio ainda precisam ser identificados. Está no catálogo justamente para dar visibilidade ao gap: enquanto ninguém reivindica a origem, o dado permanece em investigação, sem produto secundário associado.;
+rfb;RFB;primario;Default;Mercado;bacen-3040-45-46;situação cadastral e CNAEs do CNPJ;nao;producao;;;Dados públicos da Receita Federal do Brasil sobre os CNPJs: situação cadastral, CNAE principal e CNAEs secundários. Disponível como dado curado no Databricks, é o principal insumo externo para a classificação setorial e geográfica dos clientes do Atacado.;
+resultado;Resultado;silver;Default;;;;;;;;;
+sanitizacao;Sanitização;silver;Default;;;;;;;;;
+cash;Cash;broze;Default;;;;;;;;;
+restritivos;Restritivos;silver;Default;;;;;;;;;
+adat;ADAT;broze;Default;;;;;;;;;
+rm-relacionamento;RM (relacionamento);origem;Default;;;;;;;;;
+sistemas-de-produto-a-mapear;sistemas de produto (a mapear);origem;Default;;;;;;;;;
+webscraping-debentures-com-br;webscraping (debentures.com.br);fonte;Default;;;;;;;;;
+clientes;Clientes;dominio;Default;;;;avaliar;producao;;;;

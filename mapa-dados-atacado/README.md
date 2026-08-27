@@ -28,13 +28,20 @@ Daí saem as duas regras que governam o build inteiro:
    `consome` (aresta **"consome"**) e `associacoes` (aresta **"vem de"**). O build não
    infere ligação nenhuma.
 
-As referências resolvem por **nome** (sem diferenciar caixa nem acentos) ou pelo **id**,
-contra **qualquer linha do catálogo**, de qualquer nível — a cadeia pode ser percorrida
-em qualquer direção. Como o mesmo nome pode existir em níveis diferentes, o id é
-`<slug do nível>-<slug do nome>`: `final-resultado` e `silver-resultado` são dois
-componentes distintos, ambos chamados "Resultado". Nome ambíguo numa referência gera aviso
-e vence o nível de **menor ordem**. Mudar um componente de nível muda só o id dele — quem
-o cita pelo nome continua achando.
+As referências guardam o **`id`** do alvo — a chave estável da linha, que **não muda**
+quando o componente é renomeado, trocado de nível ou de tipo. É o que faz uma ligação
+sobreviver a qualquer edição: "Resultado" (id `resultado`) virar "Resultado consolidado"
+no nível `gold` não desfaz nada, porque quem aponta para ele aponta para `resultado`, não
+para o rótulo. Uma referência resolve contra **qualquer linha do catálogo**, de qualquer
+nível — a cadeia pode ser percorrida em qualquer direção. E como o id é único no arquivo
+inteiro, dois componentes com o **mesmo nome** em níveis diferentes (`resultado` e
+`resultado-2`) deixam de ser ambíguos numa ligação.
+
+Por compatibilidade (e para quem edita a planilha à mão), a célula também aceita o
+**nome** do alvo, sem diferenciar caixa nem acentos: resolve, gera um aviso dizendo que a
+ligação por nome quebra ao renomear, e a **próxima gravação troca a célula pelo id**. Nome
+ambíguo (o mesmo rótulo em níveis diferentes) gera aviso à parte e vence o nível de
+**menor ordem** — ambiguidade que some assim que a célula vira id.
 
 Nome citado em `consome` que não existe em lugar nenhum vira **nó fantasma** (fica no
 mapa, com aviso: é justamente o buraco que o mapa precisa mostrar). Em `associacoes`,
@@ -156,14 +163,20 @@ Detalhes que valem saber:
    for o nível — inclusive a raiz "Atacado — Dados" e os domínios.
 
 2. Para um componente novo, acrescente uma linha e preencha as colunas (tabela abaixo).
-   Listas (`consome`, `associacoes`) separam os nomes por ` | ` (barra vertical).
-   Não sabe owner ou centro de custo? Deixe a célula vazia — o nó aparece com borda
-   tracejada, sinalizando o gap de governança. Exemplo de linha (as três colunas
-   legadas e as duas últimas omitidas):
+   **Deixe a primeira célula (`id`) vazia**: o app gera o id a partir do nome na próxima
+   gravação. Listas (`consome`, `associacoes`) separam os alvos por ` | ` (barra
+   vertical) e guardam o **id** de cada um — mas você pode escrever o **nome**, que o
+   app converte para id ao gravar. Não sabe owner ou centro de custo? Deixe a célula
+   vazia — o nó aparece com borda tracejada, sinalizando o gap de governança. Exemplo de
+   linha (as duas últimas colunas omitidas):
 
    ```
-   Meu Novo Painel;final;Tabela Delta;Risco;GDAD | Rating;painel de risco da mesa;nao;producao;;
+   ;Meu Novo Painel;final;Tabela Delta;Risco;gdad | rating;painel de risco da mesa;nao;producao;;
    ```
+
+   Nunca edite nem reordene um `id` já preenchido: ele é a chave que segura as ligações.
+   Trocar o id de uma linha é o mesmo que apagá-la e criar outra — quem apontava para ela
+   passa a apontar para o vazio (nó fantasma).
 
 3. `observacoes` é texto livre em Markdown (aparece no balão do nó). `[[Wikilinks]]`
    nele viram links de navegação no balão, mas **não** criam arestas — arestas de
@@ -172,12 +185,13 @@ Detalhes que valem saber:
 
 4. Salve mantendo o formato CSV e rode `npm run data` (ou apenas `npm run dev`, que já
    roda antes). Confira o console: o build avisa sobre coluna faltando, `nivel`
-   inválido, nome duplicado e nome em `consome` que não existe (vira nó "fantasma"
+   inválido, `id` repetido, nome duplicado, referência escrita por nome (que a próxima
+   gravação normaliza) e alvo de `consome` que não existe (vira nó "fantasma"
    tracejado no grafo).
 
 ## Colunas do catalogo.csv
 
-Cabeçalho, nesta ordem (12 colunas): `nome; nivel; tipo_componente; dominio;
+Cabeçalho, nesta ordem (13 colunas): `id; nome; nivel; tipo_componente; dominio;
 consome; descricao; debito; status; owner;
 centro_de_custo; observacoes; associacoes`.
 
@@ -185,22 +199,23 @@ As **mesmas colunas valem em qualquer nível** — não há formato de linha por
 
 | Coluna | Obrigatória | Valores válidos / formato | Observações |
 |---|---|---|---|
-| `nome` | sim | texto livre curto | rótulo do nó; o `id` é `<slug do nível>-<slug do nome>` (ex.: "RAR 12M" no nível `final` → `final-rar-12m`, usado na URL `?no=final-rar-12m`); linha sem nome é ignorada com aviso |
+| `id` | não (o app preenche) | slug em kebab-case, único no arquivo | **chave estável da linha**, e id do nó no mapa (URL `?no=rar-12m`). Célula vazia = o app gera do nome ao gravar ("RAR 12M" → `rar-12m`; em colisão, `rar-12m-2`). Preenchida, é **imutável**: renomear, mudar de nível ou de tipo não mexe nela. Id repetido é erro |
+| `nome` | sim | texto livre curto | rótulo do nó, na tela e nas buscas — não é chave: dá para renomear à vontade. Linha sem nome é ignorada com aviso |
 | `nivel` | sim | slug de um nível ativo (`raiz`, `dominio`, `final`, `primario`, `fonte`, `origem`… ou qualquer um cadastrado no `niveis.csv`) | é o que define o componente; nível inexistente (ou removido da cadeia) faz a linha ser ignorada com aviso, e é erro no formulário |
 | `tipo_componente` | não | `Tabela SQL` \| `Tabela Delta` \| `Excel` \| `Default` | forma/tecnologia do componente; vazio = `Default`; valor fora da lista vira aviso no build (assume `Default`) e erro no formulário |
 | `dominio` | não | texto livre (`Cadastro`, `Mercado`, `Risco`…) | filtro por domínio na UI; é **só um campo** — não cria nó de domínio (para isso, cadastre a linha no nível `dominio`) |
-| `consome` | não | nomes (ou ids) separados por ` \| `, sem diferenciar caixa nem acentos | cria as arestas **"consome"**; resolve em **qualquer linha do catálogo**, de qualquer nível; nome que não existe em lugar nenhum vira nó fantasma + aviso |
+| `consome` | não | **ids** separados por ` \| ` (nome também é aceito) | cria as arestas **"consome"**; resolve em **qualquer linha do catálogo**, de qualquer nível. Nome resolve com aviso e vira id na próxima gravação; o que não resolve de jeito nenhum vira nó fantasma + aviso |
 | `descricao` | não | uma linha | aparece no balão e na busca |
 | `debito` | não | `sim` \| `nao` \| `avaliar` ou vazio | manda na cor do nó (ver abaixo); opcional em qualquer nível, mas preenchido tem de ser um dos três |
 | `status` | não | `producao` \| `transicao` \| `investigacao` ou vazio | opcional em qualquer nível |
 | `owner` | sim (aceita vazio) | texto ou vazio | vazio = a definir → nó com borda tracejada |
 | `centro_de_custo` | sim (aceita vazio) | texto ou vazio | vazio = a definir → nó com borda tracejada |
 | `observacoes` | não | Markdown livre (multilinha, entre aspas) | corpo do balão de detalhe; wikilinks só navegam, não criam arestas |
-| `associacoes` | não | nomes (ou ids) separados por ` \| ` | cria as arestas **"vem de"**, em qualquer nível; resolve como `consome`, mas nome inexistente só gera aviso — nenhum nó é criado |
+| `associacoes` | não | **ids** separados por ` \| ` (nome também é aceito) | cria as arestas **"vem de"**, em qualquer nível; resolve como `consome`, mas alvo inexistente só gera aviso — nenhum nó é criado |
 
-`tipo_componente` e `associacoes` são **opcionais na leitura**: um `catalogo.csv` antigo,
-sem essas colunas, abre sem aviso nenhum (elas entram vazias). O serializador sempre grava
-as 15.
+`id`, `tipo_componente` e `associacoes` são **opcionais na leitura**: um `catalogo.csv`
+antigo, sem essas colunas, abre sem aviso nenhum (elas entram vazias, e os ids são
+gerados dos nomes). O serializador sempre grava as 13.
 
 Problema no catálogo gera **warning** no build (não erro) — o componente entra mesmo
 assim, para o gap ficar visível em vez de escondido. A exceção é a linha que o build não
@@ -219,7 +234,7 @@ aviso dizendo por quê.
   ],
   "nodes": [
     {
-      "id": "final-rar-12m",        // <slug do nível>-<slug do nome>
+      "id": "rar-12m",              // o id da LINHA do catálogo (coluna `id`)
       "nome": "RAR 12M",
       "nivel": "final",             // slug de um nível do bloco `niveis`
       "tipoComponente": "Default",  // Tabela SQL | Tabela Delta | Excel | Default
@@ -232,6 +247,7 @@ aviso dizendo por quê.
       "corpo": "…",                 // opcional: só quando `observacoes` não está vazia
       "incompleto": true,           // owner OU centroDeCusto vazio
       "fantasma": true              // opcional: citado em `consome`, sem linha própria
+                                    // (sem linha, o id vem prefixado: `fantasma-…`)
     }
   ],
   "links": [ { "source": "…", "target": "…", "label": "consome" | "vem de" } ]
@@ -409,7 +425,7 @@ src/
     catalog-api.ts          # cliente da API do dev server (/api/catalogo, /api/niveis)
     catalog-store.ts        # interface de persistência + store HTTP (o modo de sempre)
     catalog-store-local.ts  # store que grava CSV sem servidor: valida, grava, remonta o grafo
-    catalog-delete.ts       # exclusão pura: tira a linha e as menções a ela
+    catalog-delete.ts       # exclusão pura: tira a linha (pelo id) e as menções a ela
     DeleteConfirm.tsx       # painel de confirmação da exclusão (formulário e atalho de teclado)
     delete-shortcut.ts      # regras do atalho Delete/Backspace: qual componente e quando vale
     fs-access.ts            # File System Access: escolher pasta, ler/gravar, lembrar o handle

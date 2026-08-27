@@ -24,6 +24,7 @@ const estado = (extra: Partial<RowFormState> = {}): RowFormState => ({
 
 /** Linha original com colunas que o formulário não edita. */
 const base: CatalogoRow = {
+  id: 'gdad',
   nome: 'GDAD',
   nivel: 'primario',
   tipo_componente: 'Default',
@@ -59,6 +60,15 @@ describe('montarRow', () => {
     })
   })
 
+  it('o id vem da LINHA e sobrevive a renomear e a trocar de nível', () => {
+    const renomeada = montarRow(estado({ nome: 'GDAD (novo)', nivel: 'origem' }), base)
+    expect(renomeada.id).toBe('gdad')
+  })
+
+  it('componente novo sai sem id: quem gera é a gravação', () => {
+    expect(montarRow(estado()).id).toBe('')
+  })
+
   it('débito e status vazios caem no default, em qualquer nível', () => {
     expect(montarRow(estado({ debito: '', status: '' }))).toMatchObject({
       debito: 'avaliar',
@@ -70,9 +80,17 @@ describe('montarRow', () => {
     })
   })
 
-  it('auto-referência sai de consome e de associações', () => {
-    const row = montarRow(estado({ consome: ['gdad', 'PSDC'], associacoes: ['GDAD'] }))
+  it('auto-referência sai de consome e de associações — pelo id e pelo nome', () => {
+    const row = montarRow(estado({ consome: ['gdad', 'PSDC'], associacoes: ['GDAD'] }), base)
     expect(row.consome).toEqual(['PSDC'])
     expect(row.associacoes).toEqual([])
+  })
+
+  it('id de OUTRO componente homônimo não conta como auto-referência', () => {
+    // `gdad` é o id de outro componente com o mesmo nome; a linha em edição é
+    // a `gdad-2`, e a ligação entre as duas é legítima.
+    const outro: CatalogoRow = { ...base, id: 'gdad-2' }
+    const row = montarRow(estado({ consome: ['gdad'] }), outro, new Set(['gdad']))
+    expect(row.consome).toEqual(['gdad'])
   })
 })

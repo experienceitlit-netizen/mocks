@@ -39,6 +39,8 @@ function destinoEspiao(): DestinoLocal & { gravados: Array<[ArquivoCatalogo, str
 }
 
 const row = (extra: Partial<CatalogoRow>): CatalogoRow => ({
+  // Como o formulário monta uma linha nova: sem id, para a gravação gerar.
+  id: '',
   nome: 'Novo componente',
   nivel: 'primario',
   tipo_componente: 'Default',
@@ -131,11 +133,75 @@ describe('store local — gravação do catálogo', () => {
     expect(res.ok).toBe(true)
     const grafo = store.grafo()
     expect(grafo?.nodes.length).toBe(antes + 1)
-    expect(grafo?.nodes.find((n) => n.id === 'primario-painel-de-teste')?.nome).toBe(
-      'Painel de Teste',
-    )
+    // Id gerado do nome na gravação, e é ele que identifica o nó no grafo.
+    expect(grafo?.nodes.find((n) => n.id === 'painel-de-teste')?.nome).toBe('Painel de Teste')
     // Sem owner nem centro de custo: o gap de governança vem do build.
-    expect(grafo?.nodes.find((n) => n.id === 'primario-painel-de-teste')?.incompleto).toBe(true)
+    expect(grafo?.nodes.find((n) => n.id === 'painel-de-teste')?.incompleto).toBe(true)
+    // E o CSV gravado já traz o id na primeira coluna.
+    expect(
+      parseCatalogoRows(destino.gravados[0][1]).find((r) => r.nome === 'Painel de Teste')?.id,
+    ).toBe('painel-de-teste')
+  })
+
+  it('renomear pelo id não quebra a ligação de quem apontava para o componente', () => {
+    // O gesto que motivou a coluna `id`: com referência por nome, isto deixava
+    // um nó fantasma no mapa.
+    return (async () => {
+      const destino = destinoEspiao()
+      const store = criarStoreLocal(destino, { catalogo: CSV_CATALOGO, niveis: CSV_NIVEIS })
+      const rows = (await store.lerCatalogo()) ?? []
+      const alvo = rows[0]
+
+      // Alguém passa a consumir o alvo, pelo id.
+      await store.salvarCatalogo([
+        ...rows,
+        row({ nome: 'Consumidor', consome: [alvo.id], nivel: alvo.nivel }),
+      ])
+      const arestasAntes = store.grafo()?.links.length ?? 0
+
+      // Agora o alvo é renomeado (e muda de nível, de quebra).
+      const atuais = (await store.lerCatalogo()) ?? []
+      const res = await store.salvarCatalogo(
+        atuais.map((r) => (r.id === alvo.id ? { ...r, nome: `${r.nome} — renomeado` } : r)),
+      )
+
+      expect(res.ok).toBe(true)
+      const grafo = store.grafo()
+      expect(grafo?.links.length).toBe(arestasAntes)
+      expect(grafo?.links.some((l) => l.target === alvo.id)).toBe(true)
+      expect(grafo?.nodes.some((n) => n.fantasma === true)).toBe(false)
+      expect(grafo?.nodes.find((n) => n.id === alvo.id)?.nome).toBe(`${alvo.nome} — renomeado`)
+    })()
+  })
+
+  it('trocar o componente de nível também não quebra a ligação', async () => {
+    const store = criarStoreLocal(destinoEspiao(), { catalogo: CSV_CATALOGO, niveis: CSV_NIVEIS })
+    const rows = (await store.lerCatalogo()) ?? []
+    const alvo = rows[0]
+    await store.salvarCatalogo([...rows, row({ nome: 'Consumidor', consome: [alvo.id] })])
+
+    const atuais = (await store.lerCatalogo()) ?? []
+    const res = await store.salvarCatalogo(
+      atuais.map((r) => (r.id === alvo.id ? { ...r, nivel: 'silver' } : r)),
+    )
+
+    expect(res.ok).toBe(true)
+    const grafo = store.grafo()
+    expect(grafo?.links.some((l) => l.target === alvo.id)).toBe(true)
+    expect(grafo?.nodes.find((n) => n.id === alvo.id)?.nivel).toBe('silver')
+    expect(grafo?.nodes.some((n) => n.fantasma === true)).toBe(false)
+  })
+
+  it('referência escolhida por nome é gravada como id', async () => {
+    const destino = destinoEspiao()
+    const store = criarStoreLocal(destino, { catalogo: CSV_CATALOGO, niveis: CSV_NIVEIS })
+    const rows = (await store.lerCatalogo()) ?? []
+    const alvo = rows[0]
+
+    await store.salvarCatalogo([...rows, row({ nome: 'Consumidor', consome: [alvo.nome] })])
+
+    const gravadas = parseCatalogoRows(destino.gravados[0][1])
+    expect(gravadas.find((r) => r.nome === 'Consumidor')?.consome).toEqual([alvo.id])
   })
 
   it('valida ANTES de gravar: linha inválida não toca no arquivo', async () => {
@@ -159,7 +225,10 @@ describe('store local — gravação do catálogo', () => {
     const rows = (await store.lerCatalogo()) ?? []
     const primeira = rows[0]
 
-    const res = await store.salvarCatalogo([...rows, row({ nome: primeira.nome, nivel: primeira.nivel })])
+    const res = await store.salvarCatalogo([
+      ...rows,
+      row({ nome: primeira.nome, nivel: primeira.nivel }),
+    ])
 
     expect(res.ok).toBe(false)
     expect(res.ok === false && res.errors.join(' ')).toContain('nome duplicado')

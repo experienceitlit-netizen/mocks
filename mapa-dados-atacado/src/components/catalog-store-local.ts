@@ -18,6 +18,7 @@ import type { CatalogoRow, NivelApiRow, SaveResult } from './catalog-api'
 import type { ArquivosCatalogo, CatalogStore, ModoPersistencia } from './catalog-store'
 import {
   buildGraph,
+  canonizarCatalogo,
   carregarNiveis,
   normalizarCor,
   parseCatalogoRows,
@@ -144,7 +145,10 @@ export function criarStoreLocal(destino: DestinoLocal, arquivos: ArquivosCatalog
       const { errors, warnings } = validarCatalogo(rows, niveis)
       if (errors.length > 0) return { ok: false, errors }
 
-      const csv = serializarCatalogo(rows)
+      // Mesma ordem do plugin: canonizar (ids preenchidos, referências em id) e
+      // só então serializar — o CSV que sai daqui e o que sai do dev server são
+      // o mesmo arquivo.
+      const csv = serializarCatalogo(canonizarCatalogo(rows, niveis))
       const { graph, warnings: warningsBuild } = buildGraph(csv, niveis)
       await destino.gravar('catalogo', csv)
       csvCatalogo = csv

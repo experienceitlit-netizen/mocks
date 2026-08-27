@@ -28,30 +28,40 @@ export interface ResultadoExclusao {
   rows: CatalogoRow[]
   /** Menções removidas (uma por campo de cada linha que citava). */
   referencias: Referencia[]
-  /** false quando o nome/nível não existe no catálogo (nada a excluir). */
+  /** false quando o id não existe no catálogo (nada a excluir). */
   encontrada: boolean
 }
 
 /**
- * Catálogo sem a linha `nome`/`nivel` e sem nenhuma menção a ela em `consome`
+ * Catálogo sem a linha de id `alvo.id` e sem nenhuma menção a ela em `consome`
  * e `associacoes`.
  *
- * A linha é identificada por nome E nível: nomes iguais em níveis diferentes
- * são linhas diferentes. As menções, essas, são por nome — é assim que o build
- * as resolve.
+ * A linha é identificada pelo ID — a chave estável dela. As menções saem pelo
+ * id e também pelo NOME, que é como o formato antigo (e a planilha editada à
+ * mão) ainda pode citá-la; é a mesma tolerância do build.
  */
 export function removerComponente(
   rows: readonly CatalogoRow[],
-  alvo: { nome: string; nivel: string },
+  alvo: { id: string; nome: string },
 ): ResultadoExclusao {
+  const id = alvo.id.trim()
   const chave = norm(alvo.nome)
-  const encontrada = rows.some((r) => norm(r.nome) === chave && r.nivel === alvo.nivel)
+  const ehAlvo = (r: CatalogoRow): boolean => r.id.trim() === id && id !== ''
+  const encontrada = rows.some(ehAlvo)
   const referencias: Referencia[] = []
 
-  const semLinha = rows.filter((r) => !(norm(r.nome) === chave && r.nivel === alvo.nivel))
+  const semLinha = rows.filter((r) => !ehAlvo(r))
+  const idsRestantes = new Set(semLinha.map((r) => r.id.trim()).filter((s) => s !== ''))
 
   const limparLista = (lista: string[], nome: string, campo: string): string[] => {
-    const restante = lista.filter((item) => norm(item) !== chave)
+    const restante = lista.filter((item) => {
+      const ref = item.trim()
+      if (id !== '' && ref === id) return false
+      // Menção por nome só conta quando o texto NÃO é o id de outra linha: id
+      // gerado é o slug de um nome, e sem esta guarda apagar "GDAD" levaria
+      // junto quem aponta para o id `gdad` de outro componente.
+      return idsRestantes.has(ref) || norm(ref) !== chave
+    })
     if (restante.length !== lista.length) referencias.push({ nome, campo })
     return restante
   }

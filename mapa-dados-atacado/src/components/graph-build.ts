@@ -8,6 +8,7 @@
 // passam exatamente pelas mesmas funções.
 export {
   buildGraph,
+  canonizarCatalogo,
   carregarNiveis,
   normalizarCor,
   parseCatalogoRows,

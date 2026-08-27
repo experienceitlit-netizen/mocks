@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest'
 import type { CatalogoRow } from './catalog-api'
 import { alvoDoAtalho, ehCampoDeTexto, ehTeclaExcluir } from './delete-shortcut'
 
-const row = (nome: string, nivel: string): CatalogoRow => ({
+const row = (id: string, nome: string, nivel: string): CatalogoRow => ({
+  id,
   nome,
   nivel,
   tipo_componente: 'Default',
@@ -19,14 +20,15 @@ const row = (nome: string, nivel: string): CatalogoRow => ({
   associacoes: [],
 })
 
+// O id do nó É o id da linha do catálogo — é por ele que o atalho casa.
 const nodes = new Map([
   ['gdad', { nome: 'GDAD', nivel: 'gold' }],
-  ['rating-gold', { nome: 'Rating', nivel: 'gold' }],
-  ['rating-final', { nome: 'Rating', nivel: 'final' }],
-  ['planilha-x', { nome: 'Planilha X', nivel: 'gold' }], // citado, sem linha
+  ['rating', { nome: 'Rating', nivel: 'gold' }],
+  ['rating-2', { nome: 'Rating', nivel: 'final' }],
+  ['fantasma-planilha-x', { nome: 'Planilha X', nivel: 'gold' }], // citado, sem linha
 ])
 
-const rows = [row('GDAD', 'gold'), row('Rating', 'gold'), row('Rating', 'final')]
+const rows = [row('gdad', 'GDAD', 'gold'), row('rating', 'Rating', 'gold'), row('rating-2', 'Rating', 'final')]
 
 const alvo = (selectedId: string | null, pinnedId: string | null = null) =>
   alvoDoAtalho({ selectedId, pinnedId, nodesById: nodes, rows })
@@ -41,15 +43,15 @@ describe('alvoDoAtalho', () => {
   })
 
   it('balão aberto ganha do destaque fixado', () => {
-    expect(alvo('rating-final', 'gdad')?.nivel).toBe('final')
+    expect(alvo('rating-2', 'gdad')?.nivel).toBe('final')
   })
 
-  it('nome repetido: casa a linha do nível do nó', () => {
-    expect(alvo('rating-gold')).toEqual({ id: 'rating-gold', nome: 'Rating', nivel: 'gold' })
+  it('nome repetido não confunde: o id diz exatamente qual linha é', () => {
+    expect(alvo('rating')).toEqual({ id: 'rating', nome: 'Rating', nivel: 'gold' })
   })
 
   it('fantasma (sem linha no catálogo) não é alvo', () => {
-    expect(alvo('planilha-x')).toBeNull()
+    expect(alvo('fantasma-planilha-x')).toBeNull()
   })
 
   it('nada em evidência, nada a excluir', () => {

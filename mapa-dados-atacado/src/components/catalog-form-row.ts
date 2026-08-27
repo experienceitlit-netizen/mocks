@@ -15,6 +15,9 @@ export interface RowFormState {
   nivel: string
   tipoComponente: TipoComponente
   dominio: string
+  /** Referências como vão para o CSV: o id do alvo quando ele existe no
+   *  catálogo, ou o texto digitado quando não (vira fantasma). O formulário
+   *  mostra NOMES; a conversão é feita no CatalogForm. */
   consome: string[]
   associacoes: string[]
   descricao: string
@@ -44,13 +47,32 @@ function textoOuNull(valor: string): string | null {
  * original (edição): o que ela tiver além dos campos do formulário é
  * preservado — o save nunca apaga coluna que a UI não conhece.
  */
-export function montarRow(estado: RowFormState, base?: CatalogoRow | null): CatalogoRow {
+export function montarRow(
+  estado: RowFormState,
+  base?: CatalogoRow | null,
+  /** Ids que existem no catálogo. Um item que está aqui é referência a OUTRO
+   *  componente mesmo quando o texto coincide com o nome deste — id gerado é o
+   *  slug de um nome, e sem esta lista "GDAD" apagaria o id `gdad` do vizinho. */
+  idsConhecidos?: ReadonlySet<string>,
+): CatalogoRow {
   const nome = estado.nome.trim()
+  const proprioId = (base?.id ?? '').trim()
+  // Auto-referência sai pelo id (o caso normal) e pelo nome, que é como o texto
+  // digitado livre e o formato antigo ainda citam um componente.
   const semAutoReferencia = (lista: string[]): string[] =>
-    lista.filter((item) => chave(item) !== chave(nome))
+    lista.filter((item) => {
+      const ref = item.trim()
+      if (proprioId !== '' && ref === proprioId) return false
+      if (idsConhecidos?.has(ref) === true) return true
+      return chave(ref) !== chave(nome)
+    })
 
   return {
     ...(base ?? {}),
+    // O id é da LINHA, não do formulário: a de edição carrega o seu e a nova
+    // sai sem, para a gravação gerar. Renomear ou trocar de nível não passa
+    // por aqui — é justamente o que mantém as ligações de pé.
+    id: proprioId,
     nome,
     nivel: estado.nivel,
     tipo_componente: estado.tipoComponente,

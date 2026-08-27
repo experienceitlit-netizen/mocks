@@ -9,6 +9,7 @@ import Filters from './components/Filters'
 import FocusBar from './components/FocusBar'
 import type { Vista } from './components/FocusBar'
 import Legend from './components/Legend'
+import PainelRecolhivel from './components/PainelRecolhivel'
 import TableView from './components/TableView'
 import type { Counts } from './components/Filters'
 import type {
@@ -557,7 +558,7 @@ function App() {
         // sessão não recarrega a página, então as rows do estado podem estar
         // atrás do CSV.
         const atuais = (await store.lerCatalogo()) ?? catalogRows ?? []
-        const r = removerComponente(atuais, { nome: pedido.nome, nivel: pedido.nivel })
+        const r = removerComponente(atuais, { id: pedido.id, nome: pedido.nome })
         if (!r.encontrada) {
           falhar(`"${pedido.nome}" não está mais no catálogo.`)
           return
@@ -661,19 +662,22 @@ function App() {
 
   const selectedNode = selectedId ? (nodesById.get(selectedId) ?? null) : null
 
-  // Alvo do "✎ Editar" do balão: a linha do catálogo com o mesmo nome E nível.
-  // Componente citado mas ainda sem linha (fantasma) abre o form pré-preenchido
-  // como "cadastrar este componente".
+  // Alvo do "✎ Editar" do balão: a linha cujo id é o do nó — o id do nó É o da
+  // linha. Componente citado mas ainda sem linha (fantasma) não tem id de
+  // catálogo e abre o form pré-preenchido como "cadastrar este componente".
   const editTarget = useMemo<FormTarget | null>(() => {
     if (!catalogRows || !selectedNode) return null
-    const nivel = nivelDe(selectedNode)
-    const row = catalogRows.find((r) => r.nivel === nivel && r.nome === selectedNode.nome)
-    if (row) return { modo: 'editar', nome: row.nome, nivel: row.nivel }
-    return { modo: 'cadastrar', nome: selectedNode.nome, nivel }
+    const row = catalogRows.find((r) => r.id === selectedNode.id)
+    if (row) return { modo: 'editar', id: row.id }
+    return { modo: 'cadastrar', nome: selectedNode.nome, nivel: nivelDe(selectedNode) }
   }, [catalogRows, selectedNode])
 
-  // Alvos possíveis de "Consome/Upstream" e "Associações" no formulário.
-  const nomesGrafo = useMemo(() => nodes.filter(isReal).map((n) => n.nome), [nodes])
+  // Alvos possíveis de "Consome/Upstream" e "Associações" no formulário: o
+  // formulário mostra o nome e grava o id.
+  const componentesGrafo = useMemo(
+    () => nodes.filter(isReal).map((n) => ({ ref: n.id, nome: n.nome })),
+    [nodes],
+  )
 
   // Árvore de linhagem do painel.
   const selectedLineage = useMemo(
@@ -826,6 +830,7 @@ function App() {
       )}
 
       {aba === 'mapa' && (
+        <PainelRecolhivel titulo="Filtros" chave="mapa:filtros-recolhido" posicao="superior">
         <Filters
           dominios={dominios}
           selectedDominios={selDominios}
@@ -849,9 +854,14 @@ function App() {
             setSomenteSemOwner(false)
           }}
         />
+        </PainelRecolhivel>
       )}
 
-      {aba === 'mapa' && <Legend podeExcluir={catalogRows !== null} />}
+      {aba === 'mapa' && (
+        <PainelRecolhivel titulo="Legenda" chave="mapa:legenda-recolhida" posicao="inferior">
+          <Legend podeExcluir={catalogRows !== null} />
+        </PainelRecolhivel>
+      )}
 
       {aba === 'mapa' && selectedNode && (
         <NodeBalloon
@@ -895,7 +905,7 @@ function App() {
           rows={catalogRows}
           target={catalogForm}
           niveis={niveis}
-          nomesGrafo={nomesGrafo}
+          componentesGrafo={componentesGrafo}
           onSaved={refreshCatalogo}
           onClose={() => setCatalogForm(null)}
         />

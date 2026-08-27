@@ -7,9 +7,9 @@ tomada de novo do zero.
 
 ## Por que é barato
 
-A gravação já existe e é a mesma do formulário: ligar A a B é acrescentar o nome
+A gravação já existe e é a mesma do formulário: ligar A a B é acrescentar o **id**
 de B na coluna `consome` (ou `associacoes`) da linha de A e salvar o catálogo
-completo por `POST /api/catalogo`. O build já resolve nome → nó e emite a aresta.
+completo por `POST /api/catalogo`. O build resolve id → nó e emite a aresta.
 
 Ou seja, **nada muda no build nem na API**: a melhoria é uma camada de interação
 sobre peças testadas (`montarRow` em `src/components/catalog-form-row.ts`,
@@ -41,19 +41,26 @@ destacados e o resto esmaecido (a mecânica de `dimmedIds` já faz isso).
    confirmação, ou a ligação recém-criada oferece um "desfazer" por alguns
    segundos (o inverso — remover o nome da coluna — é trivial).
 
-## Ponto de atenção: nomes repetidos
+## Ponto de atenção: nomes repetidos — RESOLVIDO
 
-As colunas de ligação guardam **nome**, e o catálogo hoje tem nomes repetidos em
-níveis diferentes. O build resolve pelo nível de menor ordem e avisa, mas uma
-ligação criada por clique é ambígua nesse caso: o usuário aponta para um nó
-específico e o arquivo grava só o nome.
+Este documento registrava um risco: as colunas de ligação guardavam **nome**, e o
+catálogo tem nomes repetidos em níveis diferentes, então uma ligação criada por
+clique seria ambígua (o usuário aponta para um nó específico, o arquivo grava só
+o rótulo). Renomear um componente também deixava órfã toda menção a ele.
 
-Se a ligação por clique virar rotina, a correção é gravar o **id** (que já
-carrega o nível: `gold-gdad`) em vez do nome. O parser aceita id ou nome, então
-a mudança é pequena — mas muda o conteúdo do CSV e merece ser decidida antes.
+**Isso foi resolvido antes desta melhoria.** O `catalogo.csv` tem hoje uma coluna
+`id` — a chave estável de cada linha, gerada do nome na criação e imutável daí em
+diante —, e `consome`/`associacoes` guardam **ids**. Consequências para o gesto
+de ligar por clique:
+
+- **A ambiguidade sumiu.** Gravar o id do nó em que o usuário soltou o cursor diz
+  exatamente qual componente é, mesmo com nomes repetidos.
+- **A ligação criada não quebra depois.** Renomear ou mudar de nível o alvo não
+  mexe em quem aponta para ele.
+- **Não há mais decisão de formato pendente**: o formulário já grava id (o
+  usuário segue vendo e escolhendo nomes), e o gesto de clique faria o mesmo.
 
 ## Esforço
 
 Algumas horas, quase todas em interação e feedback visual. Nada de build, nada
-de API, nada de formato de dados (exceto se a decisão do id acima for tomada
-junto).
+de API, nada de formato de dados.

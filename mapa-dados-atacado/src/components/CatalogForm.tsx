@@ -54,74 +54,91 @@ const DEBITO_OPTIONS: ReadonlyArray<{ value: Debito; label: string }> = [
 
 const STATUS_OPTIONS = ['producao', 'transicao', 'investigacao'] as const
 
-/** União de listas de nomes, sem duplicatas (caixa/acentos à parte), ordenada. */
-function uniaoNomes(...listas: string[][]): string[] {
-  const vistos = new Map<string, string>()
+/**
+ * Um alvo possível de ligação: o que o usuário VÊ (`nome`) e o que a célula do
+ * CSV guarda (`ref`, o id da linha). Toda a UI fala nome; só o save fala id.
+ */
+export interface Opcao {
+  ref: string
+  nome: string
+}
+
+/** União de listas de componentes, sem repetir id, ordenada por nome. */
+function uniaoOpcoes(...listas: Opcao[][]): Opcao[] {
+  const vistos = new Map<string, Opcao>()
   for (const lista of listas) {
-    for (const nome of lista) {
-      const key = norm(nome)
-      if (key && !vistos.has(key)) vistos.set(key, nome)
+    for (const o of lista) {
+      if (o.ref !== '' && o.nome !== '' && !vistos.has(o.ref)) vistos.set(o.ref, o)
     }
   }
-  return [...vistos.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  return [...vistos.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 }
 
 interface ChipsFieldProps {
   label: string
   placeholder: string
+  /** Referências escolhidas, como vão para o CSV: id de um componente ou texto
+   *  livre (que vira fantasma). Nome de catálogo antigo também cai aqui e é
+   *  exibido pelo nome oficial. */
   values: string[]
-  /** Nomes ofertados no dropdown de busca (já sem o próprio nó). */
-  suggestions: string[]
-  /** Nomes que existem no catálogo; um chip fora deste conjunto (normalizado)
-   *  ganha o aviso visual de fantasma. null = sem essa checagem. */
-  knownNames: ReadonlySet<string> | null
+  /** Componentes ofertados no dropdown (já sem o próprio). */
+  options: readonly Opcao[]
   ghostNote: string
   onChange(next: string[]): void
 }
 
-/** Multi-select por chips: busca dentre os nomes existentes e permite nome
- *  livre (Enter), com aviso visual quando o nome vira fantasma. */
-function ChipsField({
-  label,
-  placeholder,
-  values,
-  suggestions,
-  knownNames,
-  ghostNote,
-  onChange,
-}: ChipsFieldProps) {
+/** Multi-select por chips: busca pelo NOME dos componentes e permite texto
+ *  livre (Enter), com aviso visual quando a referência vira fantasma. O valor
+ *  guardado é o id — renomear o alvo depois não mexe em nada aqui. */
+function ChipsField({ label, placeholder, values, options, ghostNote, onChange }: ChipsFieldProps) {
   const [text, setText] = useState('')
 
-  const valueKeys = useMemo(() => new Set(values.map(norm)), [values])
-  const filtered = useMemo(() => {
-    const q = norm(text)
-    if (!q) return []
-    return suggestions.filter((s) => !valueKeys.has(norm(s)) && norm(s).includes(q)).slice(0, 8)
-  }, [text, suggestions, valueKeys])
+  const porRef = useMemo(() => new Map(options.map((o) => [o.ref, o])), [options])
+  // Nome → componente: resolve o que o usuário digita e as referências que
+  // ainda estão por nome (formato antigo).
+  const porNome = useMemo(() => new Map(options.map((o) => [norm(o.nome), o])), [options])
+
+  const rotuloDe = (ref: string): string =>
+    porRef.get(ref)?.nome ?? porNome.get(norm(ref))?.nome ?? ref
+  const ehFantasma = (ref: string): boolean => !porRef.has(ref) && !porNome.has(norm(ref))
+
+  // Comparação por RÓTULO: impede escolher duas vezes o mesmo componente, mesmo
+  // que um chip esteja por id e o outro por nome (linha de catálogo antigo).
+  const rotulosEscolhidos = new Set(values.map((v) => norm(rotuloDe(v))))
+  // Sem memo: a lista de opções é do tamanho do catálogo e isto roda a cada
+  // tecla digitada de qualquer jeito.
+  const q = norm(text)
+  const filtered =
+    q === ''
+      ? []
+      : options
+          .filter((o) => !rotulosEscolhidos.has(norm(o.nome)) && norm(o.nome).includes(q))
+          .slice(0, 8)
 
   const add = (raw: string) => {
     const v = raw.trim()
-    if (!v || valueKeys.has(norm(v))) {
+    // Nome digitado que existe no catálogo entra como o ID do componente; o que
+    // não existe entra como texto e vira fantasma até ganhar linha.
+    const ref = porNome.get(norm(v))?.ref ?? v
+    if (!v || rotulosEscolhidos.has(norm(rotuloDe(ref)))) {
       setText('')
       return
     }
-    // Nome digitado que já existe no catálogo entra com a grafia oficial.
-    const oficial = suggestions.find((s) => norm(s) === norm(v))
-    onChange([...values, oficial ?? v])
+    onChange([...values, ref])
     setText('')
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault() // não submete o form
-      add(filtered[0] && norm(filtered[0]) === norm(text) ? filtered[0] : text)
+      const exato = filtered[0] && norm(filtered[0].nome) === norm(text) ? filtered[0].nome : text
+      add(exato)
     } else if (e.key === 'Backspace' && text === '' && values.length > 0) {
       onChange(values.slice(0, -1))
     }
   }
 
-  const hasGhost =
-    knownNames !== null && values.some((v) => !knownNames.has(norm(v)))
+  const hasGhost = values.some(ehFantasma)
 
   return (
     <div className="cform__field">
@@ -129,7 +146,8 @@ function ChipsField({
       <div className="chips-input">
         <div className="chips-input__box">
           {values.map((v) => {
-            const ghost = knownNames !== null && !knownNames.has(norm(v))
+            const ghost = ehFantasma(v)
+            const rotulo = rotuloDe(v)
             return (
               <span
                 key={v}
@@ -137,10 +155,10 @@ function ChipsField({
                 title={ghost ? 'Não existe no catálogo: vira nó fantasma' : undefined}
               >
                 {ghost && '⚠ '}
-                {v}
+                {rotulo}
                 <button
                   type="button"
-                  aria-label={`Remover ${v}`}
+                  aria-label={`Remover ${rotulo}`}
                   onClick={() => onChange(values.filter((x) => x !== v))}
                 >
                   ×
@@ -158,17 +176,17 @@ function ChipsField({
         </div>
         {filtered.length > 0 && (
           <ul className="chips-input__menu">
-            {filtered.map((s) => (
-              <li key={s}>
+            {filtered.map((o) => (
+              <li key={o.ref}>
                 {/* onMouseDown: adiciona antes do blur do input fechar o menu */}
                 <button
                   type="button"
                   onMouseDown={(e) => {
                     e.preventDefault()
-                    add(s)
+                    add(o.nome)
                   }}
                 >
-                  {s}
+                  {o.nome}
                 </button>
               </li>
             ))}
@@ -181,11 +199,12 @@ function ChipsField({
 }
 
 /** O que o form abre: cadastro em branco, edição de uma linha existente
- *  (identificada por nome + nível) ou cadastro pré-preenchido de um componente
- *  que só existe como fantasma no grafo (citado, mas sem linha). */
+ *  (identificada pelo ID dela, que é o id do nó no grafo) ou cadastro
+ *  pré-preenchido de um componente que só existe como fantasma no grafo
+ *  (citado, mas sem linha — e por isso sem id). */
 export type FormTarget =
   | { modo: 'novo' }
-  | { modo: 'editar'; nome: string; nivel: string }
+  | { modo: 'editar'; id: string }
   | { modo: 'cadastrar'; nome: string; nivel: string }
 
 interface CatalogFormProps {
@@ -196,9 +215,9 @@ interface CatalogFormProps {
   target: FormTarget
   /** Bloco `niveis` do graph.json: monta o select "Nível/Camada". */
   niveis: readonly NivelDef[]
-  /** Nomes de todos os componentes que existem no grafo (alvos possíveis de
-   *  "Consome/Upstream" e "Associações"). */
-  nomesGrafo: string[]
+  /** Componentes que existem no grafo (alvos possíveis de "Consome/Upstream" e
+   *  "Associações"), com o id de cada um — é ele que vai para a célula. */
+  componentesGrafo: Opcao[]
   /** Save confirmado pela API: o App re-busca as rows do catálogo. */
   onSaved(): void
   onClose(): void
@@ -209,16 +228,16 @@ export default function CatalogForm({
   rows,
   target,
   niveis,
-  nomesGrafo,
+  componentesGrafo,
   onSaved,
   onClose,
 }: CatalogFormProps) {
+  // A linha em edição é achada pelo ID: renomear ou mudar de nível dentro do
+  // form não faz o alvo escapar, porque o id não muda.
+  const idAlvo = target.modo === 'editar' ? target.id : ''
   const initial = useMemo(
-    () =>
-      target.modo === 'editar'
-        ? (rows.find((r) => r.nome === target.nome && r.nivel === target.nivel) ?? null)
-        : null,
-    [rows, target],
+    () => (idAlvo === '' ? null : (rows.find((r) => r.id === idAlvo) ?? null)),
+    [rows, idAlvo],
   )
 
   const nivelOptions = useMemo(() => nivelOptionsDe(niveis), [niveis])
@@ -261,17 +280,17 @@ export default function CatalogForm({
   // Alvos possíveis de qualquer relação: as linhas do catálogo mais o que já
   // existe no grafo, menos o próprio componente.
   const componentesExistentes = useMemo(
-    () => uniaoNomes(nomesGrafo, rows.map((r) => r.nome)),
-    [rows, nomesGrafo],
+    () => uniaoOpcoes(rows.map((r) => ({ ref: r.id, nome: r.nome })), componentesGrafo),
+    [rows, componentesGrafo],
   )
-  const componentesConhecidos = useMemo(
-    () => new Set(componentesExistentes.map(norm)),
+  const idsConhecidos = useMemo(
+    () => new Set(componentesExistentes.map((o) => o.ref)),
     [componentesExistentes],
   )
-  const sugestoes = useMemo(() => {
-    const proprio = norm(target.modo === 'editar' ? target.nome : nome)
-    return componentesExistentes.filter((n) => norm(n) !== proprio)
-  }, [componentesExistentes, target, nome])
+  const opcoes = useMemo(() => {
+    const proprio = norm(initial?.nome ?? nome)
+    return componentesExistentes.filter((o) => o.ref !== idAlvo && norm(o.nome) !== proprio)
+  }, [componentesExistentes, idAlvo, initial, nome])
 
   // Status fora do trio padrão (linha antiga): mantém como opção para não
   // perder.
@@ -291,14 +310,8 @@ export default function CatalogForm({
   const nomeDuplicado = useMemo(() => {
     const key = norm(nome)
     if (!key) return false
-    return rows.some((r) => {
-      if (r.nivel !== nivel) return false
-      if (target.modo === 'editar' && r.nome === target.nome && r.nivel === target.nivel) {
-        return false
-      }
-      return norm(r.nome) === key
-    })
-  }, [nome, nivel, rows, target])
+    return rows.some((r) => r.nivel === nivel && r.id !== idAlvo && norm(r.nome) === key)
+  }, [nome, nivel, rows, idAlvo])
 
   const dominioFinal = dominio === NOVO_DOMINIO ? novoDominio.trim() : dominio
 
@@ -347,11 +360,10 @@ export default function CatalogForm({
       // save anterior nesta mesma sessão não recarrega a página (HMR) — montar
       // o conjunto completo a partir delas apagaria o cadastro anterior.
       const atuais = (await store.lerCatalogo()) ?? rows
-      const idx =
-        target.modo === 'editar'
-          ? atuais.findIndex((r) => r.nome === target.nome && r.nivel === target.nivel)
-          : -1
-      const row: CatalogoRow = montarRow(estado, idx >= 0 ? atuais[idx] : null)
+      const idx = idAlvo === '' ? -1 : atuais.findIndex((r) => r.id === idAlvo)
+      const row: CatalogoRow = montarRow(estado, idx >= 0 ? atuais[idx] : null, idsConhecidos)
+      // Nada a propagar ao renomear: as ligações apontam para o ID, que a
+      // edição não toca. O componente novo entra sem id — a gravação gera um.
       const next = idx >= 0 ? atuais.map((r, i) => (i === idx ? row : r)) : [...atuais, row]
       const res = await store.salvarCatalogo(next)
       if (res.ok) {
@@ -378,10 +390,9 @@ export default function CatalogForm({
     setSaving(true)
     try {
       const atuais = (await store.lerCatalogo()) ?? rows
-      const alvo = { nome: target.nome, nivel: target.nivel }
-      const r = removerComponente(atuais, alvo)
+      const r = removerComponente(atuais, { id: idAlvo, nome: initial?.nome ?? nome })
       if (!r.encontrada) {
-        setErrors([`"${target.nome}" não está mais no catálogo.`])
+        setErrors([`"${initial?.nome ?? nome}" não está mais no catálogo.`])
         return
       }
       if (confirmarExclusao === null) {
@@ -409,7 +420,9 @@ export default function CatalogForm({
       : target.modo === 'cadastrar'
         ? 'Cadastrar componente'
         : 'Novo componente'
-  const subtitulo = target.modo !== 'novo' ? target.nome : null
+  // Subtítulo do cabeçalho: o nome que a linha tinha ao abrir o form (na
+  // edição) ou o do fantasma sendo cadastrado — nunca o que está sendo digitado.
+  const subtitulo = initial?.nome ?? (target.modo === 'cadastrar' ? target.nome : null)
 
   return (
     <div className="catalog-overlay">
@@ -524,8 +537,7 @@ export default function CatalogForm({
                 label="Consome/Upstream"
                 placeholder="buscar componente do catálogo…"
                 values={consome}
-                suggestions={sugestoes}
-                knownNames={componentesConhecidos}
+                options={opcoes}
                 ghostNote="Nome fora do catálogo: vira nó fantasma no mapa até ganhar linha própria."
                 onChange={setConsome}
               />
@@ -534,8 +546,7 @@ export default function CatalogForm({
                 label="Associações"
                 placeholder="buscar componente do catálogo…"
                 values={associacoes}
-                suggestions={sugestoes}
-                knownNames={componentesConhecidos}
+                options={opcoes}
                 ghostNote="Nome fora do catálogo: vira nó fantasma no mapa até ganhar linha própria."
                 onChange={setAssociacoes}
               />

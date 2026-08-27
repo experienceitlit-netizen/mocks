@@ -5,8 +5,10 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  canonizarCatalogo,
   carregarNiveis,
   parseCatalogoRows,
+  preencherIds,
   serializarCatalogo,
   validarCatalogo,
   type CatalogoRow,
@@ -14,6 +16,8 @@ import {
 import { rowsDoBody } from './vite-plugin-catalogo.ts'
 
 const row = (extra: Partial<CatalogoRow>): CatalogoRow => ({
+  // Vazio por padrão: é o caso do dia a dia (linha nova, id gerado na gravação).
+  id: '',
   nome: 'X',
   nivel: 'primario',
   tipo_componente: '',
@@ -38,23 +42,65 @@ describe('serializarCatalogo — round-trip', () => {
   it('parse(serialize(rows)) === rows, cobrindo aspas, listas, null e multilinha', () => {
     const rows: CatalogoRow[] = [
       row({
+        id: 'custo-de-capital-ke',
         nome: 'Custo de Capital (KE)',
         nivel: 'final',
         tipo_componente: 'Tabela Delta',
-        consome: ['GDAD', 'Capital Regulatório'],
-        associacoes: ['Tabela A - UCS', 'Tabela B - UCS'],
+        consome: ['gdad', 'capital-regulatorio'],
+        associacoes: ['tabela-a-ucs', 'tabela-b-ucs'],
         descricao: 'ponto e vírgula; no meio',
         debito: 'avaliar',
         observacoes: 'Primeira linha com "aspas".\n\nSegunda linha; com ponto e vírgula.',
       }),
-      row({ nome: 'Simples', owner: 'Fulano', centro_de_custo: 'CC-1' }),
+      row({ id: 'simples', nome: 'Simples', owner: 'Fulano', centro_de_custo: 'CC-1' }),
     ]
     expect(parseCatalogoRows(serializarCatalogo(rows))).toEqual(rows)
+  })
+
+  it('linha sem id ganha um do nome na GRAVAÇÃO — e o arquivo já sai estável', () => {
+    const csv = serializarCatalogo([row({ nome: 'RAR 12M' }), row({ nome: 'RAR 12M' })])
+    const relidas = parseCatalogoRows(csv)
+    // Único globalmente, com sufixo na colisão.
+    expect(relidas.map((r) => r.id)).toEqual(['rar-12m', 'rar-12m-2'])
+    // Segunda gravação não mexe em mais nada: o id agora é dado do arquivo.
+    expect(serializarCatalogo(relidas)).toBe(csv)
+  })
+
+  it('canonizar converte as referências por nome em id, e é idempotente', () => {
+    const rows = [
+      row({ nome: 'Alfa', consome: ['GDAD'], associacoes: ['gdad'] }),
+      row({ nome: 'GDAD', nivel: 'final' }),
+    ]
+    const canonicas = canonizarCatalogo(rows)
+    expect(canonicas[0]).toMatchObject({ id: 'alfa', consome: ['gdad'], associacoes: ['gdad'] })
+    expect(canonizarCatalogo(canonicas)).toEqual(canonicas)
+  })
+
+  it('referência que não resolve fica como está: o fantasma não é apagado', () => {
+    const canonicas = canonizarCatalogo([row({ nome: 'Alfa', consome: ['Coisa Que Não Existe'] })])
+    expect(canonicas[0].consome).toEqual(['Coisa Que Não Existe'])
+  })
+
+  it('cadastrar o fantasma religa quem o citava, na MESMA gravação', () => {
+    // O consumidor cita "Planilha X" (texto livre, sem linha). Ao cadastrar a
+    // linha, ela ganha id e a menção já sai apontando para ele.
+    const canonicas = canonizarCatalogo([
+      row({ id: 'consumidor', nome: 'Consumidor', consome: ['Planilha X'] }),
+      row({ nome: 'Planilha X', nivel: 'fonte' }),
+    ])
+    expect(canonicas[1].id).toBe('planilha-x')
+    expect(canonicas[0].consome).toEqual(['planilha-x'])
+  })
+
+  it('preencherIds não toca em linha que já tem id — nem no id, nem no objeto', () => {
+    const original = row({ id: 'gdad', nome: 'GDAD' })
+    expect(preencherIds([original])[0]).toBe(original)
   })
 
   it('as colunas legadas (origem/fonte_sistema/fontes_secundarias) sobrevivem ao round-trip', () => {
     // O build as ignora, mas são dado do usuário: a API não pode comê-las.
     const legado = row({
+      id: 'com-legado',
       nome: 'Com legado',
     })
     expect(parseCatalogoRows(serializarCatalogo([legado]))).toEqual([legado])
@@ -64,17 +110,25 @@ describe('serializarCatalogo — round-trip', () => {
     // Antes, `associacoes` era zerada em fonte/fonte-secundaria (a lista morava
     // nas colunas de rota). Agora a linha é a mesma em todo nível.
     const rows = ['fonte', 'fonte-secundaria', 'origem', 'raiz'].map((nivel) =>
-      row({ nome: `N-${nivel}`, nivel, associacoes: ['Alvo'] }),
+      row({ id: `n-${nivel}`, nome: `N-${nivel}`, nivel, associacoes: ['alvo'] }),
     )
     expect(parseCatalogoRows(serializarCatalogo(rows))).toEqual(rows)
   })
 
-  it('formato canônico: BOM, cabeçalho de 12 colunas, ";", CRLF e aspas mínimas', () => {
+  it('formato canônico: BOM, cabeçalho de 13 colunas com `id` na frente, ";", CRLF e aspas mínimas', () => {
     const csv = serializarCatalogo([row({ nome: 'A', observacoes: 'sem aspas necessárias' })])
-    expect(csv.startsWith('\uFEFF' + 'nome;nivel;tipo_componente;dominio;consome;')).toBe(true)
-    expect(csv.split('\r\n')[0].split(';')).toHaveLength(12)
+    expect(csv.startsWith('\uFEFF' + 'id;nome;nivel;tipo_componente;dominio;consome;')).toBe(true)
+    expect(csv.split('\r\n')[0].split(';')).toHaveLength(13)
     expect(csv.endsWith('\r\n')).toBe(true)
-    expect(csv).toContain('\r\nA;primario;;Risco;;d;nao;producao;;;sem aspas necessárias;\r\n')
+    expect(csv).toContain('\r\na;A;primario;;Risco;;d;nao;producao;;;sem aspas necessárias;\r\n')
+  })
+
+  it('CSV legado (sem a coluna `id`) parseia: a célula vem vazia, e a gravação a preenche', () => {
+    const legado =
+      '\uFEFFnome;nivel;tipo_componente;dominio;consome;descricao;debito;status;owner;centro_de_custo;observacoes;associacoes\r\n' +
+      'RAR 12M;final;;Risco;;d;nao;producao;;;;\r\n'
+    expect(parseCatalogoRows(legado)[0].id).toBe('')
+    expect(parseCatalogoRows(serializarCatalogo(parseCatalogoRows(legado)))[0].id).toBe('rar-12m')
   })
 
   it('CSV legado (sem tipo_componente) parseia: a coluna vem vazia', () => {
@@ -91,6 +145,24 @@ describe('validarCatalogo', () => {
     const original = readFileSync(resolve(raiz, 'catalogo.csv'), 'utf8')
     const { niveis } = carregarNiveis(readFileSync(resolve(raiz, 'niveis.csv'), 'utf8'))
     expect(validarCatalogo(parseCatalogoRows(original), niveis)).toEqual({ errors: [], warnings: [] })
+  })
+
+  it('id duplicado é erro: duas linhas com a mesma chave seriam o mesmo componente', () => {
+    const { errors } = validarCatalogo([
+      row({ id: 'gdad', nome: 'GDAD', nivel: 'final' }),
+      row({ id: 'gdad', nome: 'Outra coisa' }),
+    ])
+    expect(errors).toEqual([
+      'linha 3 ("Outra coisa"): id "gdad" duplicado — colide com "GDAD" (linha 2);' +
+        ' o id é a chave da linha e não pode se repetir',
+    ])
+  })
+
+  it('id vazio é aceito: quem edita a planilha não precisa saber de ids', () => {
+    expect(validarCatalogo([row({ nome: 'Alfa' }), row({ nome: 'Beta' })])).toEqual({
+      errors: [],
+      warnings: [],
+    })
   })
 
   it('nome duplicado no MESMO nível (case-insensitive) é erro, apontando as duas linhas', () => {
@@ -156,9 +228,9 @@ describe('validarCatalogo', () => {
 
   it('consome inexistente é WARNING (vira fantasma), não erro; resolve por nome ou id', () => {
     const { errors, warnings } = validarCatalogo([
-      row({ nome: 'Alfa', consome: ['beta', 'final-rar-12m', 'Não Existe'] }),
-      row({ nome: 'Beta' }),
-      row({ nome: 'RAR 12M', nivel: 'final' }),
+      row({ nome: 'Alfa', consome: ['beta', 'rar-12m', 'Não Existe'] }),
+      row({ id: 'beta', nome: 'Beta' }),
+      row({ id: 'rar-12m', nome: 'RAR 12M', nivel: 'final' }),
     ])
     expect(errors).toEqual([])
     expect(warnings).toEqual([
@@ -190,7 +262,7 @@ describe('validarCatalogo', () => {
 
 describe('rowsDoBody (forma do body do POST)', () => {
   it('aceita {"rows": [...]} completo e preserva os campos', () => {
-    const original = row({ nome: 'Alfa', tipo_componente: 'Excel', consome: ['Beta'] })
+    const original = row({ id: 'alfa', nome: 'Alfa', tipo_componente: 'Excel', consome: ['beta'] })
     const { rows, errors } = rowsDoBody({ rows: [original] })
     expect(errors).toEqual([])
     expect(rows).toEqual([original])
@@ -200,6 +272,9 @@ describe('rowsDoBody (forma do body do POST)', () => {
     const { rows, errors } = rowsDoBody({ rows: [{ nome: 'Alfa', nivel: 'primario', debito: 'nao' }] })
     expect(errors).toEqual([])
     expect(rows[0]).toMatchObject({
+      // id ausente é aceito (a gravação gera): é o que deixa o formulário
+      // cadastrar um componente sem inventar chave nenhuma.
+      id: '',
       tipo_componente: '',
       dominio: '',
       owner: null,

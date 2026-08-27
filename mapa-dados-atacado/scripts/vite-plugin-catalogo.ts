@@ -1,7 +1,9 @@
 // Plugin Vite (SÓ dev server, apply: 'serve') que expõe o catálogo como API:
 //   GET  /api/catalogo → {"rows": CatalogoRow[]} lido do catalogo.csv na hora
-//   POST /api/catalogo {"rows": CatalogoRow[]} → valida, grava o catalogo.csv
-//        e regenera src/data/graph.json (mesmo formato do npm run data).
+//        (cada row traz o `id`, a chave estável da linha)
+//   POST /api/catalogo {"rows": CatalogoRow[]} → valida (id repetido é erro; id
+//        vazio é aceito e gerado do nome), grava o catalogo.csv e regenera
+//        src/data/graph.json (mesmo formato do npm run data).
 //   GET  /api/niveis → {"rows": [{slug, titulo, ordem, builtin, corFundo?,
 //        corBorda?}]} com TODOS os níveis da cadeia (built-in e customizados),
 //        resolvidos do niveis.csv.
@@ -18,6 +20,7 @@ import { dirname, join } from 'node:path'
 import type { Plugin } from 'vite'
 import {
   buildGraph,
+  canonizarCatalogo,
   carregarNiveis,
   normalizarCor,
   parseCatalogoRows,
@@ -72,6 +75,10 @@ export function rowsDoBody(body: unknown): { rows: CatalogoRow[]; errors: string
       return []
     }
     const row: CatalogoRow = {
+      // Ausente/vazio é aceito: a gravação gera o id a partir do nome. O que a
+      // API NUNCA faz é inventar um id diferente para uma linha que já tem o
+      // seu — é a chave dela.
+      id: texto('id'),
       nome: texto('nome'),
       nivel: texto('nivel'),
       tipo_componente: texto('tipo_componente'),
@@ -321,7 +328,10 @@ export function catalogoApiPlugin(): Plugin {
             return
           }
 
-          const csv = serializarCatalogo(rows)
+          // Canoniza antes de gravar: id preenchido nas linhas novas e
+          // referências convertidas para id. Depois disso o CSV é a forma final
+          // — o build lê exatamente o que foi para o disco.
+          const csv = serializarCatalogo(canonizarCatalogo(rows, niveis))
           const { graph, warnings: warningsBuild } = buildGraph(csv, niveis)
           await writeFile(caminhoCsv, csv)
           await gravarGraph(graph)
