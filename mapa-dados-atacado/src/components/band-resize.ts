@@ -19,6 +19,7 @@ import type { LineageColumn } from './lineage'
 import { NIVEIS_COL_X } from './lineage'
 import type { SimNode } from './graph-types'
 import { nivelDe } from './graph-types'
+import { EXTENT_COBERTO } from './node-size'
 
 /** Largura PADRÃO da faixa de um nível, em unidades de grafo.
  *
@@ -36,9 +37,11 @@ export const BAND_W = 133
  *  arestas se leem, que é justamente o que a vista em níveis tem de melhor. */
 export const CORREDOR = NIVEIS_COL_X - BAND_W
 
-/** Folga acima do primeiro nó: extensão do nó (~16) + respiro + cabeçalho. */
+/** Folga acima do CENTRO do primeiro nó: extensão do nó comum
+ *  (EXTENT_COBERTO) + respiro + cabeçalho. */
 export const BAND_PAD_TOP = 46
-/** Folga abaixo do último nó: extensão + rótulo do nó (fonte 10 + margem). */
+/** Folga abaixo do CENTRO do último nó: extensão + rótulo do nó (fonte 10 +
+ *  margem). */
 export const BAND_PAD_BOTTOM = 36
 
 /** Faixa que ninguém ajustou: a largura padrão. */
@@ -177,12 +180,23 @@ export function aplicarLarguras(
   return columns.map((c, i) => ({ ...c, x: geoms[i].x, largura: geoms[i].largura }))
 }
 
-/** Topo e base da faixa desenhada (os nós só marcam o miolo dela). */
-export function topoDaFaixa(col: Pick<LineageColumn, 'yMin'>): number {
-  return col.yMin - BAND_PAD_TOP
+/** Topo e base da faixa desenhada (os nós só marcam o miolo dela).
+ *
+ *  yMin/yMax são CENTROS de nó, e os paddings foram medidos para o nó comum. O
+ *  que passar disso — um hub de grau alto, ou um nó que o usuário esticou à mão
+ *  — é somado por cima, para a faixa nunca cortar o desenho de quem está na
+ *  ponta da coluna. Coluna sem extensão declarada (fixture de teste, build
+ *  antigo) cai exatamente no comportamento de sempre. */
+export function topoDaFaixa(col: Pick<LineageColumn, 'yMin' | 'extentTopo'>): number {
+  return col.yMin - BAND_PAD_TOP - excedente(col.extentTopo)
 }
-export function baseDaFaixa(col: Pick<LineageColumn, 'yMax'>): number {
-  return col.yMax + BAND_PAD_BOTTOM
+export function baseDaFaixa(col: Pick<LineageColumn, 'yMax' | 'extentBase'>): number {
+  return col.yMax + BAND_PAD_BOTTOM + excedente(col.extentBase)
+}
+
+/** O quanto a extensão do nó da ponta passa do que o padding já cobria. */
+function excedente(extent: number | undefined): number {
+  return Math.max(0, (extent ?? 0) - EXTENT_COBERTO)
 }
 
 /** Borda direita de uma faixa, em unidades de grafo. */

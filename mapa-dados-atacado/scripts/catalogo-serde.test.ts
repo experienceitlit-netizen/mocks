@@ -11,6 +11,7 @@ import {
   parseCatalogoRows,
   preencherIds,
   serializarCatalogo,
+  TIPOS_COMPONENTE,
   validarCatalogo,
   type CatalogoRow,
 } from './graph-lib.ts'
@@ -283,12 +284,17 @@ describe('validarCatalogo', () => {
     ])
   })
 
-  it('tipo_componente fora da lista é erro; os quatro valores e o vazio passam', () => {
+  it('tipo_componente fora da lista é erro; todo valor do vocabulário e o vazio passam', () => {
+    // A lista de valores válidos sai do próprio vocabulário, e não copiada à
+    // mão: ela cresce (quatro tipos viraram catorze quando os sistemas
+    // entraram), e um teste que a repete quebra a cada tipo novo sem que nada
+    // esteja errado.
     const { errors } = validarCatalogo([row({ nome: 'Alfa', tipo_componente: 'Parquet' })])
+    const validos = TIPOS_COMPONENTE.map((t) => `"${t}"`).join(', ')
     expect(errors).toEqual([
-      'linha 2 ("Alfa"): tipo_componente "Parquet" inválido (use "Tabela SQL", "Tabela Delta", "Excel", "Default")',
+      `linha 2 ("Alfa"): tipo_componente "Parquet" inválido (use ${validos})`,
     ])
-    for (const tipo of ['Tabela SQL', 'Tabela Delta', 'Excel', 'Default', '']) {
+    for (const tipo of [...TIPOS_COMPONENTE, '']) {
       expect(validarCatalogo([row({ nome: 'Alfa', tipo_componente: tipo })]).errors).toEqual([])
     }
   })

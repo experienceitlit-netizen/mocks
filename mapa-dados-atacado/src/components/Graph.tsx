@@ -4,7 +4,9 @@ import type { Ref } from 'react'
 import type { GraphLinkData, GraphMethods, GraphNodeData, SimLink, SimNode } from './graph-types'
 import { ehProdutoDeDados, linkEndId, tipoComponenteDe } from './graph-types'
 import {
+  DEBITO_BORDA,
   drawGlifo,
+  ehMarca,
   extentOf,
   glifoVisivel,
   pesoDoRotulo,
@@ -12,6 +14,7 @@ import {
   raioNaDirecao,
   traceShape,
 } from './shapes'
+import { raioDoDado } from './node-size'
 import {
   BORDA_TOL_PX,
   cursorDaBorda,
@@ -34,7 +37,7 @@ import {
   topoDaFaixa,
 } from './band-resize'
 import { coresDaFaixa } from './band-colors'
-import { BACKGROUND, nodeColor } from './palette'
+import { BACKGROUND, FUNDO_MARCA, nodeColor } from './palette'
 
 export interface GraphHandle {
   /** Centraliza e dá zoom no nó (usado por balão, busca e ?no= da URL). */
@@ -87,25 +90,6 @@ const DIM_ALPHA = 0.15
 const FOCUS_ZOOM = 2.5
 /** Teto de zoom após zoomToFit: subgrafos pequenos não viram close extremo. */
 const MAX_FIT_ZOOM = 4
-
-/** Ajuste fino do tamanho dos nós, aplicado ao raio inteiro (a área de clique
- *  e as faixas acompanham, porque derivam do mesmo raio). */
-const ESCALA_NO = 1.25
-
-function radiusOf(degree: number): number {
-  return (4 + Math.sqrt(degree) * 2.2) * ESCALA_NO
-}
-
-/** Grau de cortesia de nós sem aresta: um componente recém-cadastrado nasce do
- *  tamanho dos pares em vez de encolhido no raio mínimo. Ao ganhar arestas, o
- *  grau real volta a mandar. */
-const SEM_ARESTA_DEGREE = 2
-
-function visualDegree(node: SimNode, degreeById: ReadonlyMap<string, number>): number {
-  const degree = degreeById.get(node.id) ?? 0
-  if (degree > 0) return degree
-  return node.fantasma === true ? 0 : SEM_ARESTA_DEGREE
-}
 
 /** Extensão da silhueta do nó além do centro: área de clique, halo, rótulo e
  *  âncora do balão. O losango do produto de dados chega mais longe que o círculo
@@ -170,12 +154,12 @@ export default function Graph({
   const wrapRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight })
 
-  /** Raio do nó em unidades de grafo: o que o GRAU calcula, vezes o ajuste de
-   *  sessão da borda. Ponto ÚNICO de leitura — desenho, área de clique, halo,
-   *  rótulo, âncora do balão e a própria faixa de borda saem todos daqui, então
-   *  o fator não tem como valer para uns e não para outros. */
+  /** Raio do nó em unidades de grafo: o que o GRAU calcula (ver node-size.ts),
+   *  vezes o ajuste de sessão da borda. Ponto ÚNICO de leitura — desenho, área
+   *  de clique, halo, rótulo, âncora do balão e a própria faixa de borda saem
+   *  todos daqui, então o fator não tem como valer para uns e não para outros. */
   const raioDe = useCallback(
-    (node: SimNode) => radiusOf(visualDegree(node, degreeById)) * fatorDe(escalas, node.id),
+    (node: SimNode) => raioDoDado(node, degreeById) * fatorDe(escalas, node.id),
     [degreeById, escalas],
   )
 
@@ -787,8 +771,22 @@ export default function Graph({
         ctx.stroke()
         ctx.setLineDash([])
       } else {
-        ctx.fillStyle = nodeColor(node)
+        // DÉBITO: cor cheia no nó comum, BORDA GROSSA no nó de marca.
+        //
+        // O eixo é o mesmo e a paleta é a mesma — muda o canal, e muda porque o
+        // espaço é disputado. Num nó de marca o miolo pertence à logo, que é
+        // colorida: pintar o fundo de vermelho por cima do ciano da Salesforce
+        // apagaria as duas leituras de uma vez. Então ali o miolo vira neutro e
+        // o débito contorna o nó, grosso o bastante para a cor se ler como cor.
+        // Nos demais nada mudou: cor cheia, como sempre foi.
+        const marca = ehMarca(tipoComponenteDe(node))
+        ctx.fillStyle = marca ? FUNDO_MARCA : nodeColor(node)
         ctx.fill()
+        if (marca) {
+          ctx.strokeStyle = nodeColor(node)
+          ctx.lineWidth = DEBITO_BORDA * r
+          ctx.stroke()
+        }
         if (node.incompleto === true) {
           // Gap de governança (sem owner ou sem centro de custo): borda branca
           // tracejada sobre a própria silhueta — acompanha a forma, então o
@@ -797,14 +795,21 @@ export default function Graph({
           // lá o tracejado apagava os cantos, que eram a marca inteira. Aqui
           // ele pode comer um pedaço de aresta que as quatro pontas continuam
           // apontando — e o negrito do rótulo não depende da borda nenhuma.
+          //
+          // No nó de marca ele corre POR CIMA da borda de débito, no meio dela:
+          // o tracejado branco sobre a faixa colorida continua lendo como
+          // tracejado, e a cor continua aparecendo entre os traços. As duas
+          // leituras cabem na mesma borda porque uma é cor e a outra é ritmo.
           ctx.setLineDash([3 / scale, 2.2 / scale])
           ctx.strokeStyle = '#FFFFFF'
           ctx.lineWidth = 1.6 / scale
           ctx.stroke()
           ctx.setLineDash([])
         }
-        // ÍCONE = tipo de componente, dentro do nó e só quando ele está grande
-        // o bastante na tela para o glifo informar em vez de sujar.
+        // ÍCONE = tipo de componente, dentro do nó. Aparece SEMPRE — o corte é
+        // só a proteção do zoom muito afastado, onde o nó inteiro tem meia dúzia
+        // de pixels. A logo de marca é desenhada ampliada dentro do nó
+        // (GLIFO_MARCA_ESCALA); o RAIO do nó não muda por causa do tipo.
         if (glifoVisivel(r, scale)) drawGlifo(ctx, tipoComponenteDe(node), x, y, r)
       }
 

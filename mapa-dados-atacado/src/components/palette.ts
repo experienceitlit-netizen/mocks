@@ -11,24 +11,35 @@ export const BACKGROUND = '#1E1E1E'
 
 export const COLOR_DEBITO = '#CC092F'
 export const COLOR_AVALIAR = '#8A8A8A'
-export const COLOR_LEGADO = '#B8860B'
 export const COLOR_CURADO = '#3A7D44'
 export const COLOR_FANTASMA = '#5A5A5A'
 
-/** Sinal textual de rota legada/manual no que o componente declara de si. Era
- *  lido do campo `sistema`, que saiu do nó no modelo unificado; sobrou o texto
- *  que o próprio componente carrega (nome e descrição). */
-const LEGADO_RE = /legado|on-premise|planilha/i
-
 /** Cor do componente por precedência: fantasma > débito sim > débito a avaliar
- *  (inclui o não declarado) > legado/manual > curado. */
+ *  (inclui o não declarado) > curado.
+ *
+ *  Havia um quarto caso: um âmbar de "legado/manual", ligado por um regex sobre
+ *  o NOME e a DESCRIÇÃO do componente (`/legado|on-premise|planilha/i`). Saiu.
+ *  O débito técnico é declarado na coluna `debito` do catálogo, e adivinhá-lo
+ *  pelo texto do nome criava uma segunda fonte de verdade: uma linha marcada
+ *  `debito=nao` pelo dono aparecia em âmbar porque alguém escreveu "planilha" na
+ *  descrição, e não havia como corrigir isso a não ser reescrevendo a prosa. Nós
+ *  que ficavam âmbar por essa regra passam a seguir só o que declararam. */
 export function nodeColor(node: GraphNodeData): string {
   if (node.fantasma === true) return COLOR_FANTASMA
   const debito = debitoDe(node)
   if (debito === 'sim') return COLOR_DEBITO
   if (debito === 'avaliar') return COLOR_AVALIAR
-  return LEGADO_RE.test(`${node.nome} ${node.descricao ?? ''}`) ? COLOR_LEGADO : COLOR_CURADO
+  return COLOR_CURADO
 }
+
+/** Fundo do nó que carrega LOGO DE MARCA.
+ *
+ *  Nesses nós a cor cheia não pode ser o débito: a logo é colorida (o ciano da
+ *  Salesforce, o verde do Mongo, o vermelho do SQL Server) e duas cores fortes
+ *  no mesmo espaço se anulam. Então o miolo vira este neutro — um passo acima do
+ *  fundo da tela (#1E1E1E), o bastante para o nó ter corpo — e o débito vai para
+ *  a BORDA, grossa, na mesma paleta de sempre. Ver DEBITO_BORDA em shapes.ts. */
+export const FUNDO_MARCA = '#26292E'
 
 /** Mistura uma cor "#rrggbb" com branco (0 = a cor, 1 = branco). */
 function clarear(hex: string, fator: number): string {

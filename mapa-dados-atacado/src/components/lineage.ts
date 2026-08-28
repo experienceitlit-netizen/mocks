@@ -21,10 +21,38 @@ import {
   ordemDoNivel,
   tituloDoNivel,
 } from './graph-types'
+import { extentDoDado, grausPorId, ROTULO_E_FOLGA } from './node-size'
 
-/** Distância entre colunas (x) e entre linhas de uma coluna (y). */
+/** Distância entre colunas (x). */
 export const NIVEIS_COL_X = 193
+
+/** Passo vertical MÍNIMO entre dois nós de uma coluna.
+ *
+ *  Era o passo único e virou o piso: um passo constante que serve ao nó comum
+ *  deixa o rótulo de um nó GRANDE encostado no vizinho de baixo, e nó grande
+ *  existe — um hub de grau alto chega perto do dobro do raio comum. 70 continua
+ *  sendo o que se vê na maior parte do mapa (é mais folgado que a soma das duas
+ *  extensões e do rótulo no caso comum) e só perde a vez quando dois vizinhos
+ *  são de fato grandes (ver {@link passoEntre}). */
 export const NIVEIS_ROW_Y = 70
+
+/** Passo entre dois nós VIZINHOS de uma coluna: o que a geometria exige, nunca
+ *  menos que o passo padrão.
+ *
+ *  A conta é "a metade de baixo do primeiro + o rótulo dele + o respiro + a
+ *  metade de cima do segundo": é exatamente o que o canvas desenha (o rótulo sai
+ *  em `y + extent + 3`), então o espaçamento não é uma estimativa — é a mesma
+ *  medida do desenho. */
+function passoEntre(
+  a: SimNode,
+  b: SimNode,
+  graus: ReadonlyMap<string, number>,
+): number {
+  return Math.max(
+    NIVEIS_ROW_Y,
+    extentDoDado(a, graus) + extentDoDado(b, graus) + ROTULO_E_FOLGA,
+  )
+}
 
 /** Faixa vertical de uma coluna (coordenadas de grafo; yMin/yMax são centros
  *  do primeiro e do último nó — o padding visual fica com quem desenha). */
@@ -39,6 +67,13 @@ export interface LineageColumn {
    *  neutra. Quem desenha decide como aplicá-las (ver band-colors.ts). */
   corFundo?: string
   corBorda?: string
+  /** Extensão (centro → silhueta) do PRIMEIRO e do ÚLTIMO nó da coluna. É o que
+   *  falta para a faixa desenhada saber onde começa e onde termina de verdade:
+   *  yMin/yMax são CENTROS, e um nó com ícone chega bem mais longe do centro que
+   *  o padding padrão previa. Ausente = coluna montada por quem não mede nós
+   *  (fixtures de teste), e aí valem os paddings de sempre. */
+  extentTopo?: number
+  extentBase?: number
 }
 
 /** Aresta de saída de um componente, já resolvida no nó de destino. */
@@ -159,7 +194,13 @@ export function buildLineage(
   }
 
   // Colunas da esquerda para a direita: só os níveis presentes (nível vazio
-  // não vira coluna); espaçamento vertical uniforme por coluna, centrado.
+  // não vira coluna); coluna centrada em y=0, com o passo entre cada par de
+  // vizinhos medido pelos DOIS nós (ver passoEntre) — no caso comum todos os
+  // passos dão o mesmo NIVEIS_ROW_Y de sempre.
+  //
+  // Os graus saem das MESMAS arestas que o App conta para o Graph, então o raio
+  // com que a coluna se espaça é o raio com que o canvas desenha.
+  const graus = grausPorId(nodes, links)
   const porSlug = new Map<string, SimNode[]>()
   for (const n of nodeById.values()) {
     const slug = nivelDe(n)
@@ -175,23 +216,27 @@ export function buildLineage(
   slugsPresentes.forEach((slug, col) => {
     const coluna = porSlug.get(slug) ?? []
     const x = col * NIVEIS_COL_X
+    const passos = coluna.slice(1).map((n, i) => passoEntre(coluna[i], n, graus))
+    const altura = passos.reduce((soma, p) => soma + p, 0)
+    let y = -altura / 2
     coluna.forEach((n, i) => {
-      const y = (i - (coluna.length - 1) / 2) * NIVEIS_ROW_Y
+      if (i > 0) y += passos[i - 1]
       n.x = x
       n.y = y
       n.fx = x
       n.fy = y
     })
-    const meiaAltura = ((coluna.length - 1) / 2) * NIVEIS_ROW_Y
     const nivel = niveis.find((nv) => nv.slug === slug)
     columns.push({
       slug,
       label: tituloDoNivel(niveis, slug),
       x,
-      yMin: -meiaAltura,
-      yMax: meiaAltura,
+      yMin: -altura / 2,
+      yMax: altura / 2,
       corFundo: nivel?.corFundo,
       corBorda: nivel?.corBorda,
+      extentTopo: coluna.length === 0 ? 0 : extentDoDado(coluna[0], graus),
+      extentBase: coluna.length === 0 ? 0 : extentDoDado(coluna[coluna.length - 1], graus),
     })
   })
 

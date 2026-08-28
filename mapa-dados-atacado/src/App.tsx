@@ -30,6 +30,7 @@ import {
   noDeEntrada,
 } from './components/graph-types'
 import { buildLineage, buildLineageTree } from './components/lineage'
+import { grausPorId } from './components/node-size'
 import CatalogForm from './components/CatalogForm'
 import type { FormTarget } from './components/CatalogForm'
 import NiveisModal from './components/NiveisModal'
@@ -170,15 +171,9 @@ function App() {
     return map
   }, [nodes])
 
-  const degreeById = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const n of nodes) map.set(n.id, 0)
-    for (const l of links) {
-      map.set(l.source, (map.get(l.source) ?? 0) + 1)
-      map.set(l.target, (map.get(l.target) ?? 0) + 1)
-    }
-    return map
-  }, [nodes, links])
+  // O MESMO cálculo que a vista em níveis faz para se espaçar (node-size.ts):
+  // o raio com que a coluna abre espaço é o raio com que o canvas desenha.
+  const degreeById = useMemo(() => grausPorId(nodes, links), [nodes, links])
 
   const neighborsById = useMemo(() => {
     const map = new Map<string, Set<string>>()

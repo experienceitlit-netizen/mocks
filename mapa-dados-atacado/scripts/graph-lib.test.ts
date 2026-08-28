@@ -271,7 +271,7 @@ describe('tipo_componente', () => {
     expect(antigo.warnings).toEqual([])
   })
 
-  it('os quatro valores aceitos chegam ao nó como estão', () => {
+  it('todo valor aceito chega ao nó como está', () => {
     const { rows, warnings } = parseCatalogo(
       csv(...TIPOS_COMPONENTE.map((t) => completo({ nome: t, tipo_componente: t }))),
     )
@@ -282,9 +282,12 @@ describe('tipo_componente', () => {
   it('valor fora da lista vira warning e assume Default', () => {
     const { rows, warnings } = parseCatalogo(csv(completo({ nome: 'A', tipo_componente: 'Parquet' })))
     expect(rows[0].node.tipoComponente).toBe('Default')
+    // A lista de válidos vem do vocabulário, não copiada: ela cresce, e um
+    // teste que a repete quebraria a cada tipo novo sem nada estar errado.
+    const validos = TIPOS_COMPONENTE.map((t) => `"${t}"`).join(', ')
     expect(warnings).toEqual([
-      'catalogo.csv linha 2 ("A"): tipo_componente "Parquet" desconhecido' +
-        ' (use "Tabela SQL", "Tabela Delta", "Excel", "Default") — assumindo "Default"',
+      `catalogo.csv linha 2 ("A"): tipo_componente "Parquet" desconhecido` +
+        ` (use ${validos}) — assumindo "Default"`,
     ])
   })
 

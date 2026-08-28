@@ -867,6 +867,50 @@
   letter-spacing: 0.08em;
 }
 
+/* Seção de ícones: catorze tipos numa coluna só esticariam a legenda por cima
+   do mapa. Cada grupo ("Genéricos", "Sistemas") vira um bloco com o próprio
+   subtítulo e uma grade de DUAS colunas — nenhum tipo é omitido, e os ícones
+   parecidos (as duas tabelas, as duas nuvens) ficam vizinhos para se comparar.
+
+   Os seletores levam `li`/`ul` junto de propósito: `.legend li` e `.legend ul`
+   (que fazem TODA linha da legenda ser uma flex row centrada) são mais
+   específicos que uma classe sozinha, e sem o elemento no seletor a grade
+   perderia para eles e as linhas voltariam a se empilhar centralizadas. */
+.legend li.legend__grupo {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+  margin-top: 0.2rem;
+}
+
+.legend__grupo-titulo {
+  color: #7a7a7a;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.legend ul.legend__tipos {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  column-gap: 1rem;
+  row-gap: 0.28rem;
+}
+
+/* A amostra da seção de ícones é maior que as outras: são catorze desenhos que
+   precisam ser comparados ENTRE SI, e não uma marca só a reconhecer. */
+.legend__tipos .legend__amostra {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+/* O nome do tipo não pode quebrar no meio (é o que se procura na lista); a
+   nota, sim — ela é o complemento. */
+.legend__tipo {
+  white-space: nowrap;
+}
+
 .legend__nota {
   color: #7a7a7a;
   font-style: italic;

@@ -18,17 +18,81 @@ export type Debito = 'sim' | 'nao' | 'avaliar'
  *  `produto_de_dados`). Célula vazia vale "nao". */
 export type SimNao = 'sim' | 'nao'
 
-/** O que o componente É fisicamente. Define a FORMA do nó no mapa (a cor fica
- *  com a semântica de débito) e é independente do nível: uma Tabela Delta pode
- *  estar em qualquer camada. */
-export type TipoComponente = 'Tabela SQL' | 'Tabela Delta' | 'Excel' | 'Default'
+/** O que o componente É fisicamente, ou DE ONDE ele vem. Define o ÍCONE dentro
+ *  do nó no mapa (a cor fica com a semântica de débito, a forma com a bandeira
+ *  de produto de dados) e é independente do nível: uma Tabela Delta pode estar
+ *  em qualquer camada, um Salesforce também.
+ *
+ *  O vocabulário tem duas metades que convivem de propósito:
+ *
+ *    GENÉRICOS o que a coisa é, sem dizer onde mora. "Tabela SQL" continua
+ *      valendo para quem só sabe que é uma tabela relacional;
+ *    SISTEMAS  de onde o dado vem. "SQL Server" é o mesmo caso granularizado —
+ *      os dois existem lado a lado para o inventário poder ser preenchido no
+ *      grau de certeza que se tem hoje e refinado depois, sem migração.
+ *
+ *  A MESMA lista vive em scripts/graph-lib.ts (o build não importa nada do
+ *  front-end); um teste trava que as duas não divergem. */
+export type TipoComponente =
+  | 'Tabela SQL'
+  | 'Tabela Delta'
+  | 'Default'
+  | 'Servidor de arquivos'
+  | 'Processos'
+  | 'SQL Server'
+  | 'MongoDB'
+  | 'S3 Bucket'
+  | 'Blob Storage'
+  | 'Salesforce'
+  | 'Data Cloud'
+  | 'ServiceNow'
+  | 'Pega'
+  | 'Excel'
 
-export const TIPOS_COMPONENTE: readonly TipoComponente[] = [
-  'Tabela SQL',
-  'Tabela Delta',
-  'Excel',
-  'Default',
+/** Grupos do vocabulário, na ordem em que legenda e select os apresentam.
+ *
+ *  A divisão não é cosmética: ela é o que decide COMO o nó é desenhado.
+ *
+ *    CATEGORIA o que a coisa é, sem dono. Glifo abstrato monocromático sobre o
+ *      nó pintado na cor do débito — o desenho de sempre, sem mudança nenhuma.
+ *    MARCA     o produto de um fornecedor. A logo é desenhada nas cores da
+ *      marca e ampliada dentro do nó, o miolo vira neutro e o débito passa para
+ *      uma borda grossa. O TAMANHO do nó não muda. Ver `marca` em shapes.ts, que
+ *      é a fonte da verdade — um teste trava que os dois não divergem.
+ *
+ *  A ordem DENTRO de cada grupo é por parentesco de desenho (as duas tabelas
+ *  juntas, as duas nuvens Salesforce juntas), para quem lê a legenda comparar os
+ *  ícones parecidos lado a lado em vez de caçá-los. */
+export const TIPOS_COMPONENTE_GRUPOS: ReadonlyArray<{
+  titulo: string
+  tipos: readonly TipoComponente[]
+}> = [
+  {
+    titulo: 'Categoria',
+    tipos: ['Tabela SQL', 'Tabela Delta', 'Default', 'Servidor de arquivos', 'Processos'],
+  },
+  {
+    titulo: 'Marca',
+    tipos: [
+      'SQL Server',
+      'MongoDB',
+      'S3 Bucket',
+      'Blob Storage',
+      'Salesforce',
+      'Data Cloud',
+      // Os três ladrilhos no fim, juntos: são a mesma construção (cor da marca
+      // com o símbolo vazado), e vizinhos na legenda dá para comparar de uma vez
+      // que o verde do Excel não é o verde do ServiceNow.
+      'ServiceNow',
+      'Pega',
+      'Excel',
+    ],
+  },
 ]
+
+export const TIPOS_COMPONENTE: readonly TipoComponente[] = TIPOS_COMPONENTE_GRUPOS.flatMap(
+  (g) => g.tipos,
+)
 
 /** Valor assumido quando a linha não declara nada. */
 export const TIPO_COMPONENTE_PADRAO: TipoComponente = 'Default'

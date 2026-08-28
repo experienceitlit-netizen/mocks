@@ -9,8 +9,33 @@
 // (`consome` ou `associacoes`). Nada é inferido.
 
 /** Tipos de componente aceitos na coluna `tipo_componente`. Célula vazia =
- *  "Default"; valor fora da lista vira warning no build e erro no POST. */
-export const TIPOS_COMPONENTE = ['Tabela SQL', 'Tabela Delta', 'Excel', 'Default'] as const
+ *  "Default"; valor fora da lista vira warning no build e erro no POST.
+ *
+ *  Duas metades: os GENÉRICOS, que dizem o que a coisa é, e os SISTEMAS, que
+ *  dizem de onde ela vem. "Tabela SQL" e "SQL Server" convivem de propósito —
+ *  quem só sabe que é uma tabela relacional declara a primeira, quem sabe o
+ *  servidor declara a segunda, e ninguém precisa migrar nada para refinar.
+ *
+ *  Esta lista é ESPELHADA em src/components/graph-types.ts, porque o build não
+ *  importa nada do front-end; um teste trava que as duas não divergem. */
+export const TIPOS_COMPONENTE = [
+  // categoria (o que a coisa é)
+  'Tabela SQL',
+  'Tabela Delta',
+  'Default',
+  'Servidor de arquivos',
+  'Processos',
+  // marca (de qual fornecedor)
+  'SQL Server',
+  'MongoDB',
+  'S3 Bucket',
+  'Blob Storage',
+  'Salesforce',
+  'Data Cloud',
+  'ServiceNow',
+  'Pega',
+  'Excel',
+] as const
 
 export type TipoComponente = (typeof TIPOS_COMPONENTE)[number]
 

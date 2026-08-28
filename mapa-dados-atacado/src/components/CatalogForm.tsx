@@ -23,7 +23,7 @@ import DeleteConfirm from './DeleteConfirm'
 import type { RowFormState } from './catalog-form-row'
 import { montarRow } from './catalog-form-row'
 import type { Debito, NivelDef, TipoComponente } from './graph-types'
-import { TIPO_COMPONENTE_PADRAO, TIPOS_COMPONENTE } from './graph-types'
+import { TIPO_COMPONENTE_PADRAO, TIPOS_COMPONENTE_GRUPOS } from './graph-types'
 
 /** Comparação insensível a caixa e acentos (unicidade de nome, sugestões). */
 function norm(s: string): string {
@@ -482,10 +482,19 @@ export default function CatalogForm({
                     value={tipoComponente}
                     onChange={(e) => setTipoComponente(e.target.value as TipoComponente)}
                   >
-                    {TIPOS_COMPONENTE.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
+                    {/* Agrupado porque o vocabulário tem duas metades: o que a
+                        coisa É (genéricos) e DE ONDE ela vem (sistemas). Sem os
+                        grupos, "Tabela SQL" e "SQL Server" ficam vizinhos na
+                        lista e leem como duplicata — separados, fica claro que
+                        são graus de detalhe diferentes da mesma resposta. */}
+                    {TIPOS_COMPONENTE_GRUPOS.map((grupo) => (
+                      <optgroup key={grupo.titulo} label={grupo.titulo}>
+                        {grupo.tipos.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                 </div>

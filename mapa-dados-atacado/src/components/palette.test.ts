@@ -2,14 +2,7 @@
 // entra na conta, então transferir uma linha de camada nunca muda a cor dela.
 import { describe, expect, it } from 'vitest'
 import type { GraphNodeData } from './graph-types'
-import {
-  COLOR_AVALIAR,
-  COLOR_CURADO,
-  COLOR_DEBITO,
-  COLOR_FANTASMA,
-  COLOR_LEGADO,
-  nodeColor,
-} from './palette'
+import { COLOR_AVALIAR, COLOR_CURADO, COLOR_DEBITO, COLOR_FANTASMA, nodeColor } from './palette'
 
 const node = (extra: Partial<GraphNodeData>): GraphNodeData => ({
   id: 'x',
@@ -32,10 +25,15 @@ describe('nodeColor', () => {
     )
   })
 
-  it('sem débito: rota legada/manual em âmbar, o resto em curado', () => {
-    expect(nodeColor(node({ debito: 'nao', descricao: 'planilha manual' }))).toBe(COLOR_LEGADO)
-    expect(nodeColor(node({ debito: 'nao', nome: 'Base legado' }))).toBe(COLOR_LEGADO)
-    expect(nodeColor(node({ debito: 'nao', descricao: 'dado curado' }))).toBe(COLOR_CURADO)
+  it('a cor sai SÓ do que a linha declara, nunca do texto que ela carrega', () => {
+    // Havia um âmbar de "legado/manual" ligado por regex sobre nome e descrição.
+    // Saiu: o débito é declarado na coluna `debito`, e adivinhá-lo pela prosa
+    // fazia uma linha com `debito=nao` aparecer como problema sem que o dono
+    // pudesse corrigir a não ser reescrevendo a descrição.
+    for (const texto of ['planilha manual', 'sistema on-premise', 'dado curado']) {
+      expect(nodeColor(node({ debito: 'nao', descricao: texto }))).toBe(COLOR_CURADO)
+    }
+    expect(nodeColor(node({ debito: 'nao', nome: 'Base legado' }))).toBe(COLOR_CURADO)
   })
 
   it('o nível não muda a cor: mesma linha, em qualquer camada', () => {
