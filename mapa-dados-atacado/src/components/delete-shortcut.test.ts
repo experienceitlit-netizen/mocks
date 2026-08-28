@@ -18,6 +18,7 @@ const row = (id: string, nome: string, nivel: string): CatalogoRow => ({
   centro_de_custo: null,
   observacoes: '',
   associacoes: [],
+  produto_de_dados: '',
 })
 
 // O id do nó É o id da linha do catálogo — é por ele que o atalho casa.

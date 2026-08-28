@@ -1,9 +1,7 @@
 ﻿titulo;ordem;slug;cor_fundo;cor_borda
 Domínio;10;dominio;;
-Produto final;20;final;;
-Produto primário;30;primario;;
 Gold;43;gold;#feeb01;#feeb20
 Silver;44;silver;#c0c0c0;#bfbaba
 Broze;45;broze;#cd7f32;#724927
-Fonte (sistema);50;fonte;;
+Fonte;50;fonte;;
 Origem;60;origem;;

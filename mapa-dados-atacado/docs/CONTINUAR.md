@@ -41,8 +41,12 @@ revertendo o desenho anterior. Vieram de discussão, não de conveniência técn
 - **Níveis são livres**: qualquer um pode ser criado, renomeado, reordenado,
   colorido e removido (removê-lo é recusado enquanto houver componentes nele).
   O código não conhece "bronze" ou "prata" — a semântica é do usuário.
-- **Três eixos visuais independentes**: a coluna diz o nível, a cor diz o débito
-  técnico, a forma diz o tipo de componente (Tabela SQL/Delta/Excel/Default).
+- **Quatro eixos visuais independentes**: a coluna diz o nível, a cor diz o
+  débito técnico, a bandeira de produto de dados diz-se em DOIS canais (losango ×
+  círculo, e o rótulo em negrito × normal — a forma some no zoom afastado, o
+  texto não) e o ícone interno diz o tipo de componente (Tabela
+  SQL/Delta/Excel/Default). O **tamanho** não é eixo de dado: ele é grau de
+  conexões mais o ajuste manual da sessão.
 - **O CSV precisa continuar legível** para quem abre na planilha. Foi o que
   descartou identificadores opacos (uuid) quando surgiu a necessidade de chave
   estável.
@@ -64,24 +68,33 @@ Edição pelo app, em três modos escolhidos por detecção automática:
 
 ## Estado ao salvar este documento
 
-Último commit: `a29b0e8` (atalho de teclado para excluir).
+Último commit: `8384d27` (pacote de demonstração regerado). **Tudo abaixo está no
+worktree SEM COMMIT, verde** (347 testes, tsc e build limpos) — o usuário ainda
+não deu o aval:
 
-**Pronto, aguardando o aval do usuário para commitar:** a *chave estável*. O
-`catalogo.csv` ganhou a coluna `id` como primeira — slug legível gerado do nome
-na criação (`rar-12m`), único global, com sufixo em colisão, **imutável**. As
-colunas `consome`/`associacoes` guardam ids; a resolução aceita id e, como
-alternativa, nome (com aviso, normalizando na gravação seguinte). Célula `id`
-vazia é preenchida pelo app, então dá para acrescentar linha na planilha sem
-saber de ids. O id do nó no grafo é o id da linha, o que também eliminou a
-ambiguidade de nomes repetidos entre níveis. `catalog-rename.ts` (propagação de
-nome) foi removido: virou redundante.
+- **Flag `produto_de_dados`** (coluna no CSV, campo no formulário, filtro
+  "Somente produtos de dados", chip no balão). O destaque visual custou três
+  tentativas: anel externo (discreto demais) → octógono (oito lados leem como
+  círculo, e a borda tracejada de `incompleto` disfarça os cantos) → **losango +
+  rótulo em negrito**, que é o que está valendo. Lição: no zoom de trabalho só
+  cor e silhueta grosseira sobrevivem; valide sempre no zoom real, não ampliado.
+- **Tipo de componente virou ÍCONE INTERNO** (grade = Tabela SQL, tijolos =
+  Tabela Delta, "X" = Excel, Default sem ícone), liberando a forma para a flag.
+- **Redimensionar por arraste, só na sessão** (nada persiste): a borda do NÓ
+  ajusta o componente (0.5×–3×, `src/components/node-resize.ts`) e a borda da
+  FAIXA ajusta a largura da coluna, deslocando as seguintes (0.6×–2.5×,
+  `band-resize.ts`). Duplo clique na borda restaura.
+- **Largura padrão das faixas reduzida a 70%** (BAND_W 190→133 e NIVEIS_COL_X
+  250→193, para o corredor de 60 entre faixas não crescer): as sete colunas
+  cabem na tela sem pan lateral.
+- **Rótulo escala com o zoom** entre 10px e 26px de tela: fixo em 10px ele
+  "encolhia" ao ampliar, porque o nó crescia e o texto não.
+- **Filtros e legenda recolhíveis**, com a preferência no navegador.
 
-Verificado no app: renomear e trocar de nível **não quebram** as ligações — a
-aresta continua apontando para o mesmo id, sem nó fantasma. 237 testes verdes.
-
-**Dados:** o catálogo estava com poucos componentes porque o usuário estava
-testando a exclusão; ele pediu para **não commitar** essa perda. O estado cheio
-(79 componentes) está no commit `81c1666`.
+Dados: o catálogo está pequeno (~13 componentes) porque o usuário vem testando
+exclusão e cadastro; o estado cheio (79) está no commit `81c1666`. Dois
+componentes podem estar marcados como produto de dados — foram marcados para
+demonstrar o losango.
 
 ## Como o usuário trabalha
 

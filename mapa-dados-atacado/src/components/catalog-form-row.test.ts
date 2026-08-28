@@ -19,6 +19,7 @@ const estado = (extra: Partial<RowFormState> = {}): RowFormState => ({
   status: 'producao',
   owner: 'Dados Atacado',
   centroDeCusto: 'CC-1',
+  produtoDeDados: false,
   ...extra,
 })
 
@@ -37,7 +38,26 @@ const base: CatalogoRow = {
   owner: null,
   centro_de_custo: null,
   observacoes: '',
+  produto_de_dados: '',
 }
+
+describe('montarRow — produto de dados', () => {
+  it('a caixa marcada grava "sim" e a desmarcada grava "nao" (nunca célula vazia)', () => {
+    expect(montarRow(estado({ produtoDeDados: true })).produto_de_dados).toBe('sim')
+    expect(montarRow(estado({ produtoDeDados: false })).produto_de_dados).toBe('nao')
+  })
+
+  it('vale igual em qualquer nível: a bandeira é ortogonal à camada', () => {
+    for (const nivel of ['dominio', 'gold', 'fonte', 'origem']) {
+      expect(montarRow(estado({ nivel, produtoDeDados: true })).produto_de_dados).toBe('sim')
+    }
+  })
+
+  it('a coluna da linha original é substituída pelo que a caixa diz', () => {
+    const original: CatalogoRow = { ...base, produto_de_dados: 'sim' }
+    expect(montarRow(estado({ produtoDeDados: false }), original).produto_de_dados).toBe('nao')
+  })
+})
 
 describe('montarRow', () => {
   it('grava nível e tipo de componente como campos independentes', () => {

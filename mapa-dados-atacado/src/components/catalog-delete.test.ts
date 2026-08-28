@@ -17,6 +17,7 @@ const row = (extra: Partial<CatalogoRow> & { nome: string }): CatalogoRow => ({
   centro_de_custo: null,
   observacoes: '',
   associacoes: [],
+  produto_de_dados: '',
   ...extra,
 })
 

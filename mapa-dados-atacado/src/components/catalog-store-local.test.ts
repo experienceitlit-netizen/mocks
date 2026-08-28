@@ -53,6 +53,7 @@ const row = (extra: Partial<CatalogoRow>): CatalogoRow => ({
   centro_de_custo: null,
   observacoes: '',
   associacoes: [],
+  produto_de_dados: '',
   ...extra,
 })
 
@@ -141,6 +142,25 @@ describe('store local — gravação do catálogo', () => {
     expect(
       parseCatalogoRows(destino.gravados[0][1]).find((r) => r.nome === 'Painel de Teste')?.id,
     ).toBe('painel-de-teste')
+  })
+
+  it('a bandeira de produto de dados atravessa o caminho inteiro: linha → CSV → nó', async () => {
+    const destino = destinoEspiao()
+    const store = criarStoreLocal(destino, { catalogo: CSV_CATALOGO, niveis: CSV_NIVEIS })
+    const rows = (await store.lerCatalogo()) ?? []
+
+    const res = await store.salvarCatalogo([
+      ...rows,
+      row({ nome: 'Produto de Teste', produto_de_dados: 'sim' }),
+      row({ nome: 'Comum de Teste', produto_de_dados: 'nao' }),
+    ])
+
+    expect(res.ok).toBe(true)
+    const gravadas = parseCatalogoRows(destino.gravados[0][1])
+    expect(gravadas.find((r) => r.id === 'produto-de-teste')?.produto_de_dados).toBe('sim')
+    const nos = store.grafo()?.nodes ?? []
+    expect(nos.find((n) => n.id === 'produto-de-teste')?.produtoDeDados).toBe(true)
+    expect(nos.find((n) => n.id === 'comum-de-teste')?.produtoDeDados).toBe(false)
   })
 
   it('renomear pelo id não quebra a ligação de quem apontava para o componente', () => {
