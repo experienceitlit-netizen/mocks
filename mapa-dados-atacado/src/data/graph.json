@@ -74,13 +74,27 @@
       "corpo": "Bases regulatórias do BACEN (documentos 3040, 3045 e 3046) com as operações de crédito reguladas do sistema financeiro. Chegam ao banco por transferência corporativa de arquivos e dão ao Atacado visão de endividamento e share dos clientes no mercado de crédito. O uso como insumo do endividamento de mercado foi inferido e precisa ser validado com o negócio."
     },
     {
+      "id": "bando-de-dados-atacado",
+      "nome": "SQL Server 2022",
+      "nivel": "fonte",
+      "tipoComponente": "SQL Server",
+      "dominio": "",
+      "debito": "sim",
+      "status": "transicao",
+      "owner": "Ramiro Costa",
+      "centroDeCusto": "aaad",
+      "descricao": "",
+      "incompleto": false,
+      "produtoDeDados": false
+    },
+    {
       "id": "cash",
       "nome": "Cash",
       "nivel": "broze",
-      "tipoComponente": "Default",
+      "tipoComponente": "Tabela Delta",
       "dominio": "",
-      "debito": "",
-      "status": "",
+      "debito": "avaliar",
+      "status": "producao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
@@ -99,6 +113,20 @@
       "centroDeCusto": null,
       "descricao": "",
       "incompleto": true,
+      "produtoDeDados": false
+    },
+    {
+      "id": "de-para-de-analistas",
+      "nome": "De-para de Analistas",
+      "nivel": "fonte",
+      "tipoComponente": "Excel",
+      "dominio": "",
+      "debito": "sim",
+      "status": "producao",
+      "owner": "Ramiro Costa",
+      "centroDeCusto": "aaad",
+      "descricao": "",
+      "incompleto": false,
       "produtoDeDados": false
     },
     {
@@ -135,7 +163,7 @@
       "id": "recta-fedrl",
       "nome": "RECTA_FEDRL",
       "nivel": "broze",
-      "tipoComponente": "Default",
+      "tipoComponente": "Tabela Delta",
       "dominio": "A definir",
       "debito": "avaliar",
       "status": "investigacao",
@@ -166,8 +194,8 @@
       "nivel": "silver",
       "tipoComponente": "Default",
       "dominio": "",
-      "debito": "",
-      "status": "",
+      "debito": "avaliar",
+      "status": "producao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
@@ -194,8 +222,8 @@
       "nivel": "silver",
       "tipoComponente": "Default",
       "dominio": "",
-      "debito": "",
-      "status": "",
+      "debito": "avaliar",
+      "status": "producao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
@@ -218,15 +246,15 @@
     },
     {
       "id": "webscraping-debentures-com-br",
-      "nome": "webscraping (debentures.com.br)",
+      "nome": "Salesforce",
       "nivel": "fonte",
-      "tipoComponente": "Default",
+      "tipoComponente": "Salesforce",
       "dominio": "",
-      "debito": "",
-      "status": "",
-      "owner": null,
+      "debito": "nao",
+      "status": "producao",
+      "owner": "Ramiro Costa",
       "centroDeCusto": null,
-      "descricao": "",
+      "descricao": "(debentures.com.br)",
       "incompleto": true,
       "produtoDeDados": false
     }
@@ -238,7 +266,22 @@
       "label": "consome"
     },
     {
+      "source": "gdad",
+      "target": "adat",
+      "label": "consome"
+    },
+    {
       "source": "restritivos",
+      "target": "adat",
+      "label": "consome"
+    },
+    {
+      "source": "resultado",
+      "target": "adat",
+      "label": "consome"
+    },
+    {
+      "source": "sanitizacao",
       "target": "adat",
       "label": "consome"
     }
