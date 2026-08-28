@@ -12,5 +12,5 @@ rm-relacionamento;RM (relacionamento);origem;Default;;;;;;;;;;nao
 sistemas-de-produto-a-mapear;sistemas de produto (a mapear);origem;Default;;;;;;;;;;nao
 webscraping-debentures-com-br;Salesforce;fonte;Salesforce;;;(debentures.com.br);nao;producao;Ramiro Costa;;;;nao
 clientes;Clientes;dominio;Default;;;;avaliar;producao;;;;;nao
-de-para-de-analistas;De-para de Analistas;fonte;Excel;;;;sim;producao;Ramiro Costa;aaad;;;nao
+de-para-de-analistas;De-para de Analistas;fonte;API REST;;;;sim;producao;Ramiro Costa;aaad;;;nao
 bando-de-dados-atacado;SQL Server 2022;fonte;SQL Server;;;;sim;transicao;Ramiro Costa;aaad;;;nao

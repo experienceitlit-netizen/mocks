@@ -119,7 +119,7 @@
       "id": "de-para-de-analistas",
       "nome": "De-para de Analistas",
       "nivel": "fonte",
-      "tipoComponente": "Excel",
+      "tipoComponente": "API REST",
       "dominio": "",
       "debito": "sim",
       "status": "producao",
