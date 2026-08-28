@@ -98,6 +98,32 @@
   cursor: default;
 }
 
+/* "Aplicar esta ordem": aparece só quando as faixas foram arrastadas para uma
+   ordem diferente da salva. Em verde, e não no azul dos outros dois, porque é
+   um botão que só existe enquanto há algo pendente de gravar — a cor é o que o
+   faz ser notado aparecendo no meio de uma barra que estava estável. */
+.topbar__ordem {
+  border-color: #3f7a52;
+  background: rgba(122, 216, 154, 0.1);
+  color: #7ad89a;
+}
+
+.topbar__ordem:hover {
+  border-color: #7ad89a;
+  background: rgba(122, 216, 154, 0.18);
+}
+
+.topbar__ordem-msg {
+  pointer-events: none;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: #9fb0c0;
+}
+
 /* fonte de dados: chip do modo ativo + botões de abrir/importar catálogo */
 
 .fonte {

@@ -33,9 +33,18 @@ import {
   FAIXA_PADRAO,
   fatorArrastandoFaixa,
   fatorDaFaixa,
+  geometriaDasFaixas,
   noLimiteDaFaixa,
   topoDaFaixa,
 } from './band-resize'
+import type { ArrasteDeFaixa } from './band-move'
+import {
+  ALTURA_CABECALHO,
+  cabecalhoSob,
+  clampDeslocamento,
+  deslocamentoDe,
+  ordemAoArrastar,
+} from './band-move'
 import { coresDaFaixa } from './band-colors'
 import { BACKGROUND, FUNDO_MARCA, nodeColor } from './palette'
 
@@ -78,6 +87,19 @@ interface GraphProps {
   larguras: ReadonlyMap<string, number>
   /** Largura nova de uma faixa (já vem no intervalo permitido). */
   onLarguraChange(slug: string, fator: number): void
+  /** Deslocamento VERTICAL por nível, em unidades de grafo (band-move.ts).
+   *  Slug ausente = faixa no lugar. */
+  deslocamentos: ReadonlyMap<string, number>
+  /** Sequência nova das colunas DA TELA, quando o arraste horizontal trocou
+   *  duas de lugar. O App a mescla na ordem completa dos níveis. */
+  onOrdemFaixasChange(ordem: readonly string[]): void
+  /** Deslocamento vertical novo de uma faixa (já vem dentro do limite). */
+  onDeslocamentoChange(slug: string, dy: number): void
+  /** Empurrão horizontal temporário da faixa sob a mão; null encerra o gesto e
+   *  a faixa encaixa na posição que ela já ocupa na sequência. */
+  onArrasteFaixaChange(arraste: ArrasteDeFaixa | null): void
+  /** Duplo clique no cabeçalho: esta faixa volta ao lugar (ordem e altura). */
+  onRestaurarFaixa(slug: string): void
   onNodeClick(id: string): void
   /** Clique direito: abre o balão de detalhe (a antiga ação do esquerdo). */
   onNodeRightClick(id: string): void
@@ -103,22 +125,61 @@ function extentDoNo(node: SimNode, r: number): number {
  *  App. */
 const DBLCLICK_BORDA_MS = 350
 
-/** O que está sob o cursor: a borda de um NÓ (que cresce em torno do próprio
- *  centro) ou a borda direita de uma FAIXA de nível (que cresce para a direita,
- *  empurrando as colunas seguintes). Os dois gestos são o mesmo para a mão e
- *  para o olho — mudam só a conta e o eixo. */
+/** O que está sob o cursor. Três alças, e as três se pegam do mesmo jeito —
+ *  press, arrasta, solta; duplo clique restaura:
+ *
+ *    'no'         a borda de um NÓ, que cresce em torno do próprio centro;
+ *    'faixa'      a borda DIREITA de uma faixa, que cresce para a direita e
+ *                 empurra as colunas seguintes;
+ *    'cabecalho'  o TÍTULO de uma faixa, que move a coluna inteira — para o
+ *                 lado reordenando, para cima e para baixo escalonando.
+ *
+ *  Os alvos não se encavalam por construção: o cabeçalho é uma tira no topo da
+ *  faixa, acima do primeiro nó (ver ALTURA_CABECALHO), e a única disputa
+ *  possível é o canto superior direito, onde a borda de redimensionar cruza a
+ *  tira — ali ela ganha, porque é o alvo mais estreito e é testada antes. */
 type AlvoBorda =
   | { tipo: 'no'; id: string; dist: number; theta: number }
   | { tipo: 'faixa'; slug: string; esquerda: number }
+  | { tipo: 'cabecalho'; slug: string }
 
 type Gesto =
   | { tipo: 'no'; id: string; fatorInicial: number; distInicial: number; angulo: number; fator: number }
   | { tipo: 'faixa'; slug: string; esquerda: number; fator: number }
+  | {
+      tipo: 'mover'
+      slug: string
+      /** Distância, em unidades de grafo, entre o ponto agarrado e o CENTRO da
+       *  faixa no fluxo. Mantê-la fixa é o que faz a faixa não saltar quando a
+       *  mão pega o cabeçalho fora do meio dele. */
+      agarreDx: number
+      /** Y do cursor no press e deslocamento que a faixa já tinha: o offset
+       *  vertical é a soma dos dois com o y de agora. */
+      yInicial: number
+      dyInicial: number
+      /** Sequência das colunas como o gesto a vê (a fonte da verdade enquanto
+       *  ele corre; o App recebe uma cópia a cada troca). */
+      ordem: readonly string[]
+      dx: number
+      dy: number
+    }
 
 /** Chave de identidade do alvo, para o duplo clique saber que o segundo press
- *  caiu na MESMA borda que o primeiro. */
+ *  caiu na MESMA alça que o primeiro. */
 function chaveDoAlvo(alvo: AlvoBorda): string {
-  return alvo.tipo === 'no' ? `no:${alvo.id}` : `faixa:${alvo.slug}`
+  if (alvo.tipo === 'no') return `no:${alvo.id}`
+  return `${alvo.tipo}:${alvo.slug}`
+}
+
+/** Cursor do sistema para cada alça. O cabeçalho recebe a mão aberta — o
+ *  desenho universal de "isto se pega e se leva", que é justamente o que o
+ *  distingue das setas de redimensionar das outras duas. */
+function cursorDoAlvo(alvo: AlvoBorda): string {
+  if (alvo.tipo === 'no') return cursorDaBorda(alvo.theta)
+  // A faixa só se estica na horizontal: o cursor de alça leste-oeste, o mesmo
+  // que cursorDaBorda dá para a borda leste de um nó.
+  if (alvo.tipo === 'faixa') return cursorDaBorda(0)
+  return 'grab'
 }
 
 // A geometria das faixas (largura padrão, corredor e folgas) mora em
@@ -141,6 +202,11 @@ export default function Graph({
   onEscalaChange,
   larguras,
   onLarguraChange,
+  deslocamentos,
+  onOrdemFaixasChange,
+  onDeslocamentoChange,
+  onArrasteFaixaChange,
+  onRestaurarFaixa,
   onNodeClick,
   onNodeRightClick,
   onNodeHover,
@@ -319,14 +385,50 @@ export default function Graph({
     [fixedLayout, levelColumns, pontoNoCanvas],
   )
 
-  /** A borda sob o cursor, seja de nó ou de faixa. O NÓ tem prioridade: ele é o
-   *  alvo menor e está desenhado por cima; a borda da faixa passa longe de
-   *  qualquer nó (95 unidades do centro da coluna), então na prática os dois
-   *  nunca disputam o mesmo pixel. */
+  /** Faixa cujo CABEÇALHO está sob o ponto — a alça de MOVER a coluna.
+   *
+   *  A conta é feita em unidades de GRAFO, e não em px de tela como a da borda,
+   *  porque a alça é o desenho: o título da faixa também é escrito em unidades
+   *  de grafo, então a área que pega é exatamente a que se vê, em qualquer
+   *  zoom. Some junto com as faixas quando "Mostrar níveis" está desligado —
+   *  não há cabeçalho a pegar no que não está desenhado (a ordem e o
+   *  deslocamento continuam valendo; eles são do LAYOUT, a faixa é só o desenho
+   *  que os mostra, a mesma regra da largura). */
+  const alvoDoCabecalho = useCallback(
+    (clientX: number, clientY: number): AlvoBorda | null => {
+      const fg = fgRef.current
+      const p = pontoNoCanvas(clientX, clientY)
+      if (!fg || p === null || !fixedLayout || levelColumns === null) return null
+      const g = fg.screen2GraphCoords(p.x, p.y)
+      const i = cabecalhoSob(
+        levelColumns.map((col) => ({
+          slug: col.slug,
+          esquerda: bordaEsquerda(col),
+          direita: bordaDireita(col),
+          topo: topoDaFaixa(col),
+        })),
+        g,
+      )
+      return i < 0 ? null : { tipo: 'cabecalho', slug: levelColumns[i].slug }
+    },
+    [fixedLayout, levelColumns, pontoNoCanvas],
+  )
+
+  /** A alça sob o cursor, na ordem em que os alvos disputam o pixel.
+   *
+   *  O NÓ primeiro: é o alvo menor e está desenhado por cima; a borda da faixa
+   *  passa longe de qualquer nó (95 unidades do centro da coluna), então na
+   *  prática os dois nunca disputam o mesmo pixel. Depois a BORDA da faixa, que
+   *  é uma linha de 12 px; e por último o CABEÇALHO, que é a área grande. A
+   *  ordem resolve a única sobreposição real — o canto superior direito da
+   *  faixa, onde a borda cruza a tira do cabeçalho: ali quem manda é a borda,
+   *  e o cursor de redimensionar avisa disso antes do press. */
   const alvoDaBorda = useCallback(
     (clientX: number, clientY: number): AlvoBorda | null =>
-      alvoDoNo(clientX, clientY) ?? alvoDaFaixa(clientX, clientY),
-    [alvoDoNo, alvoDaFaixa],
+      alvoDoNo(clientX, clientY) ??
+      alvoDaFaixa(clientX, clientY) ??
+      alvoDoCabecalho(clientX, clientY),
+    [alvoDoNo, alvoDaFaixa, alvoDoCabecalho],
   )
 
   /** Centro do nó em px de tela (mesma origem de alvoDaBorda) — relido a cada
@@ -368,6 +470,12 @@ export default function Graph({
     onEscalaChange,
     larguras,
     onLarguraChange,
+    levelColumns,
+    deslocamentos,
+    onOrdemFaixasChange,
+    onDeslocamentoChange,
+    onArrasteFaixaChange,
+    onRestaurarFaixa,
   })
   vivoRef.current = {
     alvoDaBorda,
@@ -377,6 +485,12 @@ export default function Graph({
     onEscalaChange,
     larguras,
     onLarguraChange,
+    levelColumns,
+    deslocamentos,
+    onOrdemFaixasChange,
+    onDeslocamentoChange,
+    onArrasteFaixaChange,
+    onRestaurarFaixa,
   }
 
   useEffect(() => {
@@ -421,10 +535,10 @@ export default function Graph({
       // pela tela — o gesto todo ficaria com o mapa "pintado" de azul.
       if (e.type === 'mousedown') e.preventDefault()
 
-      // DUPLO CLIQUE NA BORDA = restaura o tamanho daquele alvo (o nó ou a
-      // coluna). Fica aqui, e não no onNodeClick do App, porque o press na
-      // borda nunca chega à lib: o duplo clique no MIOLO de um nó continua
-      // sendo "entrar em foco", como sempre foi.
+      // DUPLO CLIQUE NA ALÇA = restaura aquele alvo (o tamanho do nó, a largura
+      // da coluna, o lugar da faixa). Fica aqui, e não no onNodeClick do App,
+      // porque o press na alça nunca chega à lib: o duplo clique no MIOLO de um
+      // nó continua sendo "entrar em foco", como sempre foi.
       const agora = performance.now()
       const chave = chaveDoAlvo(alvo)
       const ultimo = ultimoPressRef.current
@@ -433,7 +547,8 @@ export default function Graph({
         ultimoPressRef.current = { chave: '', t: 0 }
         bordaRef.current = alvo
         if (alvo.tipo === 'no') vivoRef.current.onEscalaChange(alvo.id, FATOR_PADRAO)
-        else vivoRef.current.onLarguraChange(alvo.slug, FAIXA_PADRAO)
+        else if (alvo.tipo === 'faixa') vivoRef.current.onLarguraChange(alvo.slug, FAIXA_PADRAO)
+        else vivoRef.current.onRestaurarFaixa(alvo.slug)
         return
       }
 
@@ -448,16 +563,40 @@ export default function Graph({
           fator: fatorInicial,
         }
         cursor(cursorDaBorda(alvo.theta))
-      } else {
+      } else if (alvo.tipo === 'faixa') {
         gestoRef.current = {
           tipo: 'faixa',
           slug: alvo.slug,
           esquerda: alvo.esquerda,
           fator: fatorDaFaixa(vivoRef.current.larguras, alvo.slug),
         }
-        // A faixa só se estica na horizontal: um cursor de alça na direção
-        // leste-oeste, o mesmo que cursorDaBorda dá para a borda leste de um nó.
-        cursor(cursorDaBorda(0))
+        cursor(cursorDoAlvo(alvo))
+      } else {
+        // MOVER A FAIXA. O que se guarda no press é o AGARRE: a distância entre
+        // o ponto pego e o centro da faixa no fluxo. Guardando isso, a faixa
+        // continua sob o mesmo ponto do cabeçalho durante o gesto inteiro, em
+        // vez de dar um salto para centrar-se no cursor.
+        const fg = fgRef.current
+        const colunas = vivoRef.current.levelColumns
+        const p = vivoRef.current.pontoNoCanvas(e.clientX, e.clientY)
+        if (!fg || colunas === null || p === null) return
+        const ordem = colunas.map((c) => c.slug)
+        const geoms = geometriaDasFaixas(ordem, vivoRef.current.larguras)
+        const i = ordem.indexOf(alvo.slug)
+        if (i < 0) return
+        const g = fg.screen2GraphCoords(p.x, p.y)
+        const dyInicial = deslocamentoDe(vivoRef.current.deslocamentos, alvo.slug)
+        gestoRef.current = {
+          tipo: 'mover',
+          slug: alvo.slug,
+          agarreDx: g.x - geoms[i].x,
+          yInicial: g.y,
+          dyInicial,
+          ordem,
+          dx: 0,
+          dy: dyInicial,
+        }
+        cursor('grabbing')
       }
     }
 
@@ -480,6 +619,32 @@ export default function Graph({
         vivoRef.current.onLarguraChange(gesto.slug, gesto.fator)
         return
       }
+      if (gesto.tipo === 'mover') {
+        const fg = fgRef.current
+        const p = vivoRef.current.pontoNoCanvas(e.clientX, e.clientY)
+        if (!fg || p === null) return
+        const g = fg.screen2GraphCoords(p.x, p.y)
+        // Onde a faixa está SENDO DESENHADA: o cursor menos o agarre. É este
+        // centro — o que o olho vê — que decide as trocas, não a posição que a
+        // faixa ocupa na sequência.
+        const centro = g.x - gesto.agarreDx
+        const proxima = ordemAoArrastar(gesto.ordem, vivoRef.current.larguras, gesto.slug, centro)
+        if (proxima !== gesto.ordem) {
+          gesto.ordem = proxima
+          vivoRef.current.onOrdemFaixasChange(proxima)
+        }
+        // O empurrão é recalculado DEPOIS da troca: a faixa acabou de mudar de
+        // lugar na sequência, e o que a mantém colada ao cursor é a diferença
+        // para o lugar NOVO.
+        const geoms = geometriaDasFaixas(gesto.ordem, vivoRef.current.larguras)
+        const i = geoms.findIndex((geom) => geom.slug === gesto.slug)
+        gesto.dx = i < 0 ? 0 : centro - geoms[i].x
+        gesto.dy = clampDeslocamento(gesto.dyInicial + (g.y - gesto.yInicial))
+        cursor('grabbing')
+        vivoRef.current.onArrasteFaixaChange({ slug: gesto.slug, dx: gesto.dx })
+        vivoRef.current.onDeslocamentoChange(gesto.slug, gesto.dy)
+        return
+      }
       const medida = medirDoCentro(gesto.id, e)
       if (medida === null) return
       gesto.angulo = medida.angulo
@@ -494,8 +659,14 @@ export default function Graph({
       if (e.type !== 'mouseup') return
       clickNossoRef.current = pressNossoRef.current
       pressNossoRef.current = false
-      if (gestoRef.current === null) return
+      const gesto = gestoRef.current
+      if (gesto === null) return
       gestoRef.current = null
+      // Fim do arraste da faixa: o empurrão temporário morre e ela ENCAIXA na
+      // posição que já ocupa na sequência — nunca sobreposta, nunca deixando
+      // buraco, porque quem a posiciona volta a ser a geometria do fluxo. A
+      // ordem e o deslocamento vertical ficam: eles são o resultado do gesto.
+      if (gesto.tipo === 'mover') vivoRef.current.onArrasteFaixaChange(null)
       cursor('')
     }
 
@@ -523,7 +694,7 @@ export default function Graph({
         return
       }
       bordaRef.current = alvo
-      cursor(cursorDaBorda(alvo.tipo === 'no' ? alvo.theta : 0))
+      cursor(cursorDoAlvo(alvo))
     }
 
     const aoSair = () => {
@@ -566,8 +737,8 @@ export default function Graph({
   useEffect(() => {
     const borda = bordaRef.current
     if (borda === null) return
-    if (borda.tipo === 'faixa') {
-      // "Mostrar níveis" desligado, ou a coluna sumiu: não há borda a oferecer.
+    if (borda.tipo === 'faixa' || borda.tipo === 'cabecalho') {
+      // "Mostrar níveis" desligado, ou a coluna sumiu: não há alça a oferecer.
       if (levelColumns === null || !levelColumns.some((c) => c.slug === borda.slug)) {
         bordaRef.current = null
       }
@@ -602,10 +773,14 @@ export default function Graph({
       const tops = levelColumns.map(topoDaFaixa)
       const gesto = gestoRef.current
       const borda = bordaRef.current
+      /** Faixa sob a mão neste instante (o gesto de mover), ou null. */
+      const movendo = gesto !== null && gesto.tipo === 'mover' ? gesto.slug : null
       ctx.save()
-      levelColumns.forEach((col, i) => {
+
+      const desenharFaixa = (col: FaixaAjustada, i: number) => {
         const top = tops[i]
         const height = baseDaFaixa(col) - top
+        const arrastada = col.slug === movendo
         // Cores do próprio nível quando ele as declara, já com o alpha que as
         // deixa conviver com o tema escuro; sem cor, o neutro de sempre.
         const cores = coresDaFaixa(col)
@@ -613,9 +788,30 @@ export default function Graph({
         ctx.roundRect(bordaEsquerda(col), top, col.largura, height, BAND_RADIUS)
         ctx.fillStyle = cores.fill
         ctx.fill()
-        ctx.strokeStyle = cores.stroke
-        ctx.lineWidth = 1 / scale
+        // A faixa em movimento é a única que pode passar por cima de outra, e
+        // um contorno mais forte é o que diz que ela está POR CIMA — o mesmo
+        // "descolar da mesa" que uma aba arrastada tem no navegador.
+        ctx.strokeStyle = arrastada ? 'rgba(255,255,255,0.55)' : cores.stroke
+        ctx.lineWidth = (arrastada ? 2 : 1) / scale
         ctx.stroke()
+
+        // AFFORDANCE da ALÇA: o cabeçalho acende quando o cursor entra nele
+        // (e continua aceso durante o arraste). O cursor de mão já disse que
+        // ali se pega; esta tira diz o TAMANHO do que se pega — e, sobretudo,
+        // que o resto da faixa não é alça, é o pan do mapa.
+        if (arrastada || (gesto === null && borda?.tipo === 'cabecalho' && borda.slug === col.slug)) {
+          ctx.save()
+          ctx.beginPath()
+          ctx.roundRect(bordaEsquerda(col), top, col.largura, ALTURA_CABECALHO, [
+            BAND_RADIUS,
+            BAND_RADIUS,
+            0,
+            0,
+          ])
+          ctx.fillStyle = arrastada ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.07)'
+          ctx.fill()
+          ctx.restore()
+        }
 
         // AFFORDANCE da borda da faixa, pela mesma lógica da borda do nó: o
         // cursor de alça já diz que ali se redimensiona, e a marca diz ONDE.
@@ -673,6 +869,11 @@ export default function Graph({
         // Chevron no corredor entre esta faixa e a anterior, no centro
         // vertical comum (as colunas são centradas em y=0).
         if (i === 0) return
+        // Enquanto uma faixa está no ar, os corredores que ela toca não
+        // existem — ela está sobreposta a alguém. O chevron marca um corredor;
+        // sem corredor, ele espera o gesto acabar em vez de apontar para o
+        // meio de uma faixa.
+        if (arrastada || levelColumns[i - 1].slug === movendo) return
         // O chevron mora no MEIO DO CORREDOR — entre onde a faixa anterior
         // termina e onde esta começa —, não no meio dos centros: com larguras
         // diferentes as duas contas divergem, e é o corredor que ele marca.
@@ -686,7 +887,17 @@ export default function Graph({
         ctx.lineCap = 'round'
         ctx.lineJoin = 'round'
         ctx.stroke()
+      }
+
+      // A faixa em movimento é desenhada POR ÚLTIMO, para ficar por cima das
+      // que ela cruza — as outras já se acomodaram no lugar novo e ela ainda
+      // está na mão. Fora do gesto a ordem é a de sempre, da esquerda para a
+      // direita.
+      levelColumns.forEach((col, i) => {
+        if (col.slug !== movendo) desenharFaixa(col, i)
       })
+      const iArrastada = movendo === null ? -1 : levelColumns.findIndex((c) => c.slug === movendo)
+      if (iArrastada >= 0) desenharFaixa(levelColumns[iArrastada], iArrastada)
       ctx.restore()
     },
     [levelColumns],

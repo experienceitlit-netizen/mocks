@@ -143,16 +143,17 @@ interface LegendProps {
   /** Modo edição ativo (há store): a dica do atalho de exclusão só aparece
    *  onde a tecla faz alguma coisa. */
   podeExcluir?: boolean
-  /** Quantos nós estão com o tamanho ajustado à mão nesta sessão. Zero esconde
-   *  o botão de restaurar: ele não tem o que fazer. */
-  redimensionados?: number
-  onRestaurarTamanhos?(): void
+  /** Quantos ajustes de layout estão de pé nesta sessão — tamanhos de nó,
+   *  larguras de faixa, faixas deslocadas e a ordem arrastada. Zero esconde o
+   *  botão de restaurar: ele não tem o que fazer. */
+  ajustes?: number
+  onRestaurarLayout?(): void
 }
 
 export default function Legend({
   podeExcluir = false,
-  redimensionados = 0,
-  onRestaurarTamanhos,
+  ajustes = 0,
+  onRestaurarLayout,
 }: LegendProps) {
   return (
     <div className="legend" aria-label="Legenda do grafo">
@@ -229,18 +230,28 @@ export default function Legend({
         <li className="legend__hint legend__hint--last">
           arraste a borda direita da faixa = largura da coluna
         </li>
+        {/* O cabeçalho é a ALÇA da faixa (o corpo continua sendo o pan do
+            mapa), e os dois eixos do arraste dizem coisas diferentes — ver
+            band-move.ts. Duas linhas curtas, como as de cima: `.legend li` é
+            nowrap. */}
         <li className="legend__hint legend__hint--last">
-          duplo clique na borda restaura · na Força, destaque antes
+          arraste o título da faixa = mover a coluna (com os nós)
+        </li>
+        <li className="legend__hint legend__hint--last">
+          para o lado reordena · para cima e para baixo escalona
+        </li>
+        <li className="legend__hint legend__hint--last">
+          duplo clique na borda ou no título restaura · na Força, destaque antes
         </li>
         {podeExcluir && (
           <li className="legend__hint legend__hint--last">
             Delete (ou Backspace) no nó em evidência = excluir · Enter confirma
           </li>
         )}
-        {redimensionados > 0 && onRestaurarTamanhos && (
+        {ajustes > 0 && onRestaurarLayout && (
           <li className="legend__hint legend__hint--last">
-            <button type="button" className="legend__restaurar" onClick={onRestaurarTamanhos}>
-              ↺ restaurar os tamanhos ({redimensionados})
+            <button type="button" className="legend__restaurar" onClick={onRestaurarLayout}>
+              ↺ restaurar o layout ({ajustes})
             </button>
           </li>
         )}

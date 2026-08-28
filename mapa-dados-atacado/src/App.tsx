@@ -39,9 +39,21 @@ import type { Referencia } from './components/catalog-delete'
 import { removerComponente } from './components/catalog-delete'
 import type { AlvoExclusao } from './components/delete-shortcut'
 import { alvoDoAtalho, ehCampoDeTexto, ehTeclaExcluir } from './components/delete-shortcut'
-import type { CatalogoRow } from './components/catalog-api'
+import type { CatalogoRow, NivelApiRow } from './components/catalog-api'
 import { comFator, podadas } from './components/node-resize'
 import { aplicarLarguras, comFatorDaFaixa, podadasPorSlug } from './components/band-resize'
+import type { ArrasteDeFaixa } from './components/band-move'
+import {
+  aplicarDeslocamentos,
+  basesVerticais,
+  comArraste,
+  comDeslocamento,
+  niveisReordenados,
+  ordemAtualizada,
+  ordemMesclada,
+  ordemRestaurada,
+  reordenarColunas,
+} from './components/band-move'
 import FonteBar from './components/FonteBar'
 import { useFonteCatalogo } from './components/useFonteCatalogo'
 import './App.css'
@@ -256,12 +268,65 @@ function App() {
     setLarguras((prev) => comFatorDaFaixa(prev, slug, fator))
   }, [])
 
-  /** Quantos ajustes de tamanho estão de pé (nós + colunas): é o que a legenda
-   *  conta e o que o botão de restaurar desfaz, de uma vez só. */
-  const redimensionados = escalas.size + larguras.size
-  const restaurarEscalas = useCallback(() => {
+  // Faixas MOVIDAS pelo cabeçalho (ver band-move.ts), na mesma natureza de
+  // sessão do tamanho e da largura. São dois estados porque os dois eixos do
+  // gesto querem dizer coisas diferentes: a ORDEM é a sequência das colunas
+  // (o eixo com fluxo) e o DESLOCAMENTO é um offset vertical por nível.
+  //
+  // A ordem guarda a sequência COMPLETA dos níveis, e não só a das colunas na
+  // tela: entrar em foco esconde colunas, e uma ordem que só conhecesse o
+  // visível perderia metade do arranjo no caminho. null = a ordem do catálogo,
+  // e é esse null que faz o botão de aplicar aparecer só quando há o que gravar.
+  const [ordemSessao, setOrdemSessao] = useState<readonly string[] | null>(null)
+  const [deslocamentos, setDeslocamentos] = useState<ReadonlyMap<string, number>>(() => new Map())
+  // Empurrão horizontal da faixa sob a mão, enquanto o gesto corre. NÃO é
+  // layout: é o que a mantém colada ao cursor depois de as outras já terem se
+  // acomodado, e é descartado no soltar (ver ArrasteDeFaixa).
+  const [arrasteFaixa, setArrasteFaixa] = useState<ArrasteDeFaixa | null>(null)
+
+  /** Ordem SALVA dos níveis (a do niveis.csv): a régua contra a qual a ordem de
+   *  sessão se mede — e contra a qual ela desaparece quando as duas coincidem. */
+  const slugsSalvos = useMemo(
+    () => [...niveis].sort((a, b) => a.ordem - b.ordem).map((nv) => nv.slug),
+    [niveis],
+  )
+
+  const alterarOrdemFaixas = useCallback(
+    // O gesto só conhece as colunas na tela; a sequência inteira dos níveis
+    // recebe essa reordenação nas posições correspondentes (ver ordemMesclada).
+    (ordemDasColunas: readonly string[]) => {
+      setOrdemSessao((prev) => ordemMesclada(prev ?? slugsSalvos, ordemDasColunas))
+    },
+    [slugsSalvos],
+  )
+  const alterarDeslocamento = useCallback((slug: string, dy: number) => {
+    setDeslocamentos((prev) => comDeslocamento(prev, slug, dy))
+  }, [])
+  const alterarArrasteFaixa = useCallback((arraste: ArrasteDeFaixa | null) => {
+    setArrasteFaixa((prev) => comArraste(prev, arraste))
+  }, [])
+  /** Duplo clique no cabeçalho: esta faixa volta ao lugar — no deslocamento
+   *  vertical e na ordem. O irmão do duplo clique na borda, que restaura o
+   *  tamanho. */
+  const restaurarFaixa = useCallback(
+    (slug: string) => {
+      setDeslocamentos((prev) => comDeslocamento(prev, slug, 0))
+      setOrdemSessao((prev) => (prev === null ? null : ordemRestaurada(slugsSalvos, prev, slug)))
+    },
+    [slugsSalvos],
+  )
+
+  /** Quantos ajustes de layout estão de pé (tamanhos de nó, larguras de coluna,
+   *  faixas deslocadas e a ordem de sessão, que conta como um): é o que a
+   *  legenda mostra e o que o botão de restaurar desfaz, de uma vez só. */
+  const ajustes =
+    escalas.size + larguras.size + deslocamentos.size + (ordemSessao === null ? 0 : 1)
+  const restaurarLayout = useCallback(() => {
     setEscalas((prev) => (prev.size === 0 ? prev : new Map()))
     setLarguras((prev) => (prev.size === 0 ? prev : new Map()))
+    setDeslocamentos((prev) => (prev.size === 0 ? prev : new Map()))
+    setOrdemSessao(null)
+    setArrasteFaixa(null)
   }, [])
 
   const focusId = focusPath.length > 0 ? focusPath[focusPath.length - 1] : null
@@ -319,6 +384,63 @@ function App() {
     const novo = store.grafo()
     if (novo !== null) setGrafoLocal(novo)
   }, [store])
+
+  // --- aplicar a ordem das faixas ---
+  // A ordem arrastada é de sessão, e é isso que a torna útil para explorar. Mas
+  // quando a disposição nova é a boa — o caso real é demonstrá-la numa reunião
+  // e o pessoal aprovar —, ela precisa virar a ordem de verdade. É o MESMO
+  // caminho do modal de níveis: a lista completa vai pelo store, o backend
+  // grava o niveis.csv e regenera o grafo; aqui só a coluna `ordem` muda, e ela
+  // muda por permutação (ver niveisReordenados), preservando a numeração que o
+  // usuário escreveu.
+  const [salvandoOrdem, setSalvandoOrdem] = useState(false)
+  const [ordemMsg, setOrdemMsg] = useState<string | null>(null)
+  const ordemMsgTimer = useRef(0)
+  useEffect(() => () => window.clearTimeout(ordemMsgTimer.current), [])
+
+  const aplicarOrdemDasFaixas = useCallback(async () => {
+    if (store === null || ordemSessao === null || salvandoOrdem) return
+    setSalvandoOrdem(true)
+    setOrdemMsg(null)
+    try {
+      // Base FRESCA dos níveis, como o modal e a exclusão fazem: um save
+      // anterior nesta sessão não recarrega a página.
+      const atuais = await store.lerNiveis()
+      if (atuais === null) {
+        setOrdemMsg('Não foi possível ler os níveis para gravar a ordem.')
+        return
+      }
+      // Payload com a mesma regra do modal: o slug preserva a identidade do
+      // nível e cor vazia não vai (é assim que o backend entende "padrão").
+      const rows: NivelApiRow[] = niveisReordenados(
+        atuais.map((r) => ({ ...r, slug: r.slug ?? '' })),
+        ordemSessao,
+      ).map((r) => {
+        const row: NivelApiRow = { titulo: r.titulo, ordem: r.ordem }
+        if (r.slug !== '') row.slug = r.slug
+        if (r.corFundo) row.corFundo = r.corFundo
+        if (r.corBorda) row.corBorda = r.corBorda
+        return row
+      })
+      const res = await store.salvarNiveis(rows)
+      if (res.ok) {
+        // A ordem de sessão NÃO é limpa aqui: ela some sozinha quando o grafo
+        // novo chega e passa a dizer a mesma coisa (ver o efeito sobre
+        // slugsSalvos). Limpar à mão faria as faixas piscarem na ordem antiga
+        // no intervalo entre o save e o HMR.
+        refreshCatalogo()
+        setOrdemMsg('✓ Ordem das faixas salva no niveis.csv.')
+        window.clearTimeout(ordemMsgTimer.current)
+        ordemMsgTimer.current = window.setTimeout(() => setOrdemMsg(null), 4000)
+      } else {
+        setOrdemMsg(res.errors.join(' · '))
+      }
+    } catch (err) {
+      setOrdemMsg(err instanceof Error ? err.message : 'Falha ao salvar a ordem.')
+    } finally {
+      setSalvandoOrdem(false)
+    }
+  }, [store, ordemSessao, salvandoOrdem, refreshCatalogo])
 
   // Cada abertura ganha uma key nova: o form monta sempre zerado, mesmo que o
   // alvo troque com o modal já aberto (nada herda do uso anterior).
@@ -387,13 +509,36 @@ function App() {
       vista === 'niveis' ? buildLineage(focusId, nodes, links, niveis) : null,
     [focusId, vista, nodes, links, niveis],
   )
+  // Y de origem de cada nó, capturado junto com a linhagem e ANTES de qualquer
+  // deslocamento: aplicarDeslocamentos escreve o y absoluto e precisa da base
+  // intacta (ver basesVerticais). Memo separado, dependente só de lineageBase,
+  // porque os nós são mutados no lugar — reler n.y depois do primeiro arraste
+  // devolveria o y já deslocado, e o offset se acumularia a cada quadro.
+  const yBase = useMemo(
+    () => basesVerticais(lineageBase?.graph.nodes ?? []),
+    [lineageBase],
+  )
+
   const lineage = useMemo(() => {
     if (lineageBase === null) return null
+    // Os três passos do layout de sessão, nesta ordem: a ORDEM decide a
+    // sequência das colunas, a LARGURA de cada uma decide onde a seguinte
+    // começa, e o DESLOCAMENTO entra por último, como offset sobre o resultado
+    // — assim redimensionar uma coluna qualquer não come o deslocamento de
+    // quem já foi movido.
+    const ordenadas = reordenarColunas(lineageBase.columns, ordemSessao)
+    const ajustadas = aplicarLarguras(ordenadas, lineageBase.graph.nodes, larguras)
     return {
       ...lineageBase,
-      columns: aplicarLarguras(lineageBase.columns, lineageBase.graph.nodes, larguras),
+      columns: aplicarDeslocamentos(
+        ajustadas,
+        lineageBase.graph.nodes,
+        yBase,
+        deslocamentos,
+        arrasteFaixa,
+      ),
     }
-  }, [lineageBase, larguras])
+  }, [lineageBase, ordemSessao, larguras, yBase, deslocamentos, arrasteFaixa])
 
   const graphData = lineage ? lineage.graph : visibleData
   const shownIds = lineage ? lineage.ids : visibleIds
@@ -520,11 +665,23 @@ function App() {
     setEscalas((prev) => podadas(prev, (id) => nodesById.has(id)))
   }, [nodesById])
 
-  // Nível excluído no modal "≣ Níveis": a largura ajustada dele vai junto.
+  // Nível excluído no modal "≣ Níveis": a largura e o deslocamento ajustados
+  // dele vão junto.
   useEffect(() => {
     const slugs = new Set(niveis.map((nv) => nv.slug))
     setLarguras((prev) => podadasPorSlug(prev, (slug) => slugs.has(slug)))
+    setDeslocamentos((prev) => podadasPorSlug(prev, (slug) => slugs.has(slug)))
   }, [niveis])
+
+  // A ordem de sessão se acerta com a ordem SALVA sempre que o catálogo muda:
+  // nível excluído sai, nível novo entra no fim, e — o caso que interessa — ela
+  // SOME quando as duas passam a ser a mesma. É o que faz o "aplicar esta
+  // ordem" se normalizar sozinho: gravado o niveis.csv, o grafo volta pelo HMR
+  // com a ordem nova, a de sessão vira redundante e desaparece daqui, levando
+  // junto o botão. Ver ordemAtualizada.
+  useEffect(() => {
+    setOrdemSessao((prev) => ordemAtualizada(slugsSalvos, prev))
+  }, [slugsSalvos])
 
   // "Ver mapa completo": sai do foco e mostra o inventário — todos os
   // componentes nas colunas dos seus níveis. O switch Força leva ao grafo livre.
@@ -796,6 +953,11 @@ function App() {
         onEscalaChange={alterarEscala}
         larguras={larguras}
         onLarguraChange={alterarLargura}
+        deslocamentos={deslocamentos}
+        onOrdemFaixasChange={alterarOrdemFaixas}
+        onDeslocamentoChange={alterarDeslocamento}
+        onArrasteFaixaChange={alterarArrasteFaixa}
+        onRestaurarFaixa={restaurarFaixa}
         assocOn={assocOn}
         onNodeClick={handleNodeClick}
         onNodeRightClick={handleNodeRightClick}
@@ -854,7 +1016,30 @@ function App() {
             >
               ≣ Níveis
             </button>
+            {/* Fica AQUI, junto do "≣ Níveis", e não na legenda ao lado do
+                "restaurar o layout": os dois botões desta ponta da barra gravam
+                no catálogo, e a legenda só desfaz o que é da sessão. Misturar
+                um save de arquivo com os controles de "nada disso persiste"
+                borraria justamente a distinção em que a feature inteira se
+                apoia. Aparece só quando há ordem de sessão — sem ela, não há o
+                que aplicar. */}
+            {ordemSessao !== null && (
+              <button
+                type="button"
+                className="topbar__new topbar__ordem"
+                disabled={salvandoOrdem}
+                title="Gravar a ordem atual das faixas na coluna ordem do niveis.csv"
+                onClick={() => void aplicarOrdemDasFaixas()}
+              >
+                {salvandoOrdem ? 'Salvando…' : '✓ Aplicar esta ordem'}
+              </button>
+            )}
           </>
+        )}
+        {ordemMsg !== null && (
+          <span className="topbar__ordem-msg" role="status">
+            {ordemMsg}
+          </span>
         )}
         <FonteBar fonte={fonte} />
         {aba === 'mapa' && (
@@ -921,8 +1106,8 @@ function App() {
         <PainelRecolhivel titulo="Legenda" chave="mapa:legenda-recolhida" posicao="inferior">
           <Legend
             podeExcluir={catalogRows !== null}
-            redimensionados={redimensionados}
-            onRestaurarTamanhos={restaurarEscalas}
+            ajustes={ajustes}
+            onRestaurarLayout={restaurarLayout}
           />
         </PainelRecolhivel>
       )}
