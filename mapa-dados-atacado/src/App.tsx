@@ -23,6 +23,7 @@ import type {
 import {
   debitoDe,
   derivarNiveis,
+  ehProdutoDeDados,
   isReal,
   linkEndId,
   nivelDe,
@@ -38,6 +39,8 @@ import { removerComponente } from './components/catalog-delete'
 import type { AlvoExclusao } from './components/delete-shortcut'
 import { alvoDoAtalho, ehCampoDeTexto, ehTeclaExcluir } from './components/delete-shortcut'
 import type { CatalogoRow } from './components/catalog-api'
+import { comFator, podadas } from './components/node-resize'
+import { aplicarLarguras, comFatorDaFaixa, podadasPorSlug } from './components/band-resize'
 import FonteBar from './components/FonteBar'
 import { useFonteCatalogo } from './components/useFonteCatalogo'
 import './App.css'
@@ -227,6 +230,7 @@ function App() {
   const [selDebitos, setSelDebitos] = useState<ReadonlySet<Debito>>(new Set())
   const [selNiveis, setSelNiveis] = useState<ReadonlySet<string>>(new Set())
   const [somenteSemOwner, setSomenteSemOwner] = useState(false)
+  const [somenteProdutos, setSomenteProdutos] = useState(false)
 
   const [focusPath, setFocusPath] = useState<string[]>(() => readInitialFocusPath(ENTRADA_INICIAL))
   const [depth, setDepth] = useState<number>(readUrlDepth)
@@ -236,6 +240,34 @@ function App() {
   /** "Mostrar associações": desligado, o grafo fica só com os nós — as arestas
    *  do nó em destaque (hover, clique fixado ou balão) continuam visíveis. */
   const [assocOn, setAssocOn] = useState(true)
+
+  // Tamanho ajustado à mão, arrastando a borda do nó (ver node-resize.ts).
+  // Estado de SESSÃO e nada além disso: não vai para o CSV, nem para a URL, nem
+  // para localStorage — o mapa sempre ABRE no tamanho que os dados calculam
+  // (grau + bandeira de produto), e um F5 desfaz todos os ajustes de uma vez.
+  // O que o usuário pediu é uma lente de conversa ("deixa esse aí maior enquanto
+  // eu explico"), não um atributo do componente.
+  const [escalas, setEscalas] = useState<ReadonlyMap<string, number>>(() => new Map())
+  const alterarEscala = useCallback((id: string, fator: number) => {
+    setEscalas((prev) => comFator(prev, id, fator))
+  }, [])
+
+  // Largura das FAIXAS de nível, arrastando a borda direita delas — mesma
+  // natureza de sessão do tamanho dos nós (ver band-resize.ts). Note que a
+  // largura vale mesmo com "Mostrar níveis" desligado: ela é uma propriedade do
+  // LAYOUT das colunas, e a faixa é só o desenho que a mostra.
+  const [larguras, setLarguras] = useState<ReadonlyMap<string, number>>(() => new Map())
+  const alterarLargura = useCallback((slug: string, fator: number) => {
+    setLarguras((prev) => comFatorDaFaixa(prev, slug, fator))
+  }, [])
+
+  /** Quantos ajustes de tamanho estão de pé (nós + colunas): é o que a legenda
+   *  conta e o que o botão de restaurar desfaz, de uma vez só. */
+  const redimensionados = escalas.size + larguras.size
+  const restaurarEscalas = useCallback(() => {
+    setEscalas((prev) => (prev.size === 0 ? prev : new Map()))
+    setLarguras((prev) => (prev.size === 0 ? prev : new Map()))
+  }, [])
 
   const focusId = focusPath.length > 0 ? focusPath[focusPath.length - 1] : null
 
@@ -348,11 +380,25 @@ function App() {
   )
 
   // Vista em níveis: linhagem montante do componente focado, em colunas.
-  const lineage = useMemo(
+  //
+  // Em DOIS memos de propósito. O primeiro monta a linhagem, que é caro e cria
+  // nós novos; o segundo só recoloca colunas e nós segundo as larguras
+  // ajustadas à mão. Se as larguras entrassem no primeiro, cada quadro do
+  // arraste criaria um `graph` novo — e o Graph, vendo os dados trocarem, se
+  // re-enquadraria sozinho no meio do gesto. Aqui `lineage.graph` mantém a
+  // identidade e só as colunas mudam.
+  const lineageBase = useMemo(
     () =>
       vista === 'niveis' ? buildLineage(focusId, nodes, links, niveis) : null,
     [focusId, vista, nodes, links, niveis],
   )
+  const lineage = useMemo(() => {
+    if (lineageBase === null) return null
+    return {
+      ...lineageBase,
+      columns: aplicarLarguras(lineageBase.columns, lineageBase.graph.nodes, larguras),
+    }
+  }, [lineageBase, larguras])
 
   const graphData = lineage ? lineage.graph : visibleData
   const shownIds = lineage ? lineage.ids : visibleIds
@@ -376,6 +422,7 @@ function App() {
     selDebitos.size > 0 ||
     selNiveis.size > 0 ||
     somenteSemOwner ||
+    somenteProdutos ||
     normQuery.length > 0
 
   const dimmedIds = useMemo(() => {
@@ -406,6 +453,7 @@ function App() {
         if (selDominios.size > 0 && !selDominios.has(n.dominio ?? '')) return true
         if (selDebitos.size > 0 && !selDebitos.has(debitoDe(n))) return true
         if (somenteSemOwner && Boolean(n.owner)) return true
+        if (somenteProdutos && !ehProdutoDeDados(n)) return true
         return false
       }),
     )
@@ -424,6 +472,7 @@ function App() {
     selDebitos,
     selNiveis,
     somenteSemOwner,
+    somenteProdutos,
   ])
 
   const select = useCallback((id: string | null, focus = false) => {
@@ -471,7 +520,16 @@ function App() {
       return valido.length === path.length ? path : valido
     })
     setSelectedId((id) => (id !== null && !nodesById.has(id) ? null : id))
+    // O tamanho ajustado à mão também morre com o nó: sem isto, um componente
+    // recadastrado com o mesmo id herdaria o tamanho do que foi excluído.
+    setEscalas((prev) => podadas(prev, (id) => nodesById.has(id)))
   }, [nodesById])
+
+  // Nível excluído no modal "≣ Níveis": a largura ajustada dele vai junto.
+  useEffect(() => {
+    const slugs = new Set(niveis.map((nv) => nv.slug))
+    setLarguras((prev) => podadasPorSlug(prev, (slug) => slugs.has(slug)))
+  }, [niveis])
 
   // "Ver mapa completo": sai do foco e mostra o inventário — todos os
   // componentes nas colunas dos seus níveis. O switch Força leva ao grafo livre.
@@ -739,6 +797,10 @@ function App() {
         initialFocusId={initialFocusId}
         fixedLayout={lineage !== null}
         levelColumns={lineage && bandsOn ? lineage.columns : null}
+        escalas={escalas}
+        onEscalaChange={alterarEscala}
+        larguras={larguras}
+        onLarguraChange={alterarLargura}
         assocOn={assocOn}
         onNodeClick={handleNodeClick}
         onNodeRightClick={handleNodeRightClick}
@@ -838,6 +900,7 @@ function App() {
           niveis={niveis}
           selectedNiveis={selNiveis}
           somenteSemOwner={somenteSemOwner}
+          somenteProdutos={somenteProdutos}
           assocOn={assocOn}
           counts={counts}
           hasActiveFilter={hasActiveFilter}
@@ -845,6 +908,7 @@ function App() {
           onToggleDebito={(d) => setSelDebitos((prev) => toggled(prev, d))}
           onToggleNivel={(n) => setSelNiveis((prev) => toggled(prev, n))}
           onToggleSemOwner={() => setSomenteSemOwner((v) => !v)}
+          onToggleProdutos={() => setSomenteProdutos((v) => !v)}
           onToggleAssoc={() => setAssocOn((v) => !v)}
           onClear={() => {
             setQuery('')
@@ -852,6 +916,7 @@ function App() {
             setSelDebitos(new Set())
             setSelNiveis(new Set())
             setSomenteSemOwner(false)
+            setSomenteProdutos(false)
           }}
         />
         </PainelRecolhivel>
@@ -859,7 +924,11 @@ function App() {
 
       {aba === 'mapa' && (
         <PainelRecolhivel titulo="Legenda" chave="mapa:legenda-recolhida" posicao="inferior">
-          <Legend podeExcluir={catalogRows !== null} />
+          <Legend
+            podeExcluir={catalogRows !== null}
+            redimensionados={redimensionados}
+            onRestaurarTamanhos={restaurarEscalas}
+          />
         </PainelRecolhivel>
       )}
 

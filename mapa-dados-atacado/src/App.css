@@ -541,6 +541,15 @@
   letter-spacing: 0.02em;
 }
 
+/* Octógono dentro do chip "Produto de dados": a mesma silhueta do mapa, no
+   tamanho da letra e na cor do próprio chip (fill="currentColor"). */
+.chip__losango {
+  width: 1.05em;
+  height: 1.05em;
+  vertical-align: -0.18em;
+  margin-right: 0.34em;
+}
+
 .chip--neutral {
   border-color: #4a4a4a;
   color: #a0a0a0;
@@ -826,33 +835,27 @@
   flex-shrink: 0;
 }
 
-/* Amostras da seção "Forma = tipo de componente": as quatro silhuetas do
-   canvas, em cinza neutro — a cor é a outra dimensão da legenda. */
-.legend__shape {
-  width: 0.68rem;
-  height: 0.68rem;
+/* Amostras das seções "Forma" e "Ícone": SVG com a MESMA geometria do canvas
+   (shapes.ts), em cinza neutro — a cor é a outra dimensão da legenda. Tamanho
+   um pouco maior que o dos pontos porque o glifo interno precisa caber. */
+.legend__amostra {
+  width: 0.95rem;
+  height: 0.95rem;
   flex-shrink: 0;
-  background: #b0b0b0;
+  overflow: visible;
 }
 
-.legend__shape--circulo {
-  border-radius: 50%;
-}
-
-.legend__shape--quadrado {
-  border-radius: 1px;
-}
-
-.legend__shape--losango {
-  width: 0.6rem;
-  height: 0.6rem;
-  transform: rotate(45deg);
-  border-radius: 1px;
-  margin: 0 0.04rem;
-}
-
-.legend__shape--arredondado {
-  border-radius: 35%;
+/* A amostra do NEGRITO do rótulo é texto, não SVG: ocupa a mesma caixa das
+   outras para as linhas da seção "Forma" alinharem à esquerda, e mostra o peso
+   de que fala em vez de descrevê-lo. Mais clara que o texto da legenda porque no
+   mapa o rótulo de produto de dados também é o branco mais pleno. */
+.legend__amostra--rotulo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #e4e4e4;
+  font-size: 0.66rem;
+  line-height: 1;
 }
 
 /* Cabeçalho de seção da legenda (cor / forma). */
@@ -867,6 +870,12 @@
 .legend__nota {
   color: #7a7a7a;
   font-style: italic;
+}
+
+/* A nota que ocupa a linha inteira (sem amostra à esquerda) alinha com os
+   rótulos, não com as amostras. */
+.legend__nota--linha {
+  padding-left: 1.3rem;
 }
 
 .legend__divider {
@@ -888,6 +897,27 @@
   margin-top: 0;
   padding-top: 0;
   border-top: none;
+}
+
+/* "Restaurar os tamanhos": só aparece quando há nó redimensionado à mão. A
+   legenda inteira tem pointer-events: none (ela não pode roubar o clique do
+   mapa) — o botão devolve os seus. */
+.legend__restaurar {
+  pointer-events: auto;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid #444;
+  border-radius: 5px;
+  background: transparent;
+  color: #b0b0b0;
+  font: inherit;
+  font-style: normal;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.legend__restaurar:hover {
+  border-color: #666;
+  color: #e0e0e0;
 }
 
 .legend__dot--fantasma {
@@ -1004,6 +1034,33 @@
 .cform__field textarea {
   resize: vertical;
   line-height: 1.45;
+}
+
+/* Campo booleano (checkbox + rótulo na mesma linha), fora do empilhamento
+   rótulo-em-cima dos demais. */
+.cform__check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cform__check input {
+  accent-color: #cc092f;
+}
+
+.cform__check .cform__label {
+  cursor: pointer;
+}
+
+.cform__hint {
+  margin-left: 0.35rem;
+  color: #7a7a7a;
+  font-size: 0.72rem;
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .cform__field input:focus,

@@ -23,7 +23,7 @@ import {
 } from './graph-types'
 
 /** Distância entre colunas (x) e entre linhas de uma coluna (y). */
-export const NIVEIS_COL_X = 250
+export const NIVEIS_COL_X = 193
 export const NIVEIS_ROW_Y = 70
 
 /** Faixa vertical de uma coluna (coordenadas de grafo; yMin/yMax são centros
