@@ -258,6 +258,9 @@ export default function CatalogForm({
   const [status, setStatus] = useState(initial ? initial.status : 'producao')
   const [owner, setOwner] = useState(initial?.owner ?? '')
   const [centroDeCusto, setCentroDeCusto] = useState(initial?.centro_de_custo ?? '')
+  // "" na coluna vale "nao" — a caixa nasce desmarcada tanto na linha antiga
+  // quanto no cadastro novo.
+  const [produtoDeDados, setProdutoDeDados] = useState(initial?.produto_de_dados === 'sim')
 
   const [errors, setErrors] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
@@ -329,10 +332,11 @@ export default function CatalogForm({
       status,
       owner,
       centroDeCusto,
+      produtoDeDados,
     }),
     [
       nome, nivel, tipoComponente, dominioFinal, consome, associacoes,
-      descricao, observacoes, debito, status, owner, centroDeCusto,
+      descricao, observacoes, debito, status, owner, centroDeCusto, produtoDeDados,
     ],
   )
 
@@ -635,6 +639,21 @@ export default function CatalogForm({
                     onChange={(e) => setCentroDeCusto(e.target.value)}
                   />
                 </div>
+              </div>
+
+              {/* Bandeira ortogonal ao nível, como o débito: a caixa vale
+                  igual em qualquer camada. */}
+              <div className="cform__field cform__check">
+                <input
+                  id="cf-produto"
+                  type="checkbox"
+                  checked={produtoDeDados}
+                  onChange={(e) => setProdutoDeDados(e.target.checked)}
+                />
+                <label className="cform__label" htmlFor="cf-produto">
+                  É produto de dados
+                  <em className="cform__hint">o nó vira octógono no mapa</em>
+                </label>
               </div>
 
               {confirmarExclusao !== null && (

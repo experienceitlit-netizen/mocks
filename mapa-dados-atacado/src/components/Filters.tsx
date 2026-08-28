@@ -17,6 +17,9 @@ interface FiltersProps {
   /** Slugs de nível selecionados. */
   selectedNiveis: ReadonlySet<string>
   somenteSemOwner: boolean
+  /** Esmaece tudo que não é produto de dados — a leitura de reunião "o que
+   *  destes componentes é produto?". */
+  somenteProdutos: boolean
   assocOn: boolean
   counts: Counts
   hasActiveFilter: boolean
@@ -24,6 +27,7 @@ interface FiltersProps {
   onToggleDebito(debito: Debito): void
   onToggleNivel(slug: string): void
   onToggleSemOwner(): void
+  onToggleProdutos(): void
   onToggleAssoc(): void
   onClear(): void
 }
@@ -37,6 +41,7 @@ export default function Filters({
   niveis,
   selectedNiveis,
   somenteSemOwner,
+  somenteProdutos,
   assocOn,
   counts,
   hasActiveFilter,
@@ -44,6 +49,7 @@ export default function Filters({
   onToggleDebito,
   onToggleNivel,
   onToggleSemOwner,
+  onToggleProdutos,
   onToggleAssoc,
   onClear,
 }: FiltersProps) {
@@ -120,6 +126,14 @@ export default function Filters({
       <label className="filters__toggle">
         <input type="checkbox" checked={somenteSemOwner} onChange={onToggleSemOwner} />
         Somente sem owner
+      </label>
+
+      <label
+        className="filters__toggle"
+        title="Esmaece os componentes que não estão marcados como produto de dados (os octógonos do mapa)"
+      >
+        <input type="checkbox" checked={somenteProdutos} onChange={onToggleProdutos} />
+        Somente produtos de dados
       </label>
 
       <label

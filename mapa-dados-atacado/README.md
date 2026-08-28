@@ -168,10 +168,11 @@ Detalhes que valem saber:
    vertical) e guardam o **id** de cada um — mas você pode escrever o **nome**, que o
    app converte para id ao gravar. Não sabe owner ou centro de custo? Deixe a célula
    vazia — o nó aparece com borda tracejada, sinalizando o gap de governança. Exemplo de
-   linha (as duas últimas colunas omitidas):
+   linha (`observacoes` e `associacoes` omitidas, e `produto_de_dados` marcando o
+   componente como produto de dados):
 
    ```
-   ;Meu Novo Painel;final;Tabela Delta;Risco;gdad | rating;painel de risco da mesa;nao;producao;;
+   ;Meu Novo Painel;final;Tabela Delta;Risco;gdad | rating;painel de risco da mesa;nao;producao;;;;;sim
    ```
 
    Nunca edite nem reordene um `id` já preenchido: ele é a chave que segura as ligações.
@@ -191,9 +192,9 @@ Detalhes que valem saber:
 
 ## Colunas do catalogo.csv
 
-Cabeçalho, nesta ordem (13 colunas): `id; nome; nivel; tipo_componente; dominio;
+Cabeçalho, nesta ordem (14 colunas): `id; nome; nivel; tipo_componente; dominio;
 consome; descricao; debito; status; owner;
-centro_de_custo; observacoes; associacoes`.
+centro_de_custo; observacoes; associacoes; produto_de_dados`.
 
 As **mesmas colunas valem em qualquer nível** — não há formato de linha por nível.
 
@@ -202,7 +203,7 @@ As **mesmas colunas valem em qualquer nível** — não há formato de linha por
 | `id` | não (o app preenche) | slug em kebab-case, único no arquivo | **chave estável da linha**, e id do nó no mapa (URL `?no=rar-12m`). Célula vazia = o app gera do nome ao gravar ("RAR 12M" → `rar-12m`; em colisão, `rar-12m-2`). Preenchida, é **imutável**: renomear, mudar de nível ou de tipo não mexe nela. Id repetido é erro |
 | `nome` | sim | texto livre curto | rótulo do nó, na tela e nas buscas — não é chave: dá para renomear à vontade. Linha sem nome é ignorada com aviso |
 | `nivel` | sim | slug de um nível ativo (`raiz`, `dominio`, `final`, `primario`, `fonte`, `origem`… ou qualquer um cadastrado no `niveis.csv`) | é o que define o componente; nível inexistente (ou removido da cadeia) faz a linha ser ignorada com aviso, e é erro no formulário |
-| `tipo_componente` | não | `Tabela SQL` \| `Tabela Delta` \| `Excel` \| `Default` | forma/tecnologia do componente; vazio = `Default`; valor fora da lista vira aviso no build (assume `Default`) e erro no formulário |
+| `tipo_componente` | não | `Tabela SQL` \| `Tabela Delta` \| `Excel` \| `Default` | tecnologia do componente; manda no **ícone dentro do nó** (ver abaixo); vazio = `Default`; valor fora da lista vira aviso no build (assume `Default`) e erro no formulário |
 | `dominio` | não | texto livre (`Cadastro`, `Mercado`, `Risco`…) | filtro por domínio na UI; é **só um campo** — não cria nó de domínio (para isso, cadastre a linha no nível `dominio`) |
 | `consome` | não | **ids** separados por ` \| ` (nome também é aceito) | cria as arestas **"consome"**; resolve em **qualquer linha do catálogo**, de qualquer nível. Nome resolve com aviso e vira id na próxima gravação; o que não resolve de jeito nenhum vira nó fantasma + aviso |
 | `descricao` | não | uma linha | aparece no balão e na busca |
@@ -212,10 +213,11 @@ As **mesmas colunas valem em qualquer nível** — não há formato de linha por
 | `centro_de_custo` | sim (aceita vazio) | texto ou vazio | vazio = a definir → nó com borda tracejada |
 | `observacoes` | não | Markdown livre (multilinha, entre aspas) | corpo do balão de detalhe; wikilinks só navegam, não criam arestas |
 | `associacoes` | não | **ids** separados por ` \| ` (nome também é aceito) | cria as arestas **"vem de"**, em qualquer nível; resolve como `consome`, mas alvo inexistente só gera aviso — nenhum nó é criado |
+| `produto_de_dados` | não | `sim` \| `nao` ou vazio | marca o componente como **produto de dados**: o nó vira **losango** e ganha o **rótulo em negrito** no mapa (ver abaixo), ganha um chip no balão e entra no filtro "Somente produtos de dados". Vazio = `nao`; valor fora do par vira aviso no build (assume `nao`) e erro no formulário. Vale em **qualquer nível** — a bandeira é ortogonal à camada, como o débito |
 
-`id`, `tipo_componente` e `associacoes` são **opcionais na leitura**: um `catalogo.csv`
-antigo, sem essas colunas, abre sem aviso nenhum (elas entram vazias, e os ids são
-gerados dos nomes). O serializador sempre grava as 13.
+`id`, `tipo_componente`, `associacoes` e `produto_de_dados` são **opcionais na leitura**:
+um `catalogo.csv` antigo, sem essas colunas, abre sem aviso nenhum (elas entram vazias, e
+os ids são gerados dos nomes). O serializador sempre grava as 14.
 
 Problema no catálogo gera **warning** no build (não erro) — o componente entra mesmo
 assim, para o gap ficar visível em vez de escondido. A exceção é a linha que o build não
@@ -246,6 +248,7 @@ aviso dizendo por quê.
       "descricao": "…",
       "corpo": "…",                 // opcional: só quando `observacoes` não está vazia
       "incompleto": true,           // owner OU centroDeCusto vazio
+      "produtoDeDados": false,      // coluna `produto_de_dados` = "sim" → losango + negrito
       "fantasma": true              // opcional: citado em `consome`, sem linha própria
                                     // (sem linha, o id vem prefixado: `fantasma-…`)
     }
@@ -368,31 +371,75 @@ apontando para um nó fantasma. (Wikilink em `observacoes` não gera aresta e n�
 A exclusão não tem desfazer no app — o histórico do Git guarda a versão anterior do
 `catalogo.csv`.
 
-## Cores e bordas do grafo
+## Eixos visuais do grafo
 
-Cor do nó, por ordem de precedência (definida em `src/components/palette.ts`):
+Cada eixo diz uma coisa só, e nenhum depende do outro — é o que deixa ler quatro
+atributos de um componente sem clicar nele.
 
-1. `debito: sim` → **vermelho** `#CC092F`
-2. `debito: avaliar` → **cinza** `#8A8A8A`
-3. `fonte_sistema` contém "legado"/"on-premise" → **âmbar** `#B8860B`
-4. default (curado/governado) → **verde** `#3A7D44`
+| Eixo | O que diz | Onde mora |
+|---|---|---|
+| **Coluna** | o `nivel` do componente | vista em níveis (`lineage.ts`) |
+| **Cor do preenchimento** | o `debito` técnico | `src/components/palette.ts` |
+| **Forma** | `produto_de_dados` | `src/components/shapes.ts` |
+| **Ícone interno** | o `tipo_componente` | `src/components/shapes.ts` |
 
-Bordas:
+**Cor**, por ordem de precedência:
+
+1. nó fantasma → **cinza escuro** `#5A5A5A` (sem preenchimento sólido)
+2. `debito: sim` → **vermelho** `#CC092F`
+3. `debito: avaliar` (ou não declarado) → **cinza** `#8A8A8A`
+4. nome ou descrição citando "legado"/"on-premise"/"planilha" → **âmbar** `#B8860B`
+5. default (curado/governado) → **verde** `#3A7D44`
+
+**Forma** = `produto_de_dados`: **losango** quando é produto de dados, **círculo** para
+todo o resto. A forma é o canal que se enxerga de longe, no mapa inteiro, sem ler nada —
+por isso ela ficou com a leitura de reunião ("o que, disto tudo, é produto?") e não com o
+tipo de componente. O losango tem **pontas** em cima, embaixo e nos dois lados: não é uma
+variação do círculo, é a silhueta girada 45°, e por isso continua reconhecível no nó
+pequeno. Ele é maior que o círculo em **toda** direção (a ponta chega a 1.45 do raio, e
+mesmo o ponto mais apertado, no meio da aresta, fica em 1.025) — a marca nunca lê como
+"um nó comum encolhido". Mas o degrau de **tamanho** é modesto de propósito, ~1.34 do
+círculo em área: tamanho quer dizer grau de conexões mais o ajuste manual da sessão, e não
+a bandeira. O **halo** branco de seleção é sempre um círculo, mais fino e por fora de tudo,
+então os dois nunca se confundem; e a borda tracejada de nó incompleto corre **sobre** a
+silhueta, acompanhando as quatro arestas — as duas leituras convivem no mesmo nó, porque o
+tracejado pode comer um pedaço de aresta e as quatro pontas continuam apontando.
+
+**Rótulo em negrito** = `produto_de_dados`, o *segundo* canal da mesma bandeira. O nome do
+componente é desenhado em tamanho de tela, então é a única marca do nó que não encolhe com
+o zoom: quando o mapa inteiro cabe na janela e os nós viram pontos de poucos pixels,
+nenhuma silhueta se lê mais e o texto ainda se lê. O negrito atravessa esse piso. Não há
+marcador (◆, ●) antes do nome — no zoom afastado ele viraria mais um ponto grudado na
+primeira letra, deslocaria o nome do eixo do nó e dependeria de um glifo que a fonte da
+máquina pode não ter; o negrito engrossa todo traço da palavra e não depende de caractere
+nenhum. O esmaecimento de foco é ortogonal: um produto fora do destaque esmaece como
+qualquer nó, mas esmaece em negrito.
+
+> As duas tentativas anteriores de marcar a bandeira falharam em tela e valem como
+> registro: o **anel externo** era a marca mais fraca do nó carregando a informação mais
+> importante; o **octógono** tinha só 8% de variação entre a aresta e o vértice e lia como
+> círculo no zoom de trabalho, além de perder os cantos justamente sob a borda tracejada de
+> "incompleto" — só funcionava inflado a 1.5 do raio, e aí quem destacava era o tamanho.
+
+**Ícone interno** = `tipo_componente`, um glifo claro desenhado dentro do nó: **grade 2×2**
+= `Tabela SQL` (tabela: linhas *e* colunas), **tijolos** empilhados = `Tabela Delta`
+(alusão ao logo do Databricks), **"X"** = `Excel`, e `Default` **sem ícone** — nó liso é
+tipo não declarado, que é o caso mais comum do catálogo. Onde a tecnologia tem marca, o
+glifo é a marca; onde não tem, é o objeto. As três famílias de traço (blocos ortogonais,
+barras inclinadas, diagonais cruzadas) são deliberadamente diferentes entre si, porque é
+o que sobrevive ao tamanho pequeno. O ícone só é desenhado quando o nó tem **raio
+suficiente na tela** (8 px); abaixo disso ele some — o tipo continua no balão e na tabela.
+
+Marcas sobre a silhueta, independentes de tudo acima:
 
 - **Borda branca tracejada** = `owner` ou `centro_de_custo` vazio (nó incompleto —
   é o que a reunião de governança precisa enxergar).
 - **Contorno cinza tracejado sem preenchimento** = nó fantasma: citado na coluna
   `consome`, mas ainda sem linha no catálogo.
-- **Anel externo fino** na cor do nó = produto **final** (`nivel: final` — legado
-  `secundario` — ou `ambos`).
+- **Halo branco externo** = seleção, hover ou destaque fixado pelo clique (temporário).
 
-Tamanho do nó é proporcional ao número de conexões (raiz e domínios têm tamanho fixo).
-Formas: **círculo** = dado, **hexágono azul** = raiz, **quadrado arredondado** na cor da
-área = domínio, **quadrado** = sistema, **quadrado de cantos bem arredondados teal**
-(`#178A94`) = fonte secundária (UCS), **losango** = origem. Sistemas cujo nome contém
-"Databricks" e as fontes secundárias (tabelas UCS) levam por cima um **glifo de
-"tijolos"** claros empilhados, alusão ao logo do Databricks — desenhado só quando o nó
-está grande o suficiente na tela para o glifo ser legível.
+Tamanho do nó é proporcional ao número de conexões; um componente recém-cadastrado, ainda
+sem aresta, nasce do tamanho dos pares em vez de encolhido no raio mínimo.
 
 ## Estrutura do projeto
 
@@ -442,8 +489,8 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
   "Atacado — Dados"**, vista Níveis, balão fechado — as colunas, lidas da esquerda para
   a direita, mostram raiz → domínios → produtos finais → primários → fontes → origens, o
   portfólio inteiro numa tela. "Ver mapa completo" (ou `Esc`) leva ao mapa global, onde
-  a raiz aparece como hexágono azul ligado aos domínios (quadrados arredondados na cor
-  da área) e estes aos produtos finais. A URL só ganha `?foco=` quando o estado difere
+  a raiz aparece ligada aos domínios e estes aos produtos finais. A URL só ganha
+  `?foco=` quando o estado difere
   dessa entrada padrão; `?no=` sem `?foco=` continua abrindo o mapa global com o nó
   selecionado.
 - **Clique com o botão direito** num nó abre um **balão de detalhe** ancorado no próprio
@@ -480,8 +527,8 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
     "a identificar"…) aparece como **placeholder cinza tracejado**, para a cadeia sempre
     mostrar o nível. Passar o mouse destaca a cadeia inteira do nó.
   - **Força**: a vizinhança em grafo de força, com slider de **profundidade** (1–3).
-- O toggle **"Fontes e origens"** liga a camada de linhagem: além dos dados (**círculos**),
-  aparecem os **sistemas** (quadrados) e as **origens** (losangos) derivados do
+- O toggle **"Fontes e origens"** liga a camada de linhagem: além dos dados, aparecem os
+  **sistemas** e as **origens** derivados do
   catálogo. Fica desligado no mapa global e liga automaticamente ao entrar em foco.
   Contadores e filtros de governança continuam contando só os dados.
 - O seletor **Mapa | Tabela** no topo alterna entre o grafo e a **visão de tabela**:
@@ -494,4 +541,7 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
 - A URL reflete o estado e pode ser compartilhada: `?no=rar-12m` seleciona um nó,
   `?foco=rar-12m` abre o foco na vista de níveis, `?foco=rar-12m&vista=forca&prof=2`
   na vista de força com a profundidade escolhida e `?aba=tabela` abre direto na tabela.
-- O toggle **"somente sem owner"** nos filtros acende os nós sem responsável definido.
+- O toggle **"Somente sem owner"** nos filtros acende os nós sem responsável definido, e
+  o **"Somente produtos de dados"** acende só os losangos
+  (`produto_de_dados: sim`) — a leitura de reunião "o que, disto tudo, é produto?".
+  Ambos esmaecem o resto em vez de escondê-lo: o contexto continua na tela.

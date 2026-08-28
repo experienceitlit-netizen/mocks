@@ -157,6 +157,7 @@ describe('parseCatalogo — uma linha, um nó, em qualquer nível', () => {
       centroDeCusto: 'CC-1',
       descricao: 'd',
       incompleto: false,
+      produtoDeDados: false,
     })
   })
 
@@ -298,6 +299,65 @@ describe('tipo_componente', () => {
     )
     expect(warnings).toEqual([])
     expect(rows.map((r) => r.node.tipoComponente)).toEqual(['Excel', 'Tabela Delta', 'Tabela SQL'])
+  })
+})
+
+describe('produto_de_dados', () => {
+  it('célula vazia vale "nao", sem warning', () => {
+    const { rows, warnings } = parseCatalogo(csv(completo({ nome: 'A' })))
+    expect(rows[0].node.produtoDeDados).toBe(false)
+    expect(warnings).toEqual([])
+  })
+
+  it('CSV legado (sem a coluna) parseia sem reclamar de coluna ausente', () => {
+    const legado =
+      'id;nome;nivel;tipo_componente;dominio;consome;descricao;debito;status;owner;centro_de_custo;observacoes;associacoes\r\n' +
+      'a;A;primario;Default;Risco;;d;nao;producao;Fulano;CC-1;;\r\n'
+    const { rows, warnings } = parseCatalogo(legado)
+    expect(rows[0].node.produtoDeDados).toBe(false)
+    expect(warnings).toEqual([])
+  })
+
+  it('"sim" liga a bandeira e "nao" a desliga', () => {
+    const { rows, warnings } = parseCatalogo(
+      csv(
+        completo({ nome: 'Produto', produto_de_dados: 'sim' }),
+        completo({ nome: 'Comum', produto_de_dados: 'nao' }),
+      ),
+    )
+    expect(warnings).toEqual([])
+    expect(rows.map((r) => r.node.produtoDeDados)).toEqual([true, false])
+  })
+
+  it('valor fora do vocabulário vira warning e assume "nao"', () => {
+    const { rows, warnings } = parseCatalogo(csv(completo({ nome: 'A', produto_de_dados: 'talvez' })))
+    expect(rows[0].node.produtoDeDados).toBe(false)
+    expect(warnings).toEqual([
+      'catalogo.csv linha 2 ("A"): produto_de_dados "talvez" desconhecido' +
+        ' (use sim, nao ou deixe vazio) — assumindo "nao"',
+    ])
+  })
+
+  it('a bandeira é ortogonal ao nível: vale igual em qualquer camada', () => {
+    const niveis = COM_MEDALHAO
+    const { rows, warnings } = parseCatalogo(
+      csv(
+        ...niveis.map((n) =>
+          completo({ nome: `Nó ${n.slug}`, nivel: n.slug, debito: '', produto_de_dados: 'sim' }),
+        ),
+      ),
+      niveis,
+    )
+    expect(warnings).toEqual([])
+    expect(rows.every((r) => r.node.produtoDeDados)).toBe(true)
+  })
+
+  it('nó fantasma nunca é produto de dados — ele nem tem linha', () => {
+    const { graph } = buildGraph(
+      csv(completo({ nome: 'Consumidor', consome: 'Planilha X', produto_de_dados: 'sim' })),
+    )
+    const fantasma = graph.nodes.find((n) => n.fantasma === true)
+    expect(fantasma?.produtoDeDados).toBe(false)
   })
 })
 
@@ -733,6 +793,7 @@ describe('catalogo.csv real — invariantes (o usuário edita o catálogo a qual
       'centroDeCusto',
       'descricao',
       'incompleto',
+      'produtoDeDados',
     ]
     for (const n of graph.nodes) {
       const chaves = Object.keys(n)

@@ -2,8 +2,8 @@
 // daqui para não divergirem.
 //
 // COR = semântica de débito, igual para TODO componente (não existe paleta por
-// nível nem por categoria de nó). A FORMA é que varia, e vem do
-// `tipoComponente` (ver shapeOf em Graph.tsx / Legend.tsx).
+// nível nem por categoria de nó). Os outros eixos moram em shapes.ts: a FORMA
+// diz se o componente é produto de dados e o ÍCONE interno diz o tipo.
 import type { Debito, GraphNodeData } from './graph-types'
 import { debitoDe } from './graph-types'
 
@@ -28,6 +28,34 @@ export function nodeColor(node: GraphNodeData): string {
   if (debito === 'sim') return COLOR_DEBITO
   if (debito === 'avaliar') return COLOR_AVALIAR
   return LEGADO_RE.test(`${node.nome} ${node.descricao ?? ''}`) ? COLOR_LEGADO : COLOR_CURADO
+}
+
+/** Mistura uma cor "#rrggbb" com branco (0 = a cor, 1 = branco). */
+function clarear(hex: string, fator: number): string {
+  const n = Number.parseInt(hex.slice(1), 16)
+  const canal = (deslocamento: number): number => {
+    const v = (n >> deslocamento) & 0xff
+    return Math.round(v + (255 - v) * fator)
+  }
+  return `rgb(${canal(16)}, ${canal(8)}, ${canal(0)})`
+}
+
+/** Quanto a cor do nó é clareada para virar a cor do chip (0 = a cor, 1 =
+ *  branco). */
+const CHIP_CLAREAMENTO = 0.45
+
+/**
+ * Cor do chip "Produto de dados" do balão de detalhe.
+ *
+ * É a cor do próprio nó CLAREADA, e não uma cor nova: a bandeira não é uma
+ * quinta semântica de cor — quem a diz no mapa é a FORMA (octógono), e o chip
+ * só repete a marca em palavras. Herdar a cor do nó amarra o chip ao nó que
+ * está aberto; clarear é o que a mantém legível no fundo escuro do balão,
+ * inclusive no vermelho de débito. Não chega a branco, que é a cor do halo de
+ * seleção.
+ */
+export function produtoChipColor(node: GraphNodeData): string {
+  return clarear(nodeColor(node), CHIP_CLAREAMENTO)
 }
 
 /** Cores dos chips de domínio (distintas da semântica de cor dos nós). */

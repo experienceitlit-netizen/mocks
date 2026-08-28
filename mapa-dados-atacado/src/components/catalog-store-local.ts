@@ -13,7 +13,7 @@
 // Onde o texto vai parar é o único ponto variável: um DestinoLocal grava na
 // pasta escolhida (File System Access) ou só guarda em memória, para o usuário
 // baixar depois (fallback do Firefox).
-import { normalizeTipoComponente } from './catalog-api'
+import { normalizeProdutoDeDados, normalizeTipoComponente } from './catalog-api'
 import type { CatalogoRow, NivelApiRow, SaveResult } from './catalog-api'
 import type { ArquivosCatalogo, CatalogStore, ModoPersistencia } from './catalog-store'
 import {
@@ -56,10 +56,14 @@ export function destinoMemoria(origem: string): DestinoLocal {
   }
 }
 
-/** `tipo_componente` da linha bruta é string livre; a UI só trabalha com o
- *  vocabulário válido, como no GET /api/catalogo. */
+/** `tipo_componente` e `produto_de_dados` da linha bruta são string livre; a UI
+ *  só trabalha com o vocabulário válido, como no GET /api/catalogo. */
 function normalizarRows(rows: ReturnType<typeof parseCatalogoRows>): CatalogoRow[] {
-  return rows.map((r) => ({ ...r, tipo_componente: normalizeTipoComponente(r.tipo_componente) }))
+  return rows.map((r) => ({
+    ...r,
+    tipo_componente: normalizeTipoComponente(r.tipo_componente),
+    produto_de_dados: normalizeProdutoDeDados(r.produto_de_dados),
+  }))
 }
 
 /** Nó do build → nó do schema do graph.json. `debito` fica como o build o
@@ -78,6 +82,7 @@ function nodeJson(n: GraphNode): GraphNodeData {
     centroDeCusto: n.centroDeCusto,
     descricao: n.descricao,
     incompleto: n.incompleto,
+    produtoDeDados: n.produtoDeDados,
   }
   if (n.corpo !== undefined) node.corpo = n.corpo
   if (n.fantasma === true) node.fantasma = true

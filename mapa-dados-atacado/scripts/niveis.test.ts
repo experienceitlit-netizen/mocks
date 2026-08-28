@@ -77,6 +77,7 @@ const catalogoRow = (extra: Partial<CatalogoRow>): CatalogoRow => ({
   centro_de_custo: null,
   observacoes: '',
   associacoes: [],
+  produto_de_dados: '',
   ...extra,
 })
 
@@ -499,7 +500,7 @@ describe('catalogo.csv — colunas opcionais (id, tipo_componente e associacoes)
       associacoes: ['banco SQL legado (on-premise)', 'ADAT'],
     })
     const texto = serializarCatalogo([row])
-    expect(texto).toContain(';banco SQL legado (on-premise) | ADAT\r\n')
+    expect(texto).toContain(';banco SQL legado (on-premise) | ADAT;\r\n')
     expect(parseCatalogoRows(texto)[0]).toEqual(row)
   })
 

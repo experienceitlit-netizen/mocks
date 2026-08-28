@@ -7,18 +7,6 @@
       "builtin": true
     },
     {
-      "slug": "final",
-      "titulo": "Produto final",
-      "ordem": 20,
-      "builtin": true
-    },
-    {
-      "slug": "primario",
-      "titulo": "Produto primário",
-      "ordem": 30,
-      "builtin": true
-    },
-    {
       "slug": "gold",
       "titulo": "Gold",
       "ordem": 43,
@@ -44,7 +32,7 @@
     },
     {
       "slug": "fonte",
-      "titulo": "Fonte (sistema)",
+      "titulo": "Fonte",
       "ordem": 50,
       "builtin": true
     },
@@ -67,20 +55,22 @@
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
-      "incompleto": true
+      "incompleto": true,
+      "produtoDeDados": false
     },
     {
       "id": "bacen-3040-45-46",
       "nome": "BACEN 3040/45/46/47",
       "nivel": "gold",
-      "tipoComponente": "Default",
+      "tipoComponente": "Tabela Delta",
       "dominio": "Regulatorio",
       "debito": "nao",
       "status": "producao",
       "owner": "Fulano de Tal",
-      "centroDeCusto": null,
+      "centroDeCusto": "aaad",
       "descricao": "operações de crédito reguladas",
-      "incompleto": true,
+      "incompleto": false,
+      "produtoDeDados": true,
       "corpo": "Bases regulatórias do BACEN (documentos 3040, 3045 e 3046) com as operações de crédito reguladas do sistema financeiro. Chegam ao banco por transferência corporativa de arquivos e dão ao Atacado visão de endividamento e share dos clientes no mercado de crédito. O uso como insumo do endividamento de mercado foi inferido e precisa ser validado com o negócio."
     },
     {
@@ -94,7 +84,8 @@
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
-      "incompleto": true
+      "incompleto": true,
+      "produtoDeDados": false
     },
     {
       "id": "clientes",
@@ -107,7 +98,8 @@
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
-      "incompleto": true
+      "incompleto": true,
+      "produtoDeDados": false
     },
     {
       "id": "de-para-de-produtos",
@@ -121,6 +113,7 @@
       "centroDeCusto": null,
       "descricao": "clusterização de produtos do Atacado",
       "incompleto": true,
+      "produtoDeDados": false,
       "corpo": "De-para construído pelos analistas do Atacado para clusterizar os produtos e dar visão agregada por família de produto na EVOL. É um artefato exploratório mantido em planilha Excel — útil na análise, mas ainda sem rota governada, o que caracteriza o débito. Há um MVP no Salesforce com destino planejado no lake."
     },
     {
@@ -135,6 +128,7 @@
       "centroDeCusto": null,
       "descricao": "resultado realizado",
       "incompleto": true,
+      "produtoDeDados": false,
       "corpo": "Resultado gerencial realizado por cliente e produto, disponível como dado curado no Databricks. É a base primária de resultado do Atacado: alimenta tanto os ajustes analíticos da Evolução do Resultado quanto o cálculo do RAR 12M."
     },
     {
@@ -149,6 +143,7 @@
       "centroDeCusto": null,
       "descricao": "conteúdo a mapear",
       "incompleto": true,
+      "produtoDeDados": false,
       "corpo": "Tabela departamental referenciada em processos do Atacado cujo dono, conteúdo e domínio ainda precisam ser identificados. Está no catálogo justamente para dar visibilidade ao gap: enquanto ninguém reivindica a origem, o dado permanece em investigação, sem produto secundário associado."
     },
     {
@@ -157,12 +152,13 @@
       "nivel": "silver",
       "tipoComponente": "Default",
       "dominio": "",
-      "debito": "",
-      "status": "",
+      "debito": "avaliar",
+      "status": "producao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
-      "incompleto": true
+      "incompleto": true,
+      "produtoDeDados": false
     },
     {
       "id": "resultado",
@@ -175,21 +171,8 @@
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
-      "incompleto": true
-    },
-    {
-      "id": "rfb",
-      "nome": "RFB",
-      "nivel": "primario",
-      "tipoComponente": "Default",
-      "dominio": "Mercado",
-      "debito": "nao",
-      "status": "producao",
-      "owner": null,
-      "centroDeCusto": null,
-      "descricao": "situação cadastral e CNAEs do CNPJ",
       "incompleto": true,
-      "corpo": "Dados públicos da Receita Federal do Brasil sobre os CNPJs: situação cadastral, CNAE principal e CNAEs secundários. Disponível como dado curado no Databricks, é o principal insumo externo para a classificação setorial e geográfica dos clientes do Atacado."
+      "produtoDeDados": false
     },
     {
       "id": "rm-relacionamento",
@@ -202,7 +185,8 @@
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
-      "incompleto": true
+      "incompleto": true,
+      "produtoDeDados": false
     },
     {
       "id": "sanitizacao",
@@ -215,7 +199,8 @@
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
-      "incompleto": true
+      "incompleto": true,
+      "produtoDeDados": false
     },
     {
       "id": "sistemas-de-produto-a-mapear",
@@ -228,7 +213,8 @@
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
-      "incompleto": true
+      "incompleto": true,
+      "produtoDeDados": false
     },
     {
       "id": "webscraping-debentures-com-br",
@@ -241,13 +227,19 @@
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
-      "incompleto": true
+      "incompleto": true,
+      "produtoDeDados": false
     }
   ],
   "links": [
     {
-      "source": "rfb",
-      "target": "bacen-3040-45-46",
+      "source": "bacen-3040-45-46",
+      "target": "adat",
+      "label": "consome"
+    },
+    {
+      "source": "restritivos",
+      "target": "adat",
       "label": "consome"
     }
   ]

@@ -14,6 +14,10 @@ import type {
 
 export type Debito = 'sim' | 'nao' | 'avaliar'
 
+/** Vocabulário das colunas de bandeira do catálogo (hoje só
+ *  `produto_de_dados`). Célula vazia vale "nao". */
+export type SimNao = 'sim' | 'nao'
+
 /** O que o componente É fisicamente. Define a FORMA do nó no mapa (a cor fica
  *  com a semântica de débito) e é independente do nível: uma Tabela Delta pode
  *  estar em qualquer camada. */
@@ -73,6 +77,9 @@ export interface GraphNodeData {
   corpo?: string
   /** Sem owner ou sem centro de custo: borda tracejada no mapa. */
   incompleto?: boolean
+  /** Declarado produto de dados: o nó vira OCTÓGONO no mapa. Ausente em
+   *  builds antigos — leia sempre por {@link ehProdutoDeDados}. */
+  produtoDeDados?: boolean
   /** Nó fantasma: citado em "consome"/"vem de" sem linha no catálogo. */
   fantasma?: boolean
 }
@@ -88,6 +95,13 @@ export function nivelDe(node: Pick<GraphNodeData, 'nivel'>): string {
  *  "⚠ a definir") lê `node.debito` direto. */
 export function debitoDe(node: Pick<GraphNodeData, 'debito'>): Debito {
   return node.debito === 'sim' || node.debito === 'nao' ? node.debito : 'avaliar'
+}
+
+/** Bandeira de produto de dados do nó: ponto único de leitura, porque o campo
+ *  falta no graph.json anterior à coluna `produto_de_dados` (e lá "ausente"
+ *  vale "não", igual à célula vazia do CSV). */
+export function ehProdutoDeDados(node: Pick<GraphNodeData, 'produtoDeDados'>): boolean {
+  return node.produtoDeDados === true
 }
 
 /** Componente com linha própria no catálogo (o oposto do fantasma). */

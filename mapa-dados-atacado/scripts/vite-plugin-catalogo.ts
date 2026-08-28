@@ -33,6 +33,7 @@ import {
   type CatalogoRow,
   type Debito,
   type NivelRow,
+  type SimNao,
 } from './graph-lib.ts'
 
 const LIMITE_BODY = 2 * 1024 * 1024 // ~2MB
@@ -91,6 +92,9 @@ export function rowsDoBody(body: unknown): { rows: CatalogoRow[]; errors: string
       centro_de_custo: textoOuNull('centro_de_custo'),
       observacoes: texto('observacoes'),
       associacoes: lista('associacoes'),
+      // Ausente/vazio é aceito e vale "nao"; valor fora de sim/nao é recusado
+      // pelo validarCatalogo, não aqui (aqui só se checa a FORMA).
+      produto_de_dados: texto('produto_de_dados') as SimNao | '',
     }
     if (ok) rows.push(row)
   })

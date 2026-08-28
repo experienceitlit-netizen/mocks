@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import {
   canonizarCatalogo,
   carregarNiveis,
+  COLUNAS,
   parseCatalogoRows,
   preencherIds,
   serializarCatalogo,
@@ -30,6 +31,7 @@ const row = (extra: Partial<CatalogoRow>): CatalogoRow => ({
   centro_de_custo: null,
   observacoes: '',
   associacoes: [],
+  produto_de_dados: '',
   ...extra,
 })
 
@@ -115,12 +117,15 @@ describe('serializarCatalogo — round-trip', () => {
     expect(parseCatalogoRows(serializarCatalogo(rows))).toEqual(rows)
   })
 
-  it('formato canônico: BOM, cabeçalho de 13 colunas com `id` na frente, ";", CRLF e aspas mínimas', () => {
+  it('formato canônico: BOM, cabeçalho com `id` na frente, ";", CRLF e aspas mínimas', () => {
     const csv = serializarCatalogo([row({ nome: 'A', observacoes: 'sem aspas necessárias' })])
     expect(csv.startsWith('\uFEFF' + 'id;nome;nivel;tipo_componente;dominio;consome;')).toBe(true)
-    expect(csv.split('\r\n')[0].split(';')).toHaveLength(13)
+    // Sem número fixo de colunas no teste: o cabeçalho É COLUNAS, e acrescentar
+    // uma (produto_de_dados entrou como a última) não pode quebrar aqui.
+    expect(csv.split('\r\n')[0].split(';')).toHaveLength(COLUNAS.length)
+    expect(csv.split('\r\n')[0].endsWith(';produto_de_dados')).toBe(true)
     expect(csv.endsWith('\r\n')).toBe(true)
-    expect(csv).toContain('\r\na;A;primario;;Risco;;d;nao;producao;;;sem aspas necessárias;\r\n')
+    expect(csv).toContain('\r\na;A;primario;;Risco;;d;nao;producao;;;sem aspas necessárias;;\r\n')
   })
 
   it('CSV legado (sem a coluna `id`) parseia: a célula vem vazia, e a gravação a preenche', () => {
@@ -136,6 +141,68 @@ describe('serializarCatalogo — round-trip', () => {
       '\uFEFFnome;nivel;dominio;origem;fonte_sistema;fontes_secundarias;consome;descricao;debito;status;owner;centro_de_custo;observacoes;associacoes\r\n' +
       'Alfa;primario;Risco;o;s;;;d;nao;producao;;;;\r\n'
     expect(parseCatalogoRows(legado)[0].tipo_componente).toBe('')
+  })
+})
+
+describe('produto_de_dados — coluna nova', () => {
+  it('round-trip: "sim", "nao" e "" (não declarado) vão e voltam', () => {
+    const rows: CatalogoRow[] = [
+      row({ id: 'produto', nome: 'Produto', produto_de_dados: 'sim' }),
+      row({ id: 'comum', nome: 'Comum', produto_de_dados: 'nao' }),
+      row({ id: 'antigo', nome: 'Antigo', produto_de_dados: '' }),
+    ]
+    expect(parseCatalogoRows(serializarCatalogo(rows))).toEqual(rows)
+  })
+
+  it('é a ÚLTIMA coluna do cabeçalho canônico', () => {
+    const cabecalho = serializarCatalogo([row({ nome: 'A' })]).split('\r\n')[0]
+    expect(cabecalho.split(';').at(-1)).toBe('produto_de_dados')
+    expect(COLUNAS.at(-1)).toBe('produto_de_dados')
+  })
+
+  it('CSV legado (sem a coluna) parseia com a célula vazia; a gravação acrescenta a coluna', () => {
+    const legado =
+      '﻿id;nome;nivel;tipo_componente;dominio;consome;descricao;debito;status;owner;centro_de_custo;observacoes;associacoes\r\n' +
+      'rar-12m;RAR 12M;final;;Risco;;d;nao;producao;;;;\r\n'
+    const relidas = parseCatalogoRows(legado)
+    expect(relidas[0].produto_de_dados).toBe('')
+    const regravado = serializarCatalogo(relidas)
+    expect(regravado.split('\r\n')[0].endsWith(';produto_de_dados')).toBe(true)
+    // A migração é neutra: reler o arquivo novo devolve as mesmas linhas.
+    expect(parseCatalogoRows(regravado)).toEqual(relidas)
+  })
+
+  it('valor inválido é ERRO na gravação (o build só avisa)', () => {
+    const { errors } = validarCatalogo([
+      row({ nome: 'Alfa', produto_de_dados: 'talvez' as CatalogoRow['produto_de_dados'] }),
+    ])
+    expect(errors).toEqual([
+      'linha 2 ("Alfa"): produto_de_dados "talvez" inválido (use sim, nao ou deixe vazio)',
+    ])
+  })
+
+  it('"sim", "nao" e vazio passam na validação, em qualquer nível', () => {
+    for (const valor of ['sim', 'nao', ''] as const) {
+      expect(
+        validarCatalogo([
+          row({ nome: 'Alfa', nivel: 'raiz', debito: '', produto_de_dados: valor }),
+          row({ nome: 'Beta', nivel: 'origem', debito: '', produto_de_dados: valor }),
+        ]).errors,
+      ).toEqual([])
+    }
+  })
+
+  it('rowsDoBody aceita a coluna e recusa o que não for string', () => {
+    const original = row({ id: 'alfa', nome: 'Alfa', produto_de_dados: 'sim' })
+    expect(rowsDoBody({ rows: [original] })).toEqual({ rows: [original], errors: [] })
+    // Ausente vira "" (que vale "nao"): quem posta uma linha antiga não precisa
+    // conhecer a coluna.
+    expect(rowsDoBody({ rows: [{ nome: 'Alfa', nivel: 'primario' }] }).rows[0]).toMatchObject({
+      produto_de_dados: '',
+    })
+    expect(rowsDoBody({ rows: [{ nome: 'Alfa', produto_de_dados: true }] }).errors).toEqual([
+      'rows[0].produto_de_dados: deve ser string',
+    ])
   })
 })
 

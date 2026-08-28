@@ -2,7 +2,7 @@
 // plugin regrava catalogo.csv e regenera graph.json ao salvar). O App faz
 // feature-detect no mount: se o GET falhar (build estático/standalone),
 // nenhum controle de edição aparece.
-import type { Debito, TipoComponente } from './graph-types'
+import type { Debito, SimNao, TipoComponente } from './graph-types'
 import { TIPO_COMPONENTE_PADRAO, TIPOS_COMPONENTE } from './graph-types'
 
 /** Linha do catalogo.csv como servida por GET /api/catalogo. Uma linha por
@@ -32,6 +32,9 @@ export interface CatalogoRow {
   /** null = a definir. */
   centro_de_custo: string | null
   observacoes: string
+  /** "" = não declarado, e vale "nao" (linha antiga, célula em branco). Vale em
+   *  qualquer nível: a flag é ortogonal à camada, como o débito. */
+  produto_de_dados: SimNao | ''
 }
 
 /** Tipo de componente válido, com o padrão para o que vier fora do
@@ -40,6 +43,12 @@ export function normalizeTipoComponente(valor: unknown): TipoComponente {
   return typeof valor === 'string' && (TIPOS_COMPONENTE as readonly string[]).includes(valor)
     ? (valor as TipoComponente)
     : TIPO_COMPONENTE_PADRAO
+}
+
+/** Bandeira sim/nao válida; qualquer outra coisa (linha antiga, célula
+ *  editada à mão fora do vocabulário) vira "" — que a UI lê como "nao". */
+export function normalizeProdutoDeDados(valor: unknown): SimNao | '' {
+  return valor === 'sim' || valor === 'nao' ? valor : ''
 }
 
 function asStringArray(valor: unknown): string[] {
@@ -83,6 +92,7 @@ export async function fetchCatalogo(): Promise<CatalogoRow[] | null> {
       tipo_componente: normalizeTipoComponente(r.tipo_componente),
       consome: asStringArray(r.consome),
       associacoes: asStringArray(r.associacoes),
+      produto_de_dados: normalizeProdutoDeDados(r.produto_de_dados),
     }))
   } catch {
     return null

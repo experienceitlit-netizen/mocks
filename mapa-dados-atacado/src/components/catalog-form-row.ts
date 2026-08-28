@@ -26,6 +26,9 @@ export interface RowFormState {
   status: string
   owner: string
   centroDeCusto: string
+  /** Checkbox "É produto de dados". Ortogonal ao nível, como o débito: a caixa
+   *  vale igual em qualquer camada. */
+  produtoDeDados: boolean
 }
 
 /** Comparação insensível a caixa e acentos (auto-referência em listas). */
@@ -87,5 +90,8 @@ export function montarRow(
     owner: textoOuNull(estado.owner),
     centro_de_custo: textoOuNull(estado.centroDeCusto),
     observacoes: estado.observacoes,
+    // A célula sai sempre declarada (nunca ""), como débito e status: o que o
+    // formulário gravou fica explícito no arquivo.
+    produto_de_dados: estado.produtoDeDados ? 'sim' : 'nao',
   }
 }

@@ -1,14 +1,16 @@
 // Balão de detalhe ancorado no nó selecionado. Um único layout para TODO
-// componente: chips (domínio, nível, tipo de componente, débito), campos de
+// componente: chips (domínio, nível, tipo de componente, débito, produto de
+// dados quando a linha o declara), campos de
 // governança, corpo markdown, árvore de linhagem e listas de relações — não há
 // variação por categoria de nó, porque não há categorias.
 // A ancoragem segue o nó a cada frame (pan/zoom/física) via getAnchor().
 import { useCallback, useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import type { GraphNodeData } from './graph-types'
-import { debitoDe, linkLabel, tipoComponenteDe } from './graph-types'
+import { debitoDe, ehProdutoDeDados, linkLabel, tipoComponenteDe } from './graph-types'
 import type { LineageEntry } from './lineage'
-import { DEBITO_LABEL, domainColor } from './palette'
+import { DEBITO_LABEL, domainColor, produtoChipColor } from './palette'
+import { LOSANGO_PONTOS, LOSANGO_S } from './shapes'
 import Markdown from './Markdown'
 
 export interface Connection {
@@ -168,6 +170,31 @@ function BalloonContent({
           )}
           {node.fantasma !== true && (
             <span className={`chip chip--debito-${debito}`}>Débito: {DEBITO_LABEL[debito]}</span>
+          )}
+          {/* Só quando é: um chip "não é produto de dados" em toda linha comum
+              poluiria o cabeçalho. O chip repete em palavras a marca que o nó
+              tem no mapa, e traz o próprio losango junto — é a forma que o
+              leitor precisa reconhecer lá.
+              O texto do chip fica no peso normal de propósito: o negrito é o
+              canal que distingue um nó dos OUTROS no mapa, e aqui já não há
+              outros — o balão é de um nó só, e o chip já nomeia a bandeira. */}
+          {ehProdutoDeDados(node) && (
+            <span
+              className="chip"
+              style={{ borderColor: produtoChipColor(node), color: produtoChipColor(node) }}
+            >
+              <svg
+                className="chip__losango"
+                viewBox={`${-LOSANGO_S} ${-LOSANGO_S} ${2 * LOSANGO_S} ${2 * LOSANGO_S}`}
+                aria-hidden="true"
+              >
+                <polygon
+                  points={LOSANGO_PONTOS.map(([x, y]) => `${x},${y}`).join(' ')}
+                  fill="currentColor"
+                />
+              </svg>
+              Produto de dados
+            </span>
           )}
         </div>
       </header>

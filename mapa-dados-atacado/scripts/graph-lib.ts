@@ -22,6 +22,17 @@ const TIPOS_COMPONENTE_SET = new Set<string>(TIPOS_COMPONENTE)
 /** Mensagem de valores válidos de `tipo_componente`, para warnings e erros. */
 const TIPOS_COMPONENTE_MSG = TIPOS_COMPONENTE.map((t) => `"${t}"`).join(', ')
 
+/** Vocabulário das colunas de bandeira booleana (hoje só `produto_de_dados`).
+ *  Célula vazia vale "nao": é o default de quem nunca declarou nada. */
+export const SIM_NAO = ['sim', 'nao'] as const
+
+export type SimNao = (typeof SIM_NAO)[number]
+
+const SIM_NAO_SET = new Set<string>(SIM_NAO)
+
+/** Mensagem de valores válidos de uma coluna sim/nao. */
+const SIM_NAO_MSG = 'sim, nao ou deixe vazio'
+
 /**
  * Nó do grafo: um componente do catálogo. Todos os nós têm a mesma forma, seja
  * qual for o nível — quem quiser tratar um nível de um jeito próprio (cor,
@@ -50,6 +61,10 @@ export interface GraphNode {
   /** Gap de governança: owner OU centro de custo vazio. Regra única para todos
    *  os níveis — nenhum nível é dispensado dela. */
   incompleto: boolean
+  /** Declarado PRODUTO DE DADOS na coluna `produto_de_dados` (octógono no
+   *  mapa). É ortogonal ao nível, como o débito: vale em qualquer camada, e
+   *  nenhum nível ganha ou perde a marca por ser o que é. */
+  produtoDeDados: boolean
   /** Nó citado em `consome` sem linha própria no catálogo. */
   fantasma?: true
 }
@@ -549,13 +564,18 @@ export interface CatalogoRow {
   centro_de_custo: string | null
   observacoes: string
   associacoes: string[]
+  /** Bandeira de PRODUTO DE DADOS: "" vale "nao" (célula nunca declarada).
+   *  Fora de {@link SIM_NAO} é warning no build e erro no POST. Vale em
+   *  qualquer nível — a flag é ortogonal à camada, como o débito. */
+  produto_de_dados: SimNao | ''
 }
 
 /**
  * Colunas do catalogo.csv, na ordem canônica do cabeçalho.
  *
- * `id`, `tipo_componente` e `associacoes` são opcionais na LEITURA (CSV legado
- * sem elas parseia sem warning), mas o serializador sempre escreve as 13.
+ * `id`, `tipo_componente`, `associacoes` e `produto_de_dados` são opcionais na
+ * LEITURA (CSV legado sem elas parseia sem warning), mas o serializador sempre
+ * escreve as 14.
  *
  * As colunas `origem`, `fonte_sistema` e `fontes_secundarias` existiram
  * enquanto fonte e origem eram campos de um produto; viraram níveis próprios e
@@ -576,12 +596,18 @@ export const COLUNAS = [
   'centro_de_custo',
   'observacoes',
   'associacoes',
+  'produto_de_dados',
 ] as const
 
 /** Colunas que podem faltar do cabeçalho sem warning: `id` porque o build o
  *  gera do nome (é o que deixa acrescentar linhas na planilha sem saber de
- *  ids), as outras duas por serem posteriores ao formato original. */
-const COLUNAS_OPCIONAIS = new Set<string>(['id', 'tipo_componente', 'associacoes'])
+ *  ids), as outras por serem posteriores ao formato original. */
+const COLUNAS_OPCIONAIS = new Set<string>([
+  'id',
+  'tipo_componente',
+  'associacoes',
+  'produto_de_dados',
+])
 
 /** Colunas de versões anteriores do catálogo: um arquivo que ainda as traga é
  *  lido sem reclamação (elas são ignoradas e não voltam na regravação). */
@@ -673,6 +699,19 @@ export function normalizarTipoComponente(bruto: string): {
   return { tipo: TIPO_COMPONENTE_DEFAULT, invalido: texto }
 }
 
+/** Texto da coluna `produto_de_dados` → bandeira. Vazio = não (é o default de
+ *  quem nunca declarou); fora do vocabulário = não + motivo do warning
+ *  (null = sem warning). */
+export function normalizarProdutoDeDados(bruto: string): {
+  produtoDeDados: boolean
+  invalido: string | null
+} {
+  const texto = bruto.trim()
+  if (texto === '') return { produtoDeDados: false, invalido: null }
+  if (SIM_NAO_SET.has(texto)) return { produtoDeDados: texto === 'sim', invalido: null }
+  return { produtoDeDados: false, invalido: texto }
+}
+
 /**
  * Parser CSV mínimo (RFC 4180 com separador ";"): células entre aspas podem
  * conter ";", quebras de linha e aspas escapadas (""); aceita BOM UTF-8 e
@@ -748,8 +787,8 @@ function nivelsMsg(niveis: readonly NivelInfo[]): string {
  * é ignorada — o nó não teria onde existir no mapa.
  *
  * Warnings legíveis para coluna faltando/desconhecida, linha sem nome, nível
- * ausente ou inexistente e tipo_componente fora da lista; "linha N" conta o
- * cabeçalho como linha 1.
+ * ausente ou inexistente e tipo_componente/produto_de_dados fora do
+ * vocabulário; "linha N" conta o cabeçalho como linha 1.
  */
 export function parseCatalogo(
   texto: string,
@@ -834,6 +873,16 @@ export function parseCatalogo(
       )
     }
 
+    const { produtoDeDados, invalido: produtoInvalido } = normalizarProdutoDeDados(
+      celula('produto_de_dados'),
+    )
+    if (produtoInvalido !== null) {
+      warnings.push(
+        `catalogo.csv linha ${linha} ("${nome}"): produto_de_dados "${produtoInvalido}" desconhecido` +
+          ` (use ${SIM_NAO_MSG}) — assumindo "nao"`,
+      )
+    }
+
     const owner = textoOuNull('owner')
     const centroDeCusto = textoOuNull('centro_de_custo')
 
@@ -849,6 +898,7 @@ export function parseCatalogo(
       centroDeCusto,
       descricao: celula('descricao'),
       incompleto: owner === null || centroDeCusto === null,
+      produtoDeDados,
     }
 
     const corpo = celula('observacoes')
@@ -902,6 +952,7 @@ export function parseCatalogoRows(texto: string): CatalogoRow[] {
       centro_de_custo: textoOuNull('centro_de_custo'),
       observacoes: celula('observacoes'),
       associacoes: splitLista(celula('associacoes')),
+      produto_de_dados: celula('produto_de_dados') as SimNao | '',
     }
   })
 }
@@ -946,6 +997,7 @@ export function serializarCatalogo(rows: readonly CatalogoRow[]): string {
       centro_de_custo: row.centro_de_custo ?? '',
       observacoes: row.observacoes,
       associacoes: row.associacoes.join(' | '),
+      produto_de_dados: row.produto_de_dados,
     }
     return COLUNAS.map((c) => celulaCsv(celulas[c])).join(';')
   })
@@ -963,7 +1015,8 @@ export interface ValidacaoCatalogo {
  * Erros (impedem a gravação): nome vazio; `id` repetido (é a chave da linha);
  * nivel vazio ou fora dos níveis ativos; tipo_componente fora de
  * {@link TIPOS_COMPONENTE}; debito preenchido com algo que não seja
- * sim/nao/avaliar; nome duplicado DENTRO do mesmo nível (mesmo slug — cobre
+ * sim/nao/avaliar; produto_de_dados preenchido com algo fora de
+ * {@link SIM_NAO}; nome duplicado DENTRO do mesmo nível (mesmo slug — cobre
  * diferenças só de caixa/acento). O mesmo nome em níveis diferentes é
  * permitido: são componentes diferentes. `id` VAZIO é aceito — a gravação
  * gera um.
@@ -1036,6 +1089,13 @@ export function validarCatalogo(
     if (row.debito !== '' && !DEBITOS_VALIDOS.has(row.debito)) {
       errors.push(
         `linha ${linha} ("${nome}"): debito "${row.debito}" inválido (use sim, nao, avaliar ou deixe vazio)`,
+      )
+    }
+    // A bandeira de produto de dados também é opcional em qualquer nível;
+    // preenchida, só o par sim/nao passa.
+    if (row.produto_de_dados !== '' && !SIM_NAO_SET.has(row.produto_de_dados)) {
+      errors.push(
+        `linha ${linha} ("${nome}"): produto_de_dados "${row.produto_de_dados}" inválido (use ${SIM_NAO_MSG})`,
       )
     }
   })
@@ -1214,6 +1274,8 @@ function nodeFantasma(nomeAlvo: string, nivel: string, id: string): GraphNode {
     centroDeCusto: null,
     descricao: 'Nó fantasma: referenciado na coluna "consome", mas sem linha no catálogo.',
     incompleto: true,
+    // Sem linha no catálogo não há o que declarar: nunca é produto.
+    produtoDeDados: false,
     fantasma: true,
   }
 }
