@@ -1,9 +1,9 @@
 // ÍCONE = TIPO DE COMPONENTE: o glifo desenhado DENTRO do nó.
 //
 // O tipo perdeu a forma do nó (que passou a dizer "produto de dados") e ganhou
-// este ícone; depois o vocabulário cresceu de quatro para catorze, com dez
-// SISTEMAS entrando ao lado dos genéricos. Os testes travam o que faz disso um
-// eixo legível no mapa, e não uma coleção de enfeites:
+// este ícone; depois o vocabulário cresceu de quatro para quinze — dez SISTEMAS
+// entrando ao lado dos genéricos, e a porta de API depois deles. Os testes
+// travam o que faz disso um eixo legível no mapa, e não uma coleção de enfeites:
 //
 //   • todo tipo tem uma entrada, e o Default é o único mudo;
 //   • cada ícone cabe na menor silhueta, e todos ocupam a MESMA caixa (nenhum
@@ -12,7 +12,7 @@
 //     número que decide quantos dentes tem a engrenagem;
 //   • dois ícones quaisquer, RASTERIZADOS no tamanho em que vivem, dão manchas
 //     diferentes (é o teste que substituiu a antiga "família de traço": com
-//     catorze ícones, uma assinatura grosseira colidiria sem que nada estivesse
+//     tantos ícones, uma assinatura grosseira colidiria sem que nada estivesse
 //     errado);
 //   • cada tipo emite uma sequência de comandos de canvas própria;
 //   • o tipo DESENHA o nó (cor, logo ampliada, débito no anel) mas não o
@@ -222,7 +222,7 @@ describe('vocabulário de ícones', () => {
 
 describe('cada ícone é uma mancha diferente das outras', () => {
   // Substituiu a antiga "família de traço" (contou partes, cheio/risco,
-  // reto/oblíquo): com catorze ícones aquela assinatura colidiria por ser
+  // reto/oblíquo): com tantos ícones aquela assinatura colidiria por ser
   // grosseira, não por dois desenhos se parecerem. Aqui a pergunta é a de
   // verdade — rasterize os dois e conte em quantas células eles diferem.
   const bitmaps = comGlifo().map(([tipo, def]) => [tipo, mancha(def)] as const)
@@ -263,6 +263,28 @@ describe('cada ícone é uma mancha diferente das outras', () => {
     // inteiro faltando.
     expect(centro(meio, meio - 3)).not.toBeNull()
     expect(centro(meio, meio + 3)).not.toBeNull()
+  })
+
+  it('os colchetes da API REST deixam o VÃO do meio limpo', () => {
+    // É o que separa este glifo de um losango vazado — e o losango é a silhueta
+    // da bandeira de produto de dados, que não pode ser evocada por ícone
+    // nenhum. Se os dois colchetes forem aproximados a ponto de o vão fechar, o
+    // desenho vira aquela outra coisa, e é isso que este teste pega.
+    const api = GLIFO_DE['API REST']
+    if (api === null) throw new Error('API REST deveria ter ícone')
+    const celulas = mancha(api)
+    const em = (gx: number, gy: number) => celulas[gy * GRADE + gx]
+    const meio = GRADE / 2
+    for (let gy = 0; gy < GRADE; gy++) {
+      expect(em(meio - 1, gy), `coluna do meio, linha ${gy}`).toBeNull()
+      expect(em(meio, gy), `coluna do meio, linha ${gy}`).toBeNull()
+    }
+    // E os dois colchetes estão lá, um de cada lado: o vão limpo de um glifo
+    // vazio também passaria no laço acima.
+    const tintaEm = (de: number, a: number) =>
+      celulas.filter((c, k) => c !== null && k % GRADE >= de && k % GRADE < a).length
+    expect(tintaEm(0, meio)).toBeGreaterThan(0)
+    expect(tintaEm(meio, GRADE)).toBeGreaterThan(0)
   })
 
   it('cada tipo emite uma sequência de comandos de canvas própria', () => {
@@ -426,6 +448,8 @@ describe('drawGlifo', () => {
       'Tabela Delta': [3, 0],
       'Servidor de arquivos': [3, 1],
       Processos: [1, 0],
+      // Dois colchetes traçados e nada preenchido.
+      'API REST': [0, 2],
       // O ladrilho é preenchido e o "X" é traçado por cima dele.
       Excel: [1, 2],
       'SQL Server': [2, 1],

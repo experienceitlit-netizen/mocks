@@ -184,10 +184,10 @@ export function traceShape(
 // não respondem à mesma pergunta:
 //
 //   CATEGORIA — o que a coisa É, sem dono: tabela, planilha, engrenagem de
-//     processo, rack de arquivos. Não há marca a reconhecer, então o desenho é
-//     abstrato e MONOCROMÁTICO CLARO por cima do nó pintado na cor do débito.
-//     Estes nós continuam exatamente como sempre foram: mesmo tamanho, mesma
-//     cor cheia, um glifo branco em cima.
+//     processo, rack de arquivos, porta de API. Não há marca a reconhecer,
+//     então o desenho é abstrato e MONOCROMÁTICO CLARO por cima do nó pintado
+//     na cor do débito. Estes nós continuam exatamente como sempre foram:
+//     mesmo tamanho, mesma cor cheia, um glifo branco em cima.
 //
 //   MARCA — o produto de um FORNECEDOR: Salesforce, MongoDB, SQL Server. Aqui a
 //     pergunta é "que sistema é este?", e a resposta que o olho dá em um quarto
@@ -374,6 +374,47 @@ function tijolo(cy: number): GlifoParte {
   }
 }
 
+/** Colchetes angulares "< >" da API REST, em frações do raio: a PONTA externa
+ *  (o vértice, o que mais avança), o canto interno (onde os dois traços do mesmo
+ *  colchete começam) e a meia-altura.
+ *
+ *  A distância entre os dois cantos internos (2 × 0.16, menos a espessura do
+ *  traço, dá 0.18 livres) é a medida que faz o glifo funcionar: é o VÃO no meio,
+ *  e é ele que se enxerga primeiro quando o nó é pequeno. Encostar os colchetes
+ *  um no outro fecharia o vão e o par viraria um losango vazado — que é a
+ *  silhueta da bandeira de produto de dados, justamente o que este desenho não
+ *  pode evocar.
+ *
+ *  A ponta para em 0.38, e não em 0.42 como a meia-caixa dos outros glifos,
+ *  porque aqui a caixa é a ponta MAIS meio traço (o desenho é só contorno): com
+ *  0.42 o par ficaria visivelmente maior que o resto do vocabulário, e o teste
+ *  que iguala as caixas pega isso. */
+const API_PONTA = 0.38
+const API_CANTO = 0.16
+const API_MEIA_ALTURA = 0.29
+
+/** Espessura dos colchetes. Mais grossa que TRACO_SISTEMA porque aqui o traço é
+ *  o glifo INTEIRO: não há nenhuma área preenchida para segurar a leitura
+ *  quando o nó encolhe, como há no rack (que tem as baias) ou no balde. Na lupa
+ *  de pixel, a 0.13 o traço já sai acinzentado no nó de 9 px de raio — um risco
+ *  de pouco mais de um pixel, que o antialiasing dilui; a 0.14 ele continua
+ *  branco. */
+const TRACO_API = 0.14
+
+/** Um colchete angular. `sinal` −1 desenha o "<" da esquerda e +1 o ">" da
+ *  direita: os dois apontam para FORA, cada um afastando a ponta do centro. */
+function colchete(sinal: number): GlifoParte {
+  return {
+    forma: 'contorno',
+    fechado: false,
+    pontos: [
+      [sinal * API_CANTO, -API_MEIA_ALTURA],
+      [sinal * API_PONTA, 0],
+      [sinal * API_CANTO, API_MEIA_ALTURA],
+    ],
+  }
+}
+
 /** Meia-diagonal do "X" do Excel. Bem menor que a meia-caixa do ladrilho (0.42)
  *  porque ele mora DENTRO dele: 0.24 mais meio traço chega a 0.31, o que deixa
  *  uma faixa de verde em volta — e é a faixa de verde que faz a marca. */
@@ -530,6 +571,35 @@ export const GLIFO_DE: Record<TipoComponente, GlifoDef | null> = {
     traco: 0,
     marca: false,
     nota: 'engrenagem',
+  },
+  // Colchetes angulares "< >" — a marca de interface/código, que é o que uma API
+  // é neste mapa: um componente que SERVE o dado por uma porta, sem dizer onde
+  // ele mora. Fica em CATEGORIA porque "API REST" é um estilo de interface, não
+  // o produto de fornecedor nenhum: glifo branco por cima da cor do débito, como
+  // todo o resto deste grupo.
+  //
+  // Três desenhos mais óbvios foram desenhados e olhados NO TAMANHO REAL do nó
+  // (~9 a 14 px de raio) antes deste, e os três caíram lá:
+  //
+  //   1. SETAS OPOSTAS (⇄), o símbolo mais direto de troca: no tamanho do nó as
+  //      cabeças somem e sobram DUAS BARRAS HORIZONTAIS — que é o que os tijolos
+  //      da Tabela Delta já são, na distinção que mais custaria errar;
+  //   2. CHAVES com um ponto no meio ({ • }), o símbolo do payload JSON: a curva
+  //      da chave é detalhe, some antes de tudo, e o que fica é um ponto cercado
+  //      de borrão;
+  //   3. "</>", com a barra inclinada entre os colchetes: a barra fecha o vão do
+  //      meio e o glifo vira uma mancha só.
+  //
+  // O par de colchetes sobrevive porque é grosseiro por construção — dois traços
+  // angulares e um vão, e o vão é a primeira coisa que se lê. Ele aponta para os
+  // DOIS lados de propósito: um chevron sozinho já quer dizer "sentido do fluxo"
+  // no mapa (o "‹" fraco que corre no corredor entre duas faixas), e um par
+  // simétrico não tem direção nenhuma para se confundir com aquilo.
+  'API REST': {
+    partes: [colchete(-1), colchete(1)],
+    traco: TRACO_API,
+    marca: false,
+    nota: 'colchetes angulares',
   },
 
   // =========================================================================

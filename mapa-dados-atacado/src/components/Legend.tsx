@@ -195,7 +195,7 @@ export default function Legend({
           <Amostra /> círculo = demais componentes
         </li>
 
-        {/* Catorze tipos não cabem numa coluna só sem esticar a legenda por
+        {/* O vocabulário inteiro não cabe numa coluna só sem esticar a legenda por
             cima do mapa — daí os grupos, e as duas colunas dentro de cada um.
             Nenhum é omitido: a lista da legenda é a mesma do select do
             cadastro, na mesma ordem. */}

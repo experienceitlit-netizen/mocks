@@ -25,6 +25,7 @@ export const TIPOS_COMPONENTE = [
   'Default',
   'Servidor de arquivos',
   'Processos',
+  'API REST',
   // marca (de qual fornecedor)
   'SQL Server',
   'MongoDB',

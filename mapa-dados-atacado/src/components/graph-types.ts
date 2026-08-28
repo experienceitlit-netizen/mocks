@@ -39,6 +39,7 @@ export type TipoComponente =
   | 'Default'
   | 'Servidor de arquivos'
   | 'Processos'
+  | 'API REST'
   | 'SQL Server'
   | 'MongoDB'
   | 'S3 Bucket'
@@ -69,7 +70,11 @@ export const TIPOS_COMPONENTE_GRUPOS: ReadonlyArray<{
 }> = [
   {
     titulo: 'Categoria',
-    tipos: ['Tabela SQL', 'Tabela Delta', 'Default', 'Servidor de arquivos', 'Processos'],
+    // "Processos" e "API REST" ficam juntos no fim: são os dois tipos que não
+    // são um LUGAR onde o dado está parado, e sim algo que o move — a
+    // engrenagem processa, a API serve. Quem procura um deles acha o outro ao
+    // lado, que é o que a ordem por parentesco existe para fazer.
+    tipos: ['Tabela SQL', 'Tabela Delta', 'Default', 'Servidor de arquivos', 'Processos', 'API REST'],
   },
   {
     titulo: 'Marca',
