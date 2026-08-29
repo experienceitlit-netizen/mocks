@@ -24,7 +24,10 @@ const RAIZ: GraphNodeData = { id: 'raiz', nome: 'Atacado — Dados', nivel: 'rai
 const PROD: GraphNodeData = { id: 'prod', nome: 'Produto', nivel: 'final' }
 
 /** Grafo mínimo: a entrada consome um produto final + n componentes Bronze
- *  isolados (sem aresta — entram pelo inventário do foco no nível de entrada). */
+ *  isolados (sem aresta — entram pelo INVENTÁRIO, a vista sem foco).
+ *
+ *  O assunto daqui é o layout vertical da coluna, não o que a põe na tela: o
+ *  inventário é só o jeito de montar uma coluna cheia de nós isolados. */
 function grafoComBronzes(n: number): { nodes: GraphNodeData[]; links: GraphLinkData[] } {
   const bronzes: GraphNodeData[] = Array.from({ length: n }, (_, i) => ({
     id: `bronze-${i + 1}`,
@@ -39,7 +42,7 @@ function grafoComBronzes(n: number): { nodes: GraphNodeData[]; links: GraphLinkD
 
 function colunaBronze(n: number) {
   const { nodes, links } = grafoComBronzes(n)
-  const lineage = buildLineage('raiz', nodes, links, NIVEIS)
+  const lineage = buildLineage(null, nodes, links, NIVEIS)
   if (!lineage) throw new Error('lineage null')
   const col = lineage.columns.find((c) => c.slug === 'bronze')
   if (!col) throw new Error('coluna Bronze ausente')
@@ -98,7 +101,7 @@ function colunaDeTipo(n: number, extras: Partial<GraphNodeData>, grau = 0) {
     }
   })
   const nodes = [RAIZ, PROD, ...itens, ...fontes]
-  const lineage = buildLineage('raiz', nodes, links, NIVEIS)
+  const lineage = buildLineage(null, nodes, links, NIVEIS)
   if (!lineage) throw new Error('lineage null')
   const col = lineage.columns.find((c) => c.slug === 'bronze')
   if (!col) throw new Error('coluna Bronze ausente')

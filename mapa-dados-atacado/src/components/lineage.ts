@@ -17,7 +17,6 @@ import {
   isReal,
   linkLabel,
   nivelDe,
-  nivelDeEntrada,
   ordemDoNivel,
   tituloDoNivel,
 } from './graph-types'
@@ -144,12 +143,18 @@ export function buildLineageTree(
  * Linhagem com layout em colunas: nó focado à esquerda e uma coluna por nível
  * presente, na ordem do bloco `niveis`.
  *
- * `rootId` null (ou o foco num componente do NÍVEL DE ENTRADA, o de menor
- * ordem) abre o inventário completo: todo componente do catálogo entra na
- * coluna do seu nível, mesmo sem nenhuma aresta. É o que mantém o mapa legível
- * enquanto as ligações estão sendo construídas — e o que faz a vista em níveis
- * sobreviver ao nível de entrada ficar vazio. Focar em qualquer outro
- * componente mostra só a sub-árvore dele.
+ * `rootId` null abre o INVENTÁRIO completo: todo componente do catálogo entra
+ * na coluna do seu nível, mesmo sem nenhuma aresta. É o que mantém o mapa
+ * legível enquanto as ligações estão sendo construídas, e o que faz a vista em
+ * níveis existir sem depender de nenhum componente em particular.
+ *
+ * Focar em QUALQUER componente mostra só a sub-árvore dele — inclusive nos
+ * componentes da primeira coluna. Houve uma exceção aqui: o foco num nó do
+ * nível de menor ordem também abria o inventário, para o app poder "abrir
+ * focado" na entrada e ainda assim mostrar o mapa cheio. O efeito colateral era
+ * que focar num componente da primeira coluna não isolava nada, e a barra
+ * anunciava um foco que não estava valendo. A entrada do app passou a ser
+ * simplesmente "sem foco", que já significa inventário pelo caminho legítimo.
  */
 export function buildLineage(
   rootId: string | null,
@@ -158,7 +163,7 @@ export function buildLineage(
   niveis: readonly NivelDef[] = [],
 ): Lineage | null {
   // Sem foco, a vista é só o inventário: nenhum componente é indispensável,
-  // então o mapa em níveis existe mesmo com o nível de entrada vazio.
+  // então o mapa em níveis existe mesmo com a primeira coluna vazia.
   const root = rootId === null ? null : buildLineageTree(rootId, nodes, links)
   if (rootId !== null && !root) return null
 
@@ -176,8 +181,7 @@ export function buildLineage(
   }
   if (root) walk(root, new Set())
 
-  const entrada = nivelDeEntrada(nodes, niveis)
-  if (root === null || (entrada !== null && nivelDe(root.data) === entrada)) {
+  if (root === null) {
     for (const n of nodes) if (isReal(n)) addNode(n)
   }
 

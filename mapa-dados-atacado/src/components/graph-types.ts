@@ -204,33 +204,11 @@ export function derivarNiveis(nodes: readonly GraphNodeData[]): NivelDef[] {
   }))
 }
 
-/** Nível de ENTRADA: o de menor `ordem` entre os que têm componente no grafo.
- *  É o topo da cadeia — focar num componente dele abre o inventário completo
- *  (todos os nós, cada um na sua coluna). null = grafo sem nenhum nível. */
-export function nivelDeEntrada(
-  nodes: readonly GraphNodeData[],
-  niveis: readonly NivelDef[],
-): string | null {
-  const presentes = new Set(nodes.filter(isReal).map(nivelDe).filter((s) => s !== ''))
-  let melhor: NivelDef | null = null
-  for (const nv of niveis) {
-    if (presentes.has(nv.slug) && (melhor === null || nv.ordem < melhor.ordem)) melhor = nv
-  }
-  return melhor === null ? null : melhor.slug
-}
-
-/** Componente de entrada do app (foco padrão sem parâmetros na URL): o único
- *  nó do nível de entrada. Com mais de um componente nesse nível não há
- *  entrada óbvia e o app abre no mapa completo. */
-export function noDeEntrada(
-  nodes: readonly GraphNodeData[],
-  niveis: readonly NivelDef[],
-): GraphNodeData | null {
-  const slug = nivelDeEntrada(nodes, niveis)
-  if (slug === null) return null
-  const doNivel = nodes.filter((n) => isReal(n) && nivelDe(n) === slug)
-  return doNivel.length === 1 ? doNivel[0] : null
-}
+// nivelDeEntrada/noDeEntrada viviam aqui: o "nível de entrada" era o de menor
+// ordem com componentes, e o app abria focado no único nó dele. Saíram junto
+// com a exceção que os justificava — focar num componente da primeira coluna
+// abria o inventário em vez de isolar. Hoje a entrada do app é simplesmente
+// "sem foco", que já é o inventário, e nenhum nível tem tratamento especial.
 
 /** Relação entre dois componentes: consumo de dado ou associação declarada. */
 export type LinkLabel = 'consome' | 'vem de'

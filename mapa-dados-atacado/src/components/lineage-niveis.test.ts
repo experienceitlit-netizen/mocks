@@ -1,8 +1,8 @@
 // Contrato da vista em níveis: as colunas vêm do bloco `niveis` do graph.json
 // (ordem asc = esquerda → direita) e cada componente cai na coluna do seu
-// `nivel` — sem categoria especial de nó. Focar no componente do nível de
-// MENOR ORDEM abre o inventário completo; focar em qualquer outro mostra só a
-// sub-árvore dele.
+// `nivel` — sem categoria especial de nó. SEM foco, a vista é o inventário
+// completo; focar em QUALQUER componente mostra só a sub-árvore dele, e o nível
+// de menor ordem não é exceção.
 import { describe, expect, it } from 'vitest'
 import type { GraphLinkData, GraphNodeData, NivelDef } from './graph-types'
 import { linkEndId } from './graph-types'
@@ -20,7 +20,7 @@ const NODES: GraphNodeData[] = [
   { id: 'rar', nome: 'RAR 12M', nivel: 'final', tipoComponente: 'Tabela Delta' },
   { id: 'gdad', nome: 'GDAD', nivel: 'bronze', tipoComponente: 'Tabela SQL' },
   { id: 'sys-a', nome: 'Sys A', nivel: 'fonte', tipoComponente: 'Default' },
-  // Isolado: só entra pelo inventário do nível de entrada.
+  // Isolado: sem aresta nenhuma, só entra pelo inventário (a vista sem foco).
   { id: 'solto', nome: 'Planilha solta', nivel: 'bronze', tipoComponente: 'Excel' },
 ]
 
@@ -45,10 +45,21 @@ describe('vista em níveis com bloco `niveis` dinâmico', () => {
     expect(gdad?.fx).toBe(colBronze?.x)
   })
 
-  it('foco no nível de MENOR ordem traz o inventário completo', () => {
-    const lineage = buildLineage('raiz', NODES, LINKS, NIVEIS)
+  it('SEM foco traz o inventário completo, inclusive o isolado', () => {
+    const lineage = buildLineage(null, NODES, LINKS, NIVEIS)
     if (!lineage) throw new Error('lineage null')
     expect([...lineage.ids].sort()).toEqual(['gdad', 'raiz', 'rar', 'solto', 'sys-a'])
+  })
+
+  // O nível de MENOR ordem já foi exceção: focar num componente dele abria o
+  // inventário, e o efeito era que a primeira coluna do mapa era a única em que
+  // "Focar neste nó" não isolava nada. Isola como qualquer outra — `solto`, que
+  // é do mesmo grafo mas não tem aresta com a raiz, fica de fora.
+  it('foco no nível de MENOR ordem isola, como qualquer outro', () => {
+    const lineage = buildLineage('raiz', NODES, LINKS, NIVEIS)
+    if (!lineage) throw new Error('lineage null')
+    expect([...lineage.ids].sort()).toEqual(['gdad', 'raiz', 'rar', 'sys-a'])
+    expect(lineage.ids.has('solto')).toBe(false)
   })
 
   it('foco em outro componente mostra só a sub-árvore dele', () => {

@@ -27,7 +27,6 @@ import {
   isReal,
   linkEndId,
   nivelDe,
-  noDeEntrada,
 } from './components/graph-types'
 import { buildLineage, buildLineageTree } from './components/lineage'
 import { grausPorId } from './components/node-size'
@@ -82,16 +81,6 @@ function niveisDoGrafo(graph: GraphJson): NivelDef[] {
     : derivarNiveis(graph.nodes)
 }
 
-/** Componente de entrada do mapa: o único do nível de menor ordem. É a entrada
- *  padrão do app — sem parâmetros na URL, a navegação começa focada nele (e o
- *  foco nele mostra o inventário completo, ver buildLineage). null quando não
- *  há entrada óbvia: o app abre no mapa completo. */
-function entradaDoGrafo(graph: GraphJson, niveis: readonly NivelDef[]): string | null {
-  return noDeEntrada(graph.nodes, niveis)?.id ?? null
-}
-
-const ENTRADA_INICIAL = entradaDoGrafo(GRAPH_INICIAL, niveisDoGrafo(GRAPH_INICIAL))
-
 function readUrlSelection(): string | null {
   return new URLSearchParams(window.location.search).get('no')
 }
@@ -100,16 +89,17 @@ function readUrlFocus(): string | null {
   return new URLSearchParams(window.location.search).get('foco')
 }
 
-/** Caminho de foco na carga: ?foco= explícito manda; sem ?foco= e sem ?no=,
- *  o padrão é abrir focado no componente de entrada (vista Níveis, painel
- *  fechado). URL sem parâmetros SEMPRE significa essa entrada padrão — o
- *  estado "mapa global" não é codificado na URL (ver efeito de sincronização
- *  abaixo). */
-function readInitialFocusPath(entradaId: string | null): string[] {
+/** Caminho de foco na carga: só o ?foco= explícito. URL sem parâmetros abre o
+ *  mapa completo, SEM foco.
+ *
+ *  O app já abriu "focado no componente de entrada" — mas era um foco de
+ *  fachada, porque buildLineage tratava esse caso como inventário. A barra
+ *  anunciava um foco que não estava valendo, e focar num componente da primeira
+ *  coluna não isolava nada. Sem foco é o mesmo mapa na tela, dito com
+ *  honestidade. */
+function readInitialFocusPath(): string[] {
   const foco = readUrlFocus()
-  if (foco) return [foco]
-  if (entradaId !== null && readUrlSelection() === null) return [entradaId]
-  return []
+  return foco ? [foco] : []
 }
 
 function readUrlDepth(): number {
@@ -157,7 +147,6 @@ function App() {
   const graph = grafoLocal ?? GRAPH_INICIAL
   const { nodes, links } = graph
   const niveis = useMemo(() => niveisDoGrafo(graph), [graph])
-  const entradaId = useMemo(() => entradaDoGrafo(graph, niveis), [graph, niveis])
 
   // A lib de força muta os objetos (injeta x/y) — clona uma única vez.
   const simData = useMemo<{ nodes: SimNode[]; links: SimLink[] }>(
@@ -239,7 +228,7 @@ function App() {
   const [somenteSemOwner, setSomenteSemOwner] = useState(false)
   const [somenteProdutos, setSomenteProdutos] = useState(false)
 
-  const [focusPath, setFocusPath] = useState<string[]>(() => readInitialFocusPath(ENTRADA_INICIAL))
+  const [focusPath, setFocusPath] = useState<string[]>(readInitialFocusPath)
   const [depth, setDepth] = useState<number>(readUrlDepth)
   const [vista, setVista] = useState<Vista>(readUrlVista)
   // Faixas de nível (retângulos + títulos + chevrons) da vista Níveis.
@@ -359,14 +348,14 @@ function App() {
   }, [store])
 
   // Catálogo aberto de um arquivo local: o grafo passa a ser o que o próprio
-  // navegador montou a partir dos CSVs, e a navegação recomeça na entrada dele
-  // (os ids do catálogo novo não têm relação com os do graph.json embutido).
+  // navegador montou a partir dos CSVs, e a navegação recomeça do zero — os ids
+  // do catálogo novo não têm relação com os do graph.json embutido, então um
+  // foco herdado apontaria para um nó que não existe mais.
   useEffect(() => {
     const novo = store?.grafo() ?? null
     if (novo === null) return
     setGrafoLocal(novo)
-    const entrada = entradaDoGrafo(novo, niveisDoGrafo(novo))
-    setFocusPath(entrada === null ? [] : [entrada])
+    setFocusPath([])
     setSelectedId(null)
     setPinnedId(null)
   }, [store])
@@ -711,19 +700,16 @@ function App() {
   const handleNodeRightClick = useCallback((id: string) => select(id), [select])
 
   // URL reflete aba (?aba=tabela), seleção (?no=) e foco (?foco=&vista=, com
-  // &prof= só na vista de força) sem poluir o histórico. O estado padrão de
-  // entrada (foco no componente de entrada, vista Níveis, nada selecionado)
-  // fica com a URL limpa — o inverso de readInitialFocusPath. Consequência
-  // documentada: o mapa global também tem URL limpa, então recarregar a página
-  // a partir dele volta à entrada padrão.
+  // &prof= só na vista de força) sem poluir o histórico. Sem foco, a URL fica
+  // limpa — o inverso exato de readInitialFocusPath, e agora sem exceção: todo
+  // foco é explícito, então todo foco vai para a URL e sobrevive ao recarregar.
   useEffect(() => {
     const url = new URL(window.location.href)
     if (aba === 'tabela') url.searchParams.set('aba', 'tabela')
     else url.searchParams.delete('aba')
     if (selectedId) url.searchParams.set('no', selectedId)
     else url.searchParams.delete('no')
-    const focoDefault = focusId === entradaId && vista === 'niveis' && !selectedId
-    if (focusId && !focoDefault) {
+    if (focusId) {
       url.searchParams.set('foco', focusId)
       url.searchParams.set('vista', vista)
       if (vista === 'forca') url.searchParams.set('prof', String(depth))
@@ -734,7 +720,7 @@ function App() {
       url.searchParams.delete('vista')
     }
     window.history.replaceState(null, '', url)
-  }, [aba, selectedId, focusId, depth, vista, entradaId])
+  }, [aba, selectedId, focusId, depth, vista])
 
   // --- exclusão pelo teclado ---
   // Delete (e Backspace, o hábito do macOS) sobre o componente em evidência
@@ -834,20 +820,13 @@ function App() {
     else if (focusId) exitFocus()
   }
 
-  // O componente de entrada muda quando o catálogo em edição muda (modo
-  // arquivo); o handler de popstate é registrado uma vez só e lê pela ref.
-  const entradaRef = useRef(entradaId)
-  useEffect(() => {
-    entradaRef.current = entradaId
-  }, [entradaId])
-
   useEffect(() => {
     const onPopState = () => {
       const id = readUrlSelection()
       setAba(readUrlAba())
       setSelectedId(id)
       setPinnedId(null)
-      setFocusPath(readInitialFocusPath(entradaRef.current))
+      setFocusPath(readInitialFocusPath())
       setDepth(readUrlDepth())
       setVista(readUrlVista())
       if (id) graphRef.current?.focusNode(id)
