@@ -1,16 +1,28 @@
 ﻿id;nome;nivel;tipo_componente;dominio;consome;descricao;debito;status;owner;centro_de_custo;observacoes;associacoes;produto_de_dados
-bacen-3040-45-46;BACEN 3040/45/46/47;gold;Tabela Delta;Regulatorio;adat;operações de crédito reguladas;nao;producao;Fulano de Tal;aaad;Bases regulatórias do BACEN (documentos 3040, 3045 e 3046) com as operações de crédito reguladas do sistema financeiro. Chegam ao banco por transferência corporativa de arquivos e dão ao Atacado visão de endividamento e share dos clientes no mercado de crédito. O uso como insumo do endividamento de mercado foi inferido e precisa ser validado com o negócio.;;sim
-de-para-de-produtos;De-para de produtos;broze;Default;Mercado;;clusterização de produtos do Atacado;sim;producao;;;De-para construído pelos analistas do Atacado para clusterizar os produtos e dar visão agregada por família de produto na EVOL. É um artefato exploratório mantido em planilha Excel — útil na análise, mas ainda sem rota governada, o que caracteriza o débito. Há um MVP no Salesforce com destino planejado no lake.;;nao
-gdad;GDAD;gold;Default;Resultado;adat;resultado realizado;nao;producao;;;Resultado gerencial realizado por cliente e produto, disponível como dado curado no Databricks. É a base primária de resultado do Atacado: alimenta tanto os ajustes analíticos da Evolução do Resultado quanto o cálculo do RAR 12M.;;nao
-recta-fedrl;RECTA_FEDRL;broze;Tabela Delta;A definir;;conteúdo a mapear;avaliar;investigacao;;;Tabela departamental referenciada em processos do Atacado cujo dono, conteúdo e domínio ainda precisam ser identificados. Está no catálogo justamente para dar visibilidade ao gap: enquanto ninguém reivindica a origem, o dado permanece em investigação, sem produto secundário associado.;;nao
-resultado;Resultado;silver;Default;;adat;;avaliar;producao;;;;;nao
-sanitizacao;Sanitização;silver;Default;;adat;;avaliar;producao;;;;;nao
-cash;Cash;broze;Tabela Delta;;;;avaliar;producao;;;;;nao
-restritivos;Restritivos;silver;Default;;adat;;avaliar;producao;;;;;nao
-adat;ADAT;broze;Default;;;;;;;;;;nao
-rm-relacionamento;RM (relacionamento);origem;Default;;;;;;;;;;nao
-sistemas-de-produto-a-mapear;sistemas de produto (a mapear);origem;Default;;;;;;;;;;nao
-webscraping-debentures-com-br;Salesforce;fonte;Salesforce;;;(debentures.com.br);nao;producao;Ramiro Costa;;;;nao
-clientes;Clientes;dominio;Default;;;;avaliar;producao;;;;;nao
-de-para-de-analistas;De-para de Analistas;fonte;API REST;;;;sim;producao;Ramiro Costa;aaad;;;nao
-bando-de-dados-atacado;SQL Server 2022;fonte;SQL Server;;;;sim;transicao;Ramiro Costa;aaad;;;nao
+salesforce-crm;Salesforce CRM;origem;Salesforce;Comercial;;CRM comercial do Atacado: contas, oportunidades e visitas.;nao;producao;Equipe CRM;CC-1010;;;nao
+data-cloud-clientes;Data Cloud — Clientes;origem;Data Cloud;Cadastro;;Perfil unificado de cliente consolidado no Data Cloud.;nao;producao;Equipe CRM;CC-1010;;;nao
+pega-onboarding;Pega — Onboarding;origem;Pega;Cadastro;;Esteira de abertura de relacionamento e cadastro.;avaliar;producao;;;;;nao
+servicenow-chamados;ServiceNow — Chamados;origem;ServiceNow;Atendimento;;Chamados e incidentes abertos pelos clientes.;sim;producao;Equipe Atendimento;CC-2020;Exportação diária por CSV. **Sem API contratada** — o volume tem crescido e a janela de extração já estoura.;;nao
+core-bancario;Core Bancário;origem;SQL Server;Operações;;Sistema transacional: posição, limites e movimentação.;sim;producao;TI Core;CC-3030;;;nao
+catalogo-produtos-mongo;Catálogo de Produtos;origem;MongoDB;Produto;;Documentos de produto, taxas e elegibilidade.;avaliar;transicao;;CC-3030;;;nao
+planilha-metas;Planilha de Metas;origem;Excel;Comercial;;Metas por gerente e segmento, mantidas à mão.;sim;investigacao;;;Planilha mantida por uma pessoa só, sem versionamento. É o exemplo clássico do gap: dado que decide meta comercial e não tem dono formal nem centro de custo.;;nao
+compartilhamento-arquivos;Compartilhamento de Arquivos;origem;Servidor de arquivos;Comercial;;Pasta de rede com extrações manuais e arquivos de parceiros.;sim;investigacao;;;;;nao
+api-posicao;API de Posição;fonte;API REST;Operações;core-bancario;Serviço REST de posição consolidada, consumido sob demanda.;nao;producao;TI Core;CC-3030;;;nao
+ingestao-batch;Ingestão Batch Diária;fonte;Processos;Plataforma;salesforce-crm | pega-onboarding | servicenow-chamados;Job diário que extrai os sistemas de origem e deposita na landing.;avaliar;producao;Eng. Dados;CC-4040;;;nao
+landing-s3;Landing S3;fonte;S3 Bucket;Plataforma;ingestao-batch | compartilhamento-arquivos | planilha-metas;Zona de pouso dos arquivos, particionada por data.;nao;producao;Eng. Dados;CC-4040;;;nao
+landing-adls;Landing ADLS;fonte;Blob Storage;Plataforma;data-cloud-clientes | catalogo-produtos-mongo;Zona de pouso do que vem por conector nativo.;nao;producao;Eng. Dados;CC-4040;;;nao
+staging-relacional;Staging Relacional;fonte;Tabela SQL;Plataforma;api-posicao;Área de preparação relacional antes da carga em Delta.;avaliar;transicao;Eng. Dados;CC-4040;Etapa herdada do modelo antigo. A intenção é aposentá-la e ler a API direto no Broze.;;nao
+raw-clientes;raw_clientes;broze;Tabela Delta;Cadastro;landing-s3 | landing-adls;Cadastro cru de clientes, sem tratamento.;nao;producao;Eng. Dados;CC-4040;;;nao
+raw-operacoes;raw_operacoes;broze;Tabela Delta;Operações;staging-relacional;Movimentação e posição cruas, carga incremental.;nao;producao;Eng. Dados;CC-4040;;;nao
+raw-chamados;raw_chamados;broze;Tabela Delta;Atendimento;landing-s3;Chamados crus, um registro por evento.;avaliar;producao;;CC-4040;;;nao
+raw-produtos;raw_produtos;broze;Tabela Delta;Produto;landing-adls;Documentos de produto achatados em tabela.;nao;producao;Eng. Dados;CC-4040;;;nao
+dim-cliente;dim_cliente;silver;Tabela Delta;Cadastro;raw-clientes;Dimensão de cliente deduplicada, com chave única.;nao;producao;Governança de Dados;CC-5050;;;nao
+fato-operacao;fato_operacao;silver;Tabela Delta;Operações;raw-operacoes;Fato de operação por cliente, produto e data.;nao;producao;Governança de Dados;CC-5050;;;nao
+dim-produto;dim_produto;silver;Tabela Delta;Produto;raw-produtos;Dimensão de produto com hierarquia comercial.;nao;producao;Governança de Dados;CC-5050;;;nao
+fato-atendimento;fato_atendimento;silver;Tabela Delta;Atendimento;raw-chamados;Fato de atendimento com tempo de resolução.;avaliar;transicao;;CC-5050;;;nao
+rentabilidade-atacado;Rentabilidade Atacado;gold;Tabela Delta;Resultado;fato-operacao | dim-cliente | dim-produto;Resultado por cliente e produto, base do acompanhamento comercial.;nao;producao;Controladoria;CC-6060;Produto de dados certificado. Contrato de dados publicado e SLA de D-1.;;sim
+carteira-360;Carteira 360;gold;Tabela Delta;Comercial;dim-cliente | fato-operacao | fato-atendimento;Visão única do cliente para o gerente de relacionamento.;nao;producao;Comercial Atacado;CC-6060;Produto de dados certificado. Junta operação e atendimento na mesma granularidade de cliente.;;sim
+risco-concentracao;Risco de Concentração;gold;Tabela Delta;Risco;fato-operacao | dim-cliente;Exposição por grupo econômico e setor.;avaliar;transicao;Risco de Crédito;CC-7070;Ainda em homologação com a área de risco — a régua de grupo econômico está em revisão.;;sim
+jornada-relacionamento;Abertura de Relacionamento;dominio;Default;Comercial;carteira-360;Da prospecção à conta ativa.;nao;producao;Comercial Atacado;CC-6060;;;nao
+jornada-credito;Concessão de Crédito;dominio;Default;Risco;risco-concentracao | rentabilidade-atacado;Da proposta ao desembolso.;nao;producao;Risco de Crédito;CC-7070;;;nao
+jornada-carteira;Gestão de Carteira;dominio;Default;Comercial;carteira-360 | rentabilidade-atacado;Acompanhamento e ação sobre a carteira já ativa.;avaliar;producao;Comercial Atacado;CC-6060;;;nao
