@@ -5,6 +5,16 @@ implementado; a ordem abaixo não é prioridade.
 
 - **Ingestão automática de linhagem do Unity Catalog / Databricks** — gerar (ou conciliar)
   nós e arestas a partir da linhagem real das tabelas, em vez de manutenção manual do catalogo.csv.
+  Especificação escrita em [`docs/ingestao-databricks.md`](docs/ingestao-databricks.md).
+  Já decidido: o Unity Catalog está em uso e o acesso hoje é só pela interface web, então a
+  coleta começa como um notebook rodado dentro do Databricks, que gera um artefato para o app
+  ler; a primeira fase **importa componentes a partir da linhagem**, com o usuário escolhendo
+  quais tabelas viram componente e em que nível cada uma entra (é o que evita cadastrar a
+  cadeia inteira à mão, e faz a coluna de costura nascer preenchida); e os jobs ficam **fora
+  do catalogo.csv**, em vista própria, porque um job atravessa camadas e não é uma delas.
+  Falta decidir o que o documento lista: de onde vem o nome sugerido do componente, se o
+  pacote de duplo clique mostra metadados, e se a vista de processos é uma aba ou um modo da
+  aba Tabela.
 - **Modo de edição na UI** — formulário na própria página que grava o catálogo via pull
   request, mantendo o Git como trilha de auditoria. *Atendido na versão dev server: o
   formulário multi-nível ("+ Novo componente" / "✎ Editar" no balão) cadastra e edita
