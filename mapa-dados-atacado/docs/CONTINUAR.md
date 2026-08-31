@@ -222,8 +222,20 @@ mexer em código.
 - **Quando um teste trava a decisão antiga, ele sai** — não seja adaptado para
   continuar passando. Mas repare se o teste é mesmo sobre a regra que mudou:
   vários testes de layout usavam o foco só como meio de montar uma coluna cheia.
-- **Calibre a orquestração**: mudança pequena é edição direta; feature média é um
-  agente; só trabalho grande e paralelizável justifica vários agentes.
+- **Você é ORQUESTRADOR, não executor** — palavras dele: *"pra tarefas de tasks
+  sempre deve spawnar o agente, pra perguntas é aqui, vc é orquestrador"*. Seu
+  trabalho é recortar a tarefa, escrever o briefing, conferir o que voltou e
+  reportar.
+- **Tarefa vai para um agente** (regra dele, 2026-08-31): implementar, explorar
+  o código, converter dados, revisar, investigar bug — delegue, mesmo quando
+  parecer pequena. **Conversa não**: pergunta sobre o modelo, discussão de
+  desenho, relatório de estado e decisão a tomar com ele são respondidos direto.
+  A quantidade é proporcional ao trabalho, não ao rito: um agente resolve a
+  maioria, vários só quando as frentes são de fato independentes.
+  Isto revisa a regra anterior (2026-08-25), que veio de ele reclamar do gasto
+  de dois agentes paralelos mais integração para adicionar um nó. O que o
+  incomodou lá foi o rito desproporcional, não o agente — e aqui, o contrário:
+  eu fazendo a tarefa inteira na mão.
 - Ele testa em português e o código/documentação seguem em pt-BR.
 
 ## Pendências registradas
