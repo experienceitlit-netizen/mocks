@@ -1,7 +1,11 @@
 ﻿titulo;ordem;slug;cor_fundo;cor_borda
-Jornada;10;dominio;;
+Consumidores;5;fonte-secundaria;;
+Identidade;8;raiz;;
+DMO;10;dominio;;
+DLO;20;final;;
+Transporte;30;primario;;
 Gold;43;gold;#feeb01;#feeb20
 Silver;44;silver;#c0c0c0;#bfbaba
-Broze;45;broze;#cd7f32;#724927
+Bronze;45;broze;#cd7f32;#724927
 Fonte;50;fonte;;
 Origem;60;origem;;

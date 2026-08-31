@@ -1,28 +1,264 @@
 ﻿id;nome;nivel;tipo_componente;dominio;consome;descricao;debito;status;owner;centro_de_custo;observacoes;associacoes;produto_de_dados
-salesforce-crm;Salesforce CRM;origem;Salesforce;Comercial;;CRM comercial do Atacado: contas, oportunidades e visitas.;nao;producao;Equipe CRM;CC-1010;;;nao
-data-cloud-clientes;Data Cloud — Clientes;origem;Data Cloud;Cadastro;;Perfil unificado de cliente consolidado no Data Cloud.;nao;producao;Equipe CRM;CC-1010;;;nao
-pega-onboarding;Pega — Onboarding;origem;Pega;Cadastro;;Esteira de abertura de relacionamento e cadastro.;avaliar;producao;;;;;nao
-servicenow-chamados;ServiceNow — Chamados;origem;ServiceNow;Atendimento;;Chamados e incidentes abertos pelos clientes.;sim;producao;Equipe Atendimento;CC-2020;Exportação diária por CSV. **Sem API contratada** — o volume tem crescido e a janela de extração já estoura.;;nao
-core-bancario;Core Bancário;origem;SQL Server;Operações;;Sistema transacional: posição, limites e movimentação.;sim;producao;TI Core;CC-3030;;;nao
-catalogo-produtos-mongo;Catálogo de Produtos;origem;MongoDB;Produto;;Documentos de produto, taxas e elegibilidade.;avaliar;transicao;;CC-3030;;;nao
-planilha-metas;Planilha de Metas;origem;Excel;Comercial;;Metas por gerente e segmento, mantidas à mão.;sim;investigacao;;;Planilha mantida por uma pessoa só, sem versionamento. É o exemplo clássico do gap: dado que decide meta comercial e não tem dono formal nem centro de custo.;;nao
-compartilhamento-arquivos;Compartilhamento de Arquivos;origem;Servidor de arquivos;Comercial;;Pasta de rede com extrações manuais e arquivos de parceiros.;sim;investigacao;;;;;nao
-api-posicao;API de Posição;fonte;API REST;Operações;core-bancario;Serviço REST de posição consolidada, consumido sob demanda.;nao;producao;TI Core;CC-3030;;;nao
-ingestao-batch;Ingestão Batch Diária;fonte;Processos;Plataforma;salesforce-crm | pega-onboarding | servicenow-chamados;Job diário que extrai os sistemas de origem e deposita na landing.;avaliar;producao;Eng. Dados;CC-4040;;;nao
-landing-s3;Landing S3;fonte;S3 Bucket;Plataforma;ingestao-batch | compartilhamento-arquivos | planilha-metas;Zona de pouso dos arquivos, particionada por data.;nao;producao;Eng. Dados;CC-4040;;;nao
-landing-adls;Landing ADLS;fonte;Blob Storage;Plataforma;data-cloud-clientes | catalogo-produtos-mongo;Zona de pouso do que vem por conector nativo.;nao;producao;Eng. Dados;CC-4040;;;nao
-staging-relacional;Staging Relacional;fonte;Tabela SQL;Plataforma;api-posicao;Área de preparação relacional antes da carga em Delta.;avaliar;transicao;Eng. Dados;CC-4040;Etapa herdada do modelo antigo. A intenção é aposentá-la e ler a API direto no Broze.;;nao
-raw-clientes;raw_clientes;broze;Tabela Delta;Cadastro;landing-s3 | landing-adls;Cadastro cru de clientes, sem tratamento.;nao;producao;Eng. Dados;CC-4040;;;nao
-raw-operacoes;raw_operacoes;broze;Tabela Delta;Operações;staging-relacional;Movimentação e posição cruas, carga incremental.;nao;producao;Eng. Dados;CC-4040;;;nao
-raw-chamados;raw_chamados;broze;Tabela Delta;Atendimento;landing-s3;Chamados crus, um registro por evento.;avaliar;producao;;CC-4040;;;nao
-raw-produtos;raw_produtos;broze;Tabela Delta;Produto;landing-adls;Documentos de produto achatados em tabela.;nao;producao;Eng. Dados;CC-4040;;;nao
-dim-cliente;dim_cliente;silver;Tabela Delta;Cadastro;raw-clientes;Dimensão de cliente deduplicada, com chave única.;nao;producao;Governança de Dados;CC-5050;;;nao
-fato-operacao;fato_operacao;silver;Tabela Delta;Operações;raw-operacoes;Fato de operação por cliente, produto e data.;nao;producao;Governança de Dados;CC-5050;;;nao
-dim-produto;dim_produto;silver;Tabela Delta;Produto;raw-produtos;Dimensão de produto com hierarquia comercial.;nao;producao;Governança de Dados;CC-5050;;;nao
-fato-atendimento;fato_atendimento;silver;Tabela Delta;Atendimento;raw-chamados;Fato de atendimento com tempo de resolução.;avaliar;transicao;;CC-5050;;;nao
-rentabilidade-atacado;Rentabilidade Atacado;gold;Tabela Delta;Resultado;fato-operacao | dim-cliente | dim-produto;Resultado por cliente e produto, base do acompanhamento comercial.;nao;producao;Controladoria;CC-6060;Produto de dados certificado. Contrato de dados publicado e SLA de D-1.;;sim
-carteira-360;Carteira 360;gold;Tabela Delta;Comercial;dim-cliente | fato-operacao | fato-atendimento;Visão única do cliente para o gerente de relacionamento.;nao;producao;Comercial Atacado;CC-6060;Produto de dados certificado. Junta operação e atendimento na mesma granularidade de cliente.;;sim
-risco-concentracao;Risco de Concentração;gold;Tabela Delta;Risco;fato-operacao | dim-cliente;Exposição por grupo econômico e setor.;avaliar;transicao;Risco de Crédito;CC-7070;Ainda em homologação com a área de risco — a régua de grupo econômico está em revisão.;;sim
-jornada-relacionamento;Abertura de Relacionamento;dominio;Default;Comercial;carteira-360;Da prospecção à conta ativa.;nao;producao;Comercial Atacado;CC-6060;;;nao
-jornada-credito;Concessão de Crédito;dominio;Default;Risco;risco-concentracao | rentabilidade-atacado;Da proposta ao desembolso.;nao;producao;Risco de Crédito;CC-7070;;;nao
-jornada-carteira;Gestão de Carteira;dominio;Default;Comercial;carteira-360 | rentabilidade-atacado;Acompanhamento e ação sobre a carteira já ativa.;avaliar;producao;Comercial Atacado;CC-6060;;;nao
+gdad;GDAD — resultado gerencial;origem;Default;;;Sistema de origem do resultado gerencial.;nao;;;;"## Detalhes
+
+- Tipo na planilha: `produto_de_dados` — chega como produto de dados corporativo.";;sim
+estatag;ESTATAG — risco;origem;Default;;;Sistema de origem do risco.;nao;;;;"## Detalhes
+
+- Tipo na planilha: `produto_de_dados`.";;sim
+base-capital-regulatorio;Base de Capital Regulatório;origem;Default;;;Sistema de origem do capital regulatório.;avaliar;;;;"## Detalhes
+
+- Tipo de sistema: **a confirmar**.
+- Mecanismo de ingestão: **a confirmar**.";;nao
+banco-credito-ke;Banco de dados do Crédito (KE);origem;Tabela SQL;;;Sistema de origem do custo de capital (KE).;sim;;;;"## Detalhes
+
+- Tipo na planilha: `banco_dados`.
+- Débito: **fonte provisória, domínio a definir**.
+- É a raiz do débito que [[dim_custo_capital]] e [[Rentabilidade Atacado]] declaram como herdado.";;nao
+psdc;PSDC — cadastro corporativo;origem;Default;;;Sistema de origem do cadastro corporativo.;nao;;;;"## Detalhes
+
+- Tipo na planilha: `produto_de_dados`.";;sim
+salesforce-crm;Salesforce CRM;origem;Salesforce;;;CRM. Entra no Data Cloud por duas vias: bulk para o lake e conector nativo direto da origem.;nao;;;;"## Detalhes
+
+- Tipo na planilha: `crm`.";;nao
+produto-dados-corporativo;Produto de dados corporativo;fonte;Default;;gdad | estatag | psdc;Ingestão pelo catálogo de produtos de dados corporativos.;nao;;;;"## Relações
+
+- ingere de [[GDAD — resultado gerencial]] — a planilha diz ""(catálogo)"" só neste
+- ingere de [[ESTATAG — risco]]
+- ingere de [[PSDC — cadastro corporativo]]
+
+## Detalhes
+
+- Um só componente para as três origens que declaram o mesmo mecanismo.";;nao
+ingestao-capital-reg;a confirmar;fonte;Default;;base-capital-regulatorio;Ingestão da Base de Capital Regulatório: mecanismo ainda não identificado.;avaliar;;;;"## Relações
+
+- ingere de [[Base de Capital Regulatório]]
+
+## Detalhes
+
+- O nome é a própria célula da planilha: **a confirmar**. O nó existe para o buraco ficar visível.";;nao
+staging-relacional;Staging Relacional — batch mensal;fonte;Processos;;banco-credito-ke;Batch mensal que traz o custo de capital para o lake.;nao;;;;"## Relações
+
+- ingere de [[Banco de dados do Crédito (KE)]]
+
+## Detalhes
+
+- Frequência: mensal.";;nao
+bulk-api-crm;Bulk API — CRM → lake;fonte;API REST;;salesforce-crm;Carga diária do CRM para o lake.;nao;;;;"## Relações
+
+- ingere de [[Salesforce CRM]]
+
+## Detalhes
+
+- Frequência: diária.";;nao
+raw-gdad;raw_gdad;broze;Tabela Delta;;produto-dados-corporativo;;nao;;;;"## Relações
+
+- ingere por [[Produto de dados corporativo]]";;nao
+raw-estatag;raw_estatag;broze;Tabela Delta;;produto-dados-corporativo;;nao;;;;"## Relações
+
+- ingere por [[Produto de dados corporativo]]";;nao
+raw-capital-reg;raw_capital_reg;broze;Tabela Delta;;ingestao-capital-reg;;avaliar;;;;"## Relações
+
+- ingere por [[a confirmar]]";;nao
+raw-custo-capital;raw_custo_capital;broze;Tabela Delta;;staging-relacional;;sim;;;;"## Relações
+
+- ingere por [[Staging Relacional — batch mensal]]
+
+## Detalhes
+
+- Origem do débito herdado declarado em [[dim_custo_capital]] e em [[Rentabilidade Atacado]].";;nao
+raw-psdc;raw_psdc;broze;Tabela Delta;;produto-dados-corporativo;;nao;;;;"## Relações
+
+- ingere por [[Produto de dados corporativo]]";;nao
+raw-account;raw_account;broze;Tabela Delta;;bulk-api-crm;;nao;;;;"## Relações
+
+- ingere por [[Bulk API — CRM → lake]]";;nao
+fato-resultado-mensal;fato_resultado_mensal;silver;Tabela Delta;;raw-gdad;;nao;;;;"## Relações
+
+- vem de [[raw_gdad]]
+
+## Detalhes
+
+- Grão: grupo × mês.";;nao
+fato-risco;fato_risco;silver;Tabela Delta;;raw-estatag;;nao;;;;"## Relações
+
+- vem de [[raw_estatag]]
+
+## Detalhes
+
+- Grão: grupo × mês.";;nao
+fato-capital;fato_capital;silver;Tabela Delta;;raw-capital-reg;;avaliar;;;;"## Relações
+
+- vem de [[raw_capital_reg]]
+
+## Detalhes
+
+- Grão: grupo × mês.
+- Débito com **status a confirmar**.";;nao
+dim-custo-capital;dim_custo_capital;silver;Tabela Delta;;raw-custo-capital;;avaliar;;;;"## Relações
+
+- vem de [[raw_custo_capital]]
+
+## Detalhes
+
+- Grão: vigência.
+- Débito **herdado** de [[raw_custo_capital]] — não é débito próprio. O modelo não tem eixo de herança, então entra como ""a avaliar"".";;nao
+dim-grupo-economico;dim_grupo_economico;silver;Tabela Delta;;raw-psdc | raw-account;;nao;;;;"## Relações
+
+- vem de [[raw_psdc]]
+- vem de [[raw_account]]
+
+## Detalhes
+
+- Grão: grupo.";;nao
+dim-cliente;dim_cliente;silver;Tabela Delta;;raw-psdc | raw-account;;nao;;;;"## Relações
+
+- vem de [[raw_psdc]]
+- vem de [[raw_account]]
+
+## Detalhes
+
+- Grão: CNPJ.";;nao
+gold-rar-grupo;Rentabilidade Atacado;gold;Tabela Delta;;fato-resultado-mensal | fato-capital | fato-risco | dim-custo-capital | dim-grupo-economico;Engine do RAR 12M. Catálogo: gold.rar_grupo.;avaliar;;;;"## Relações
+
+- transforma de [[fato_resultado_mensal]] — numerador
+- transforma de [[fato_capital]] — denominador
+- transforma de [[fato_risco]] — ajuste
+- transforma de [[dim_custo_capital]] — KE
+- transforma de [[dim_grupo_economico]] — chave
+
+## Detalhes
+
+- Grão: grupo econômico × mês.
+- Colunas: `cd_grupo`, `cnpj_raiz`, `dt_ref`, `rar_12m`, `resultado_12m`, `cap_reg`, `ke`, `spread_medio`, `flag_meta`, `dt_processamento`, `versao`.
+- Débito **herdado** de [[raw_custo_capital]] (""marque no visual"") — entra como ""a avaliar"" por falta de eixo de herança no modelo.";;sim
+gold-rar-grupo-atual;gold.rar_grupo_atual;gold;Tabela Delta;;gold-rar-grupo;Último mês fechado, 1 registro por grupo.;nao;;;;"## Relações
+
+- transforma de [[Rentabilidade Atacado]] — regra ""último mês fechado""";;sim
+gold-cadastro-cliente;Carteira 360;gold;Tabela Delta;;dim-cliente | dim-grupo-economico;Cadastro do cliente do Atacado. Catálogo: gold.cadastro_cliente.;nao;;;;"## Relações
+
+- transforma de [[dim_cliente]]
+- transforma de [[dim_grupo_economico]]
+
+## Detalhes
+
+- Colunas: `nr_cnpj`, `cnpj_raiz`, `razao_social`, `id_grupo_economico`, `centro_custo`, `faturamento_oficial`.";;sim
+transp-rar-grupo;Ingestion API bulk — rar_grupo;primario;API REST;;gold-rar-grupo;Leva a série mensal do RAR para o Data Cloud.;nao;;;;"## Relações
+
+- transporta de [[Rentabilidade Atacado]]
+
+## Detalhes
+
+- Modo: Ingestion API bulk. Cópia: **sim**.
+- Frequência: mensal (carga inicial de 24 meses; depois 1 mês).
+- A planilha chama este e o de `rar_grupo_atual` só de ""Ingestion API bulk"": viraram dois componentes para os dois fluxos não se fundirem numa aresta só.";;nao
+transp-rar-grupo-atual;Ingestion API bulk — rar_grupo_atual;primario;API REST;;gold-rar-grupo-atual;Leva o RAR do último mês fechado para o Data Cloud.;nao;;;;"## Relações
+
+- transporta de [[gold.rar_grupo_atual]]
+
+## Detalhes
+
+- Modo: Ingestion API bulk. Cópia: **sim**. Frequência: mensal.";;nao
+transp-cadastro-cliente;Zero Copy;primario;Data Cloud;;gold-cadastro-cliente;Federação em tempo de leitura: o dado não é copiado.;nao;;;;"## Relações
+
+- transporta de [[Carteira 360]]
+
+## Detalhes
+
+- Modo: Zero Copy. Cópia: **não** (federação em tempo de leitura). Frequência: contínua.";;nao
+transp-crm;Conector CRM;primario;Salesforce;;salesforce-crm;Conector nativo: o CRM entra no Data Cloud direto da origem, sem passar por bronze/silver/gold.;nao;;;;"## Relações
+
+- transporta de [[Salesforce CRM]] — objeto Account
+
+## Detalhes
+
+- Modo: Conector CRM. Cópia: **sim**. Frequência: near real-time.";;nao
+dlo-rar-grupo-mensal;rar_grupo_mensal__dll;final;Data Cloud;;transp-rar-grupo;;nao;;;;"## Relações
+
+- chega por [[Ingestion API bulk — rar_grupo]]";;nao
+dlo-rar-grupo-atual;rar_grupo_atual__dll;final;Data Cloud;;transp-rar-grupo-atual;;nao;;;;"## Relações
+
+- chega por [[Ingestion API bulk — rar_grupo_atual]]";;nao
+dlo-cadastro-cliente;cadastro_cliente__dll;final;Data Cloud;;transp-cadastro-cliente;;nao;;;;"## Relações
+
+- chega por [[Zero Copy]]";;nao
+dlo-salesforce-account;salesforce_account__dll;final;Data Cloud;;transp-crm;;nao;;;;"## Relações
+
+- chega por [[Conector CRM]]";;nao
+dmo-account;Account;dominio;Data Cloud;;dlo-salesforce-account | dlo-cadastro-cliente;DMO canônico (Profile). Harmonização: dois DLOs, um DMO.;nao;;;;"## Relações
+
+- mapeia de [[salesforce_account__dll]] — `Name` → `Account.Name`; `cd_grupo__c` → `Account.cd_grupo`; `Faturamento_Declarado__c` → `Account.AnnualRevenue` (proveniência = RM, declarado)
+- mapeia de [[cadastro_cliente__dll]] — `razao_social` → `Account.Name`; `id_grupo_economico` → `Account.cd_grupo`; `faturamento_oficial` → `Account.AnnualRevenue` (proveniência = PSDC, oficial; **precedência** sobre o declarado)
+
+## Detalhes
+
+- `Account.Name` e `Account.AnnualRevenue` recebem os dois DLOs — é aqui que a harmonização acontece.";;nao
+dmo-party-identification;Party Identification;dominio;Data Cloud;;dlo-salesforce-account | dlo-cadastro-cliente;DMO canônico de identificação.;nao;;;;"## Relações
+
+- mapeia de [[salesforce_account__dll]] — `CNPJ__c` → `IdentificationNumber` (tipo CNPJ)
+- mapeia de [[cadastro_cliente__dll]] — `nr_cnpj` → `IdentificationNumber` (tipo CNPJ)
+- relaciona [[Account]] — `PartyId` → `Account.Id` (1:N)";dmo-account;nao
+dmo-rentabilidade-mensal;Rentabilidade_Grupo_Mensal;dominio;Data Cloud;;dlo-rar-grupo-mensal;"DMO customizado (Engagement). event_date = mes_referencia; PK = cd_grupo + mes_referencia.";nao;;;;"## Relações
+
+- mapeia de [[rar_grupo_mensal__dll]] — `cd_grupo`, `cnpj_raiz`, `rar_12m`, `resultado_12m`, `spread_medio` e `versao` → `versao_engine`; `dt_ref` → `mes_referencia`; `flag_meta` → `situacao_vs_meta`; `dt_processamento` → `dt_calculo`
+- relaciona [[Account]] — `cd_grupo` → `Account.cd_grupo` (Account 1:N)
+
+## Detalhes
+
+- Sem mapeamento para `cap_reg` e `ke`: são insumos da engine, não informação para o consumidor.";dmo-account;nao
+dmo-rentabilidade-atual;Rentabilidade_Grupo_Atual;dominio;Data Cloud;;dlo-rar-grupo-atual;DMO customizado (Other): mesmos campos, sem série.;nao;;;;"## Relações
+
+- mapeia de [[rar_grupo_atual__dll]]
+- relaciona [[Account]] — `cd_grupo` → `Account.cd_grupo` (Account 1:1)";dmo-account;nao
+ruleset-ir-grupo-atacado;IR_Grupo_Atacado;raiz;Processos;;dmo-account | dmo-party-identification;Ruleset de identity resolution do grupo do Atacado.;nao;;;;"## Relações
+
+- usa como entrada [[Account]]
+- usa como entrada [[Party Identification]]
+
+## Detalhes
+
+- Critérios, em ordem: (1) CNPJ raiz exato sobre `PartyIdentification.IdentificationNumber` (8 dígitos); (2) razão social normalizada (fuzzy) sobre `Account.Name`, **só como reforço**.
+- Entra com os registros de [[salesforce_account__dll]] e [[cadastro_cliente__dll]].
+- [[Rentabilidade_Grupo_Mensal]] e [[Rentabilidade_Grupo_Atual]] **não** entram na resolução: chegam ao unificado pela relação com [[Account]].";;nao
+unified-account;Unified Account;raiz;Data Cloud;;ruleset-ir-grupo-atacado;Perfil unificado: 1 registro por grupo / CNPJ raiz.;nao;;;;"## Relações
+
+- sai de [[IR_Grupo_Atacado]]";;nao
+unified-link-account;Unified Link Account;raiz;Data Cloud;;ruleset-ir-grupo-atacado;"Liga cada unificado aos registros de origem — responde ""de onde veio este perfil"".";nao;;;;"## Relações
+
+- sai de [[IR_Grupo_Atacado]]";;nao
+prompt-resumo-rentabilidade;Resumo de rentabilidade do grupo;fonte-secundaria;Default;;dmo-rentabilidade-atual | unified-account;Prompt template.;nao;;;;"## Relações
+
+- lê de [[Rentabilidade_Grupo_Atual]]
+- lê de [[Unified Account]]
+
+## Detalhes
+
+- Mecanismo: `grounding`.";;nao
+acao-oportunidades-paradas;Oportunidades paradas;fonte-secundaria;Processos;;prompt-resumo-rentabilidade;Ação Agentforce.;nao;;;;"## Relações
+
+- lê de [[Resumo de rentabilidade do grupo]]
+
+## Detalhes
+
+- Mecanismo: `acao`.
+- Lê também `Opportunity` do CRM por ação direta, **fora do Data Cloud** — essa leitura não virou aresta porque `Opportunity` não é componente catalogado.";;nao
+segmento-abaixo-meta;Grupos abaixo da meta por 3 meses;fonte-secundaria;Default;;dmo-rentabilidade-mensal;Segmento.;nao;;;;"## Relações
+
+- lê de [[Rentabilidade_Grupo_Mensal]]
+
+## Detalhes
+
+- Mecanismo: `segmento`.";;nao
+insight-variacao-rar;Variação do RAR em 6 meses;fonte-secundaria;Processos;;dmo-rentabilidade-mensal;Calculated insight.;nao;;;;"## Relações
+
+- lê de [[Rentabilidade_Grupo_Mensal]]
+
+## Detalhes
+
+- Mecanismo: `insight`.";;nao
+dashboard-tableau-carteira;Rentabilidade da carteira (Tableau);fonte-secundaria;Default;;gold-rar-grupo;Dashboard Tableau: lê o gold direto, sem passar pelo Data Cloud.;nao;;;;"## Relações
+
+- lê direto de [[Rentabilidade Atacado]]
+
+## Detalhes
+
+- Mecanismo: `dashboard`, leitura direta (`le_direto`).";;nao
