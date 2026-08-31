@@ -47,7 +47,8 @@ revertendo o desenho anterior. Vieram de discussão, não de conveniência técn
   inclusive já renomeou "Domínio" para "Jornada".
 - **Nenhum nível tem tratamento especial.** Havia uma exceção — focar num
   componente do nível de menor ordem abria o inventário completo em vez de
-  isolar — e ela foi removida. Ver "Correções" abaixo.
+  isolar — e ela foi removida no commit `c005a33`. Hoje a abertura do app é
+  **sem foco**, que já significa inventário pelo caminho legítimo.
 - **Eixos visuais independentes**: a COLUNA diz o nível; a COR diz o débito; a
   FORMA (losango × círculo) e o PESO DO RÓTULO dizem se é produto de dados; o
   ÍCONE interno diz o tipo de componente; a BORDA TRACEJADA diz que falta owner
@@ -75,55 +76,120 @@ Edição pelo app, em três modos escolhidos por detecção automática:
 
 ## Estado ao salvar este documento
 
-Tudo verde: **425 testes**, `tsc` e build limpos, worktree commitado.
+Código e testes verdes: **425 testes**, `tsc` limpo, `npm run data` com 0 avisos.
+O worktree tem alterações **não commitadas** (só dados): `catalogo.csv`,
+`niveis.csv`, `src/data/graph.json` — e `backup/` untracked, que não está no
+`.gitignore`.
 
-### O catálogo é um MAPA DE EXEMPLO, não dado real
+### O catálogo é a ARQUITETURA DO RAR NO DATA CLOUD, não dado de exemplo
 
-Os 27 componentes de hoje foram criados de propósito para demonstrar o modelo:
-oito sistemas na Origem (um por tipo de marca), cinco mecanismos de ingestão na
-Fonte, as camadas Broze/Silver/Gold só com Tabela Delta, e três jornadas de
-negócio. Os 15 tipos de componente estão todos em uso, os três do Gold são
-produtos de dados, e alguns componentes ficaram sem owner e com débito de
-propósito — são o retrato do gap que o mapa existe para mostrar.
+Em 2026-08-31 o usuário substituiu o mapa de exemplo pela arquitetura real que
+ele está desenhando: o RAR do Atacado do sistema de origem até o consumo no
+Salesforce Data Cloud. **45 componentes em 10 camadas**, 55 arestas:
 
-**O catálogo real anterior está no commit `bb6231c`**, se precisar voltar.
+Consumidores (5) · Identidade (3) · DMO (4) · DLO (4) · Transporte (4) ·
+Gold (3) · Silver (6) · Bronze (6) · Fonte (4) · Origem (6)
 
-### O que esta sessão entregou
+Ele entregou isso em duas rodadas — primeiro um JSON parcial (3 nós), depois a
+planilha inteira em texto. A conversão em si **não mudou uma linha de código**,
+a pedido explícito dele; a única mudança de código do dia foi a seta da aresta,
+que veio depois (ver abaixo).
 
-- **Tipo de componente virou ÍCONE**, com 15 tipos em dois grupos que recebem
-  tratamento visual diferente porque carregam informação diferente:
-  - *Categoria* (Tabela SQL, Tabela Delta, Default, Servidor de arquivos,
-    Processos, API REST): glifo monocromático claro sobre o nó pintado na cor do
-    débito. O glifo divide o nó com a cor, então deixa campo à mostra.
-  - *Marca* (SQL Server, MongoDB, S3 Bucket, Blob Storage, Salesforce, Data
-    Cloud, ServiceNow, Pega, Excel): a logo nas cores próprias sobre miolo
-    neutro, e o débito migra para um anel grosso na borda.
+- O mapa de exemplo anterior está no commit `4ca5e3b` e em
+  `backup/catalogo.20260831-010423.csv` + `backup/niveis.20260831-010423.csv`
+  (cópia, nunca `git checkout`).
+- O script de conversão vive fora do repo, no scratchpad da sessão. Ele declara
+  cada relação UMA vez, e dela saem a coluna do CSV e a linha do corpo do balão
+  — foi o que impediu os dois de divergirem. Se for reconverter, refaça igual.
 
-  Tudo em canvas puro, sem asset externo, para o pacote continuar autocontido. A
-  legenda desenha as amostras a partir da MESMA geometria (`shapes.ts`),
-  convertida para SVG — legenda e mapa não têm como divergir.
+### Como as relações foram registradas
 
-  **Houve um degrau de tamanho para as marcas, testado e descartado**: o usuário
-  achou que piorava a leitura e que o redimensionamento manual já resolve. Todo
-  componente nasce do mesmo tamanho. Não reintroduza sem pedido.
+Descoberta que vale reusar: **`descricao` é texto puro** (parágrafo de resumo no
+balão) e **`observacoes` é o corpo markdown** (`node.corpo`), onde
+`[[wikilink]]` vira botão que navega o grafo. Então cada componente ganhou:
 
-- **Mover as faixas de nível pelo cabeçalho** (`band-move.ts`), só na sessão.
-  Horizontal REORDENA dentro do fluxo (as vizinhas se acomodam, nunca sobrepõe,
-  nunca deixa buraco); vertical é deslocamento livre, porque não existe fluxo
-  vertical. A alça é o cabeçalho e não o corpo da faixa: ali é o pan do mapa, o
-  gesto mais usado. Quando a ordem nova convence, **"✓ Aplicar esta ordem"**
-  grava no `niveis.csv` — fica na barra do topo junto do "≣ Níveis", porque os
-  dois botões daquela ponta gravam no catálogo e a legenda só desfaz sessão.
+```
+## Relações
 
-### Correções desta sessão
+- transforma de [[fato_capital]] — denominador
 
-- **Foco no primeiro nível não isolava.** `buildLineage` tratava "foco num
-  componente do nível de menor ordem" igual a "sem foco": ambos abriam o
-  inventário completo. A regra existia para o app poder abrir "focado na
-  entrada" mostrando o mapa cheio, e o preço era que a primeira coluna era a
-  única em que "Focar neste nó" não fazia nada. Hoje a condição é só
-  `root === null`, e a abertura do app é **sem foco** — que já significa
-  inventário pelo caminho legítimo. `nivelDeEntrada`/`noDeEntrada` saíram junto.
+## Detalhes
+
+- Grão: grupo econômico × mês
+```
+
+O wikilink resolve **por NOME** (`idByName`), não por id — nome errado vira link
+quebrado silencioso. Um bloco só vira lista se TODAS as linhas começam com `- `,
+e um título precisa ser um bloco de uma linha só.
+
+É o que salvou o que o modelo não tem coluna para guardar: os verbos reais
+(`ingere`, `transforma`, `transporta`, `mapeia`, `relaciona`, `le_direto`), os
+mapeamentos campo a campo do DMO, grão, colunas, modo/cópia/frequência do
+transporte e os critérios do ruleset de identidade.
+
+### A seta da aresta
+
+A seta sempre existiu em `Graph.tsx`, mas `linkDirectionalArrowRelPos={1}` punha
+a ponta **no centro do nó alvo**, onde o glifo a esconde — na prática o mapa
+parecia não ter seta nenhuma. Agora o comprimento é 7 (era 3.5) e a posição é
+uma função por aresta, que recua o raio do alvo NA DIREÇÃO de quem aponta mais
+uma folga, com o mesmo `raioNaDirecao` que o canvas usa para desenhar a borda.
+
+Não pode ser constante: o raio varia por nó (grau + ajuste da sessão), o losango
+do produto de dados não tem raio constante, e aresta que pula colunas é mais
+longa. A legenda ganhou a linha "a seta aponta para o componente consumido".
+
+### Decisões da conversão (não refaça sem motivo)
+
+- **Direção**: a planilha descreve fluxo (produtor → consumidor); o modelo é o
+  consumidor que declara o produtor. Toda aresta foi invertida.
+- **"Ingestion API bulk" virou dois componentes** (`— rar_grupo` e
+  `— rar_grupo_atual`). Um nó só fundiria os dois fluxos e criaria um caminho
+  falso de `gold.rar_grupo` até `rar_grupo_atual__dll`.
+- **"Produto de dados corporativo" é um componente só** para GDAD, ESTATAG e
+  PSDC, que declaram o mesmo mecanismo.
+- **"a confirmar" virou nó de verdade** na camada Fonte, com o nome literal da
+  célula: é o buraco da ingestão do Capital Regulatório aparecendo no mapa.
+- **`Opportunity` não virou nó** — está fora do Data Cloud e não é componente
+  catalogado; a leitura direta da ação Agentforce ficou no corpo dela.
+- Duas arestas furam a cadeia de propósito, a pedido do usuário: o **Conector
+  CRM** sai direto da origem Salesforce CRM, e o **dashboard Tableau** lê
+  `gold.rar_grupo` sem passar pelo Data Cloud.
+
+### O que a arquitetura real expôs de lacuna no modelo
+
+Quatro coisas que o dado de verdade pediu e o modelo não tem. Nenhuma foi
+implementada:
+
+1. **Débito herdado não tem eixo.** O usuário pediu "marque no visual" para o
+   débito que vem de `raw_custo_capital`. Só existe `debito: sim/nao/avaliar`,
+   então `dim_custo_capital` e `Rentabilidade Atacado` entraram como
+   **"a avaliar"** com a explicação no corpo. Fica visível com o rótulo errado.
+2. **Só há dois tipos de aresta.** Os seis verbos reais viraram todos `consome`;
+   sobrevivem apenas como texto no corpo.
+3. **`associacoes` é rotulada "vem de"**, que é errado para a relação
+   `Rentabilidade_Grupo_Mensal.cd_grupo → Account.cd_grupo`. São as 3 arestas
+   de relação (as outras 52 são `consome`).
+4. **Não dá para saber se um componente chega ao consumo** (ver Pendências).
+
+### A restrição que os TESTES impõem ao catálogo vivo
+
+Isto custou tempo e vai voltar: **o catálogo real só pode usar 10 slugs de
+nível** — os 7 built-in mais `gold`, `silver` e `broze`. Slug novo derruba 13
+testes.
+
+A causa é `catalog-store-local.test.ts`, que importa o `catalogo.csv` **real**
+(`?raw`) mas o casa com uma fixture de níveis congelada em modo legado. E
+`niveis.test.ts` exige, por outro lado, que todo nível NÃO built-in do arquivo
+tenha pelo menos um nó.
+
+O contorno em uso: **renomear built-ins pelo `slug`**, o mesmo mecanismo que faz
+"Jornada" ser o `dominio`. Hoje cinco níveis fazem isso —
+Consumidores=`fonte-secundaria`, Identidade=`raiz`, DMO=`dominio`, DLO=`final`,
+Transporte=`primario`. Funciona, mas **os 10 slugs estão ocupados: não cabe mais
+uma camada**, e o `niveis.csv` ficou difícil de ler. O conserto de verdade é uma
+linha na fixture daquele teste; não foi feito porque o usuário pediu para não
+mexer em código.
 
 ## Como o usuário trabalha
 
@@ -135,7 +201,17 @@ propósito — são o retrato do gap que o mapa existe para mostrar.
 - **Verifique no navegador**, não só nos testes. Chrome headless via CDP tem
   sido usado para abrir a página, simular gestos (inclusive arrastar com
   `Input.dispatchMouseEvent`) e tirar screenshot; vários bugs só apareceram
-  assim. Atenção à altura real do viewport ao escolher coordenadas.
+  assim. Três armadilhas que já custaram tentativas:
+  - **A altura real do viewport não é a que você pediu.** Com
+    `--window-size=1600,1000` o screenshot sai com 861px de altura. Tire uma
+    captura primeiro e leia as coordenadas nela.
+  - **O rótulo não é o nó.** Mirar no texto acerta a aresta que passa por trás;
+    o alvo é o glifo, uns 20px acima.
+  - **Para abrir o balão**: `mouseMoved` na posição do nó (é o mousemove que faz
+    o force-graph saber qual nó está sob o cursor), esperar, e só então o botão
+    direito de verdade (`Input.dispatchMouseEvent` press+release). Um
+    `new MouseEvent('contextmenu')` sintético via `Runtime.evaluate` NÃO
+    dispara o `onNodeRightClick`.
 - **Ele edita o catálogo enquanto você trabalha.** Nunca use `git checkout` em
   `catalogo.csv`/`niveis.csv`; faça backup por cópia e restaure por cópia. E
   **nunca fixe contagens do catálogo em teste** — use invariantes, senão a suíte
@@ -158,10 +234,40 @@ propósito — são o retrato do gap que o mapa existe para mostrar.
   pela interface web; a primeira fase importa componentes a partir da linhagem,
   com ele escolhendo quais e em que nível; jobs ficam fora do `catalogo.csv`).
   É o próximo trabalho grande.
+- **Saber se um componente chega ao consumo.** Foi a pergunta que abriu o dia
+  30/08 e não tem resposta no app: não há indicador, filtro nem coluna para
+  "este componente é consumido, transitivamente, por alguma jornada/consumidor".
+  Focar num consumidor por vez responde (`buildLineageTree` devolve exatamente o
+  fecho montante dele), mas é manual e por eliminação; e o **hover não serve** —
+  o `chainOf` é fecho NÃO direcionado, e num grafo conexo ele acende tudo.
+  Proposta apresentada e não implementada: linha "Consumido por: …" no balão,
+  coluna na Tabela e chip de filtro ao lado de "sem owner" — com o nível-alvo
+  vindo do `niveis.csv`, nunca com o slug cravado no código (isso reintroduziria
+  o tratamento especial de nível removido em `c005a33`).
+- **Verbo por referência (`envia`) — desenhado, não implementado.** O usuário
+  quer poder representar um processo/transporte no meio de duas tabelas, com a
+  aresta rotulada "Envia" em vez de "Consome". O desenho proposto: vocabulário
+  fixo de verbos (como `TIPOS_COMPONENTE`), sintaxe `envia:alvo` na própria
+  célula do `consome`, referência sem prefixo continua valendo `consome`. Como
+  `CatalogoRow.consome` continua `string[]`, o serializador e o teste de
+  round-trip byte a byte não mudam; só `buildGraph` e `normalizarReferencias`
+  precisam separar verbo e alvo.
+  **A decisão que falta é dele**: `envia` aponta para o lado CONTRÁRIO de
+  `consome`, e o `buildLineage` percorre as arestas de saída como montante — um
+  `envia` ingênuo faria a linhagem dizer que o produto do processo é insumo
+  dele. A saída proposta é dar um *sentido* a cada verbo (a seta continua sempre
+  apontando para o alvo declarado; só a travessia lê o `envia` ao contrário).
+- **A fixture de níveis de `catalog-store-local.test.ts` prende o catálogo
+  vivo** a 10 slugs, e os 10 já estão ocupados: não cabe mais uma camada. Uma
+  linha naquela fixture resolve. Ver "A restrição que os TESTES impõem" acima.
+- **O pacote de demonstração está desatualizado**: `entregas/` ainda tem o mapa
+  de exemplo. `npm run pacote` regera com a arquitetura nova, quando ele pedir.
 - **O mapa abre cortado nas pontas** com seis colunas cheias: a primeira some
   atrás da legenda e a última passa da borda direita, e só se vê tudo dando zoom
   out. O `zoomToFit` roda (`Graph.tsx`, efeito de `fixedLayout`) mas não dá conta
-  da largura. Já acontecia com o catálogo menor — não é regressão do foco.
+  da largura. Já acontecia com o catálogo menor — não é regressão do foco, e
+  com as 10 colunas de hoje ficou pior: a legenda esconde Consumidores,
+  Identidade e DMO inteiras.
 - **A legenda cobre o painel de filtros** quando aberta. O usuário sabe e disse
   que trataria "a legenda inteira" num passo separado, incluindo reposicionamento.
 - `FUTURO.md` — itens fora do MVP.
