@@ -1,14 +1,24 @@
 // Balão de detalhe ancorado no nó selecionado. Um único layout para TODO
 // componente: chips (domínio, nível, tipo de componente, débito, produto de
 // dados quando a linha o declara), campos de
-// governança, corpo markdown, árvore de linhagem e listas de relações — não há
-// variação por categoria de nó, porque não há categorias.
+// governança, corpo markdown, listas de relações e — por último — a árvore de
+// linhagem, que é a seção que cresce sem limite. Não há variação por categoria
+// de nó, porque não há categorias.
 // A ancoragem segue o nó a cada frame (pan/zoom/física) via getAnchor().
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { GraphNodeData } from './graph-types'
 import { debitoDe, ehProdutoDeDados, linkLabel, tipoComponenteDe } from './graph-types'
 import type { LineageEntry } from './lineage'
+import type { CaminhoRamo } from './lineage-expand'
+import {
+  CAMINHO_RAIZ,
+  caminhoFilho,
+  comRamoAlternado,
+  RAMOS_INICIAIS,
+  ramoAberto,
+  rotuloDoRamo,
+} from './lineage-expand'
 import { DEBITO_LABEL, domainColor, produtoChipColor } from './palette'
 import { LOSANGO_PONTOS, LOSANGO_S } from './shapes'
 import Markdown from './Markdown'
@@ -92,21 +102,52 @@ function ConnectionList({
   )
 }
 
-/** Ramo recursivo da linhagem: o componente e tudo de que ele depende. O
- *  rótulo da aresta só aparece quando não é o consumo padrão. */
+/** Ramo recursivo da linhagem: o componente, a alça que abre o que ele consome
+ *  e — quando aberto — os galhos de baixo. O rótulo da aresta só aparece quando
+ *  não é o consumo padrão.
+ *
+ *  A alça é indexada pelo CAMINHO do galho, nunca pelo id: a árvore reusa a
+ *  mesma entrada para um componente que várias cadeias consomem (ver
+ *  lineage-expand.ts). */
 function LineageBranch({
   entry,
+  caminho,
   papel,
   isRoot = false,
+  abertos,
+  onAlternar,
   onNavigate,
 }: {
   entry: LineageEntry
+  caminho: CaminhoRamo
   papel?: string
   isRoot?: boolean
+  abertos: ReadonlySet<CaminhoRamo>
+  onAlternar(caminho: CaminhoRamo): void
   onNavigate(id: string): void
 }) {
+  const filhos = entry.upstream
+  const aberto = ramoAberto(abertos, caminho)
   return (
     <li className="lineage__row">
+      {filhos.length > 0 ? (
+        <button
+          type="button"
+          className="lineage__alca"
+          aria-expanded={aberto}
+          aria-label={rotuloDoRamo(entry.data.nome, filhos.length, aberto)}
+          onClick={() => onAlternar(caminho)}
+        >
+          <span className="lineage__glifo" aria-hidden="true">
+            {aberto ? '▾' : '▸'}
+          </span>
+          {filhos.length}
+        </button>
+      ) : (
+        // Ponta de cadeia: o vazio ocupa a largura da alça para os nomes de uma
+        // mesma lista começarem todos na mesma coluna.
+        <span className="lineage__alca lineage__alca--folha" aria-hidden="true" />
+      )}
       {papel !== undefined && <span className="lineage__papel">{papel}</span>}
       {isRoot ? (
         <span className="lineage__self">{entry.data.nome}</span>
@@ -115,19 +156,49 @@ function LineageBranch({
           {entry.data.nome}
         </button>
       )}
-      {entry.upstream.length > 0 && (
+      {aberto && filhos.length > 0 && (
         <ul className="lineage__children">
-          {entry.upstream.map(({ label, entry: filho }, i) => (
+          {filhos.map(({ label, entry: filho }, i) => (
             <LineageBranch
               key={`${filho.data.id}-${i}`}
               entry={filho}
+              caminho={caminhoFilho(caminho, i, filho.data.id)}
               papel={label === 'consome' ? undefined : label}
+              abertos={abertos}
+              onAlternar={onAlternar}
               onNavigate={onNavigate}
             />
           ))}
         </ul>
       )}
     </li>
+  )
+}
+
+/** A árvore inteira e o conjunto de galhos abertos que ela carrega.
+ *
+ *  Componente próprio, e não estado dentro do BalloonContent, por causa do
+ *  reset: o balão NÃO é remontado ao navegar para outro componente (ver o
+ *  render em App.tsx), então a expansão de um vazaria para o próximo. Com a
+ *  chave no id, trocar de componente remonta a árvore e o estado volta ao
+ *  inicial sem nenhum efeito para sincronizar. */
+function LineageTree({ raiz, onNavigate }: { raiz: LineageEntry; onNavigate(id: string): void }) {
+  const [abertos, setAbertos] = useState(RAMOS_INICIAIS)
+  const alternar = useCallback((caminho: CaminhoRamo) => {
+    setAbertos((atuais) => comRamoAlternado(atuais, caminho))
+  }, [])
+
+  return (
+    <ul className="lineage__tree">
+      <LineageBranch
+        entry={raiz}
+        caminho={CAMINHO_RAIZ}
+        isRoot
+        abertos={abertos}
+        onAlternar={alternar}
+        onNavigate={onNavigate}
+      />
+    </ul>
   )
 }
 
@@ -236,20 +307,24 @@ function BalloonContent({
         </>
       )}
 
-      {lineage && lineage.upstream.length > 0 && (
-        <section className="connections lineage">
-          <h3>Linhagem</h3>
-          <ul className="lineage__tree">
-            <LineageBranch entry={lineage} isRoot onNavigate={onNavigate} />
-          </ul>
-        </section>
-      )}
-
       <ConnectionList title="Consome →" items={consome} onNavigate={onNavigate} />
       <ConnectionList title="Associações →" items={associacoes} onNavigate={onNavigate} />
       <ConnectionList title="← Consumido por" items={incoming} onNavigate={onNavigate} />
+      {/* Fica colado às listas porque é sobre ELAS. Nunca disputa espaço com a
+          Linhagem: a árvore sai das MESMAS arestas de saída que alimentam o
+          "Consome", então sem relação nenhuma também não há o que desenhar. */}
       {outgoing.length === 0 && incoming.length === 0 && (
         <p className="ghost-note">Sem conexões mapeadas.</p>
+      )}
+
+      {/* Por último: as listas de relação são curtas e respondem "com quem este
+          componente fala"; a árvore é a parte que cresce, e no fim ela pode
+          crescer sem empurrar o resto do balão para fora da vista. */}
+      {lineage && lineage.upstream.length > 0 && (
+        <section className="connections lineage">
+          <h3>Linhagem</h3>
+          <LineageTree key={node.id} raiz={lineage} onNavigate={onNavigate} />
+        </section>
       )}
     </>
   )

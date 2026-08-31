@@ -798,6 +798,38 @@
   font-size: 0.82rem;
 }
 
+/* alça de recolher de um galho: o triângulo diz o estado, o número diz quanto
+   o clique revela — sem ele, um galho fechado é indistinguível de uma ponta de
+   cadeia. A contagem fica visível ABERTA também, para a linha não mudar de
+   largura a cada clique. */
+
+.lineage__alca {
+  display: inline-block;
+  min-width: 1.7rem;
+  border: none;
+  background: none;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  font-size: 0.66rem;
+  color: #8a8a8a;
+  cursor: pointer;
+}
+
+.lineage__alca--folha {
+  cursor: default;
+}
+
+.lineage__alca:hover {
+  color: #d0d0d0;
+}
+
+.lineage__glifo {
+  display: inline-block;
+  width: 0.75rem;
+  font-size: 0.6rem;
+}
+
 .lineage__papel {
   display: inline-block;
   min-width: 2.9rem;
