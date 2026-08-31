@@ -218,6 +218,9 @@ export default function Legend({
           o nível de cada componente é a coluna em que ele aparece
         </li>
         <li className="legend__hint">
+          a seta aponta para o componente consumido
+        </li>
+        <li className="legend__hint">
           botão direito no nó = detalhes · clique fixa o destaque
         </li>
         {/* O gesto de borda não tem botão nem menu — a dica é o único lugar que

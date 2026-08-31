@@ -113,6 +113,12 @@ const FOCUS_ZOOM = 2.5
 /** Teto de zoom após zoomToFit: subgrafos pequenos não viram close extremo. */
 const MAX_FIT_ZOOM = 4
 
+/** Comprimento da ponta da seta da aresta, em unidades do grafo. */
+const SETA_COMPRIMENTO = 7
+/** Respiro entre a ponta da seta e a silhueta do nó apontado: sem ele a ponta
+ *  encosta no traço do nó e as duas formas viram uma mancha só. */
+const SETA_FOLGA = 2.5
+
 /** Extensão da silhueta do nó além do centro: área de clique, halo, rótulo e
  *  âncora do balão. O losango do produto de dados chega mais longe que o círculo
  *  (a ponta, a 1.45 do raio), e tudo isso acompanha. */
@@ -1123,6 +1129,29 @@ export default function Graph({
     [dimmedIds, linkTouchesActive],
   )
 
+  // Ponta da seta na SILHUETA do alvo, não no centro dele.
+  //
+  // `linkDirectionalArrowRelPos` é uma fração do comprimento da aresta, e o 1 de
+  // antes punha a ponta no CENTRO do nó apontado — exatamente onde o glifo a
+  // esconde. Era por isso que a seta parecia não existir. A fração não pode ser
+  // uma constante: o raio varia por nó (grau de conexões + ajuste da sessão), o
+  // losango do produto de dados não tem raio constante, e o comprimento da
+  // aresta muda quando ela pula colunas. Então é medida por aresta, com o mesmo
+  // `raioNaDirecao` que o canvas usa para desenhar a borda do nó.
+  const setaRelPos = useCallback((link: SimLink) => {
+    const origem = link.source
+    const alvo = link.target
+    if (typeof origem !== 'object' || typeof alvo !== 'object') return 1
+    const { x: ox, y: oy } = origem
+    const { x: ax, y: ay } = alvo
+    if (ox === undefined || oy === undefined || ax === undefined || ay === undefined) return 1
+    const dist = Math.hypot(ax - ox, ay - oy)
+    if (dist === 0) return 1
+    // Ângulo medido DO alvo em direção a quem aponta: é o raio daquele lado.
+    const raio = raioNaDirecao(ehProdutoDeDados(alvo), raioDe(alvo), Math.atan2(oy - ay, ox - ax))
+    return Math.max(0, 1 - (raio + SETA_FOLGA) / dist)
+  }, [raioDe])
+
   return (
     // O menu de contexto do navegador é suprimido sobre o canvas: o botão
     // direito é a ação de "abrir detalhes" do mapa. Este div também é onde o
@@ -1146,8 +1175,8 @@ export default function Graph({
         linkVisibility={linkVisible}
         linkColor={linkColor}
         linkWidth={(l) => (linkTouchesActive(l) ? 1.6 : 1)}
-        linkDirectionalArrowLength={3.5}
-        linkDirectionalArrowRelPos={1}
+        linkDirectionalArrowLength={SETA_COMPRIMENTO}
+        linkDirectionalArrowRelPos={setaRelPos}
         linkDirectionalArrowColor={linkColor}
         linkLabel={(l) => l.label ?? 'consome'}
         onNodeClick={(node) => onNodeClick(node.id)}
