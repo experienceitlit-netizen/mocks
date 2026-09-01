@@ -1,20 +1,29 @@
-// Build do grafo: lê catalogo.csv (uma linha por COMPONENTE) e niveis.csv (os
-// níveis da cadeia), monta os nós/arestas e emite src/data/graph.json. Lógica
-// pura em ./graph-lib.ts.
+// Build do grafo: lê catalogo.csv (uma linha por COMPONENTE), niveis.csv (os
+// níveis da cadeia) e verbos.csv (o vocabulário das relações), monta os
+// nós/arestas e emite src/data/graph.json. Lógica pura em ./graph-lib.ts.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
-import { buildGraph, carregarNiveis } from './graph-lib.ts'
+import { buildGraph, carregarNiveis, carregarVerbos } from './graph-lib.ts'
 
 const raiz = resolve(import.meta.dirname, '..')
 const entrada = join(raiz, 'catalogo.csv')
 const entradaNiveis = join(raiz, 'niveis.csv')
+const entradaVerbos = join(raiz, 'verbos.csv')
 const saida = join(raiz, 'src', 'data', 'graph.json')
 
 // niveis.csv ausente = nenhum nível custom (arquivo é opcional no build).
 const textoNiveis = existsSync(entradaNiveis) ? readFileSync(entradaNiveis, 'utf8') : ''
 const { niveis, warnings: warningsNiveis } = carregarNiveis(textoNiveis)
-const { graph, warnings: warningsBuild } = buildGraph(readFileSync(entrada, 'utf8'), niveis)
-const warnings = [...warningsNiveis, ...warningsBuild]
+// verbos.csv ausente = os verbos embutidos. É o estado normal: o arquivo só
+// nasce quando alguém grava a tela de verbos.
+const textoVerbos = existsSync(entradaVerbos) ? readFileSync(entradaVerbos, 'utf8') : ''
+const { verbos, warnings: warningsVerbos } = carregarVerbos(textoVerbos)
+const { graph, warnings: warningsBuild } = buildGraph(
+  readFileSync(entrada, 'utf8'),
+  niveis,
+  verbos,
+)
+const warnings = [...warningsNiveis, ...warningsVerbos, ...warningsBuild]
 
 for (const w of warnings) {
   console.warn(`[build-graph] AVISO: ${w}`)

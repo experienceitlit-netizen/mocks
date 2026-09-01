@@ -1,10 +1,11 @@
 // Visão de tabela do catálogo: uma linha POR COMPONENTE, com o nível na
-// primeira coluna e as relações de saída (Consome/Upstream e Associações) nas
-// últimas. Autocontido: a integração no App só precisa passar nós, arestas,
-// níveis e (opcional) onSelectNode.
+// primeira coluna e a relação de saída (Consome/Upstream) na última.
+// Autocontido: a integração no App só precisa passar nós, arestas, níveis e
+// (opcional) onSelectNode.
 import { useMemo, useState } from 'react'
-import type { GraphLinkData, GraphNodeData, NivelDef } from './graph-types'
+import type { GraphLinkData, GraphNodeData, NivelDef, VerboDef } from './graph-types'
 import { tipoComponenteDe } from './graph-types'
+import { VERBO_PADRAO } from './graph-build'
 import { DEBITO_LABEL, domainColor } from './palette'
 import {
   buildRows,
@@ -13,6 +14,7 @@ import {
   matchesFilter,
   sortRows,
   statusLabel,
+  type RelacaoDeSaida,
   type SortDir,
   type SortKey,
 } from './table-utils'
@@ -20,10 +22,13 @@ import './TableView.css'
 
 export interface TableViewProps {
   nodes: GraphNodeData[]
-  /** Arestas "consome" e "vem de" entre componentes. */
+  /** Arestas entre componentes; o `label` de cada uma é o verbo. */
   links: GraphLinkData[]
   /** Bloco `niveis`: título e ordem da coluna Nível. */
   niveis: readonly NivelDef[]
+  /** Bloco `verbos`: o título que aparece antes do nome na coluna de relação
+   *  (e que o filtro procura). Vazio = só o verbo padrão, que não é escrito. */
+  verbos: readonly VerboDef[]
   /** Clique no nome de um componente → navegação para o mapa. */
   onSelectNode?: (id: string) => void
 }
@@ -57,34 +62,49 @@ function ValueCell({ value }: { value: string | null | undefined }) {
   return <>{value}</>
 }
 
-/** Lista de componentes relacionados, empilhados e clicáveis (→ mapa). */
+/** Lista de relações de saída, empilhadas e clicáveis (→ mapa).
+ *
+ *  O verbo vem ANTES do nome ("Envia · Ingestion API bulk") e só quando não é
+ *  o padrão: escrevê-lo em toda linha repetiria o que o cabeçalho da coluna já
+ *  diz, e a tabela de hoje (55 arestas, todas `consome`) ficaria ilegível. */
 function RelacaoCell({
   itens,
   onSelectNode,
 }: {
-  itens: GraphNodeData[]
+  itens: readonly RelacaoDeSaida[]
   onSelectNode?: (id: string) => void
 }) {
   if (itens.length === 0) return <span className="table-view__none">—</span>
   return (
     <>
-      {itens.map((n) =>
-        onSelectNode ? (
+      {itens.map(({ node, verbo, verboTitulo }) => {
+        const conteudo = (
+          <>
+            {verbo !== VERBO_PADRAO && (
+              <span className="table-view__verbo">{verboTitulo} · </span>
+            )}
+            {node.nome}
+          </>
+        )
+        // A chave é o par (alvo, verbo): dois verbos entre os mesmos dois
+        // componentes são duas relações, e duas linhas na célula.
+        const chave = `${node.id}\u0000${verbo}`
+        return onSelectNode ? (
           <button
-            key={n.id}
+            key={chave}
             type="button"
             className="table-view__name-link table-view__rel"
-            onClick={() => onSelectNode(n.id)}
+            onClick={() => onSelectNode(node.id)}
             title="Ver no mapa"
           >
-            {n.nome}
+            {conteudo}
           </button>
         ) : (
-          <span key={n.id} className="table-view__name table-view__rel">
-            {n.nome}
+          <span key={chave} className="table-view__name table-view__rel">
+            {conteudo}
           </span>
-        ),
-      )}
+        )
+      })}
     </>
   )
 }
@@ -119,11 +139,14 @@ function SortHeader({
   )
 }
 
-export function TableView({ nodes, links, niveis, onSelectNode }: TableViewProps) {
+export function TableView({ nodes, links, niveis, verbos, onSelectNode }: TableViewProps) {
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SortState>({ key: 'nivel', dir: 'asc' })
 
-  const componentes = useMemo(() => buildRows(nodes, links, niveis), [nodes, links, niveis])
+  const componentes = useMemo(
+    () => buildRows(nodes, links, niveis, verbos),
+    [nodes, links, niveis, verbos],
+  )
 
   const rows = useMemo(() => {
     const visible = componentes.filter((row) => matchesFilter(row, query))
@@ -144,7 +167,7 @@ export function TableView({ nodes, links, niveis, onSelectNode }: TableViewProps
         <input
           type="search"
           className="table-view__filter"
-          placeholder="Filtrar por nome, nível, domínio, owner ou relação…"
+          placeholder="Filtrar por nome, nível, domínio, owner, verbo ou relação…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           aria-label="Filtrar componentes"
@@ -189,7 +212,6 @@ export function TableView({ nodes, links, niveis, onSelectNode }: TableViewProps
                 Centro de custo
               </SortHeader>
               <th scope="col">Consome/Upstream</th>
-              <th scope="col">Associações</th>
             </tr>
           </thead>
           <tbody>
@@ -255,15 +277,12 @@ export function TableView({ nodes, links, niveis, onSelectNode }: TableViewProps
                   <td className="table-view__cell--rel">
                     <RelacaoCell itens={row.consome} onSelectNode={onSelectNode} />
                   </td>
-                  <td className="table-view__cell--rel">
-                    <RelacaoCell itens={row.associacoes} onSelectNode={onSelectNode} />
-                  </td>
                 </tr>
               )
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="table-view__empty">
+                <td colSpan={9} className="table-view__empty">
                   Nenhum componente corresponde ao filtro.
                 </td>
               </tr>

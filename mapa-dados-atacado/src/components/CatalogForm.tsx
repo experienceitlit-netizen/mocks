@@ -22,8 +22,9 @@ import { removerComponente } from './catalog-delete'
 import DeleteConfirm from './DeleteConfirm'
 import type { RowFormState } from './catalog-form-row'
 import { montarRow } from './catalog-form-row'
-import type { Debito, NivelDef, TipoComponente } from './graph-types'
+import type { Debito, NivelDef, TipoComponente, VerboDef } from './graph-types'
 import { TIPO_COMPONENTE_PADRAO, TIPOS_COMPONENTE_GRUPOS } from './graph-types'
+import { criarIndiceVerbos, formatarReferencia, VERBO_PADRAO } from './graph-build'
 
 /** Comparação insensível a caixa e acentos (unicidade de nome, sugestões). */
 function norm(s: string): string {
@@ -78,32 +79,65 @@ interface ChipsFieldProps {
   label: string
   placeholder: string
   /** Referências escolhidas, como vão para o CSV: id de um componente ou texto
-   *  livre (que vira fantasma). Nome de catálogo antigo também cai aqui e é
-   *  exibido pelo nome oficial. */
+   *  livre (que vira fantasma), com o verbo como prefixo quando não é o padrão
+   *  ("envia:bulk-api"). Nome de catálogo antigo também cai aqui e é exibido
+   *  pelo nome oficial. */
   values: string[]
   /** Componentes ofertados no dropdown (já sem o próprio). */
   options: readonly Opcao[]
+  /** Vocabulário das relações: as opções do `<select>` de cada chip. */
+  verbos: readonly VerboDef[]
   ghostNote: string
   onChange(next: string[]): void
 }
 
 /** Multi-select por chips: busca pelo NOME dos componentes e permite texto
  *  livre (Enter), com aviso visual quando a referência vira fantasma. O valor
- *  guardado é o id — renomear o alvo depois não mexe em nada aqui. */
-function ChipsField({ label, placeholder, values, options, ghostNote, onChange }: ChipsFieldProps) {
+ *  guardado é o id — renomear o alvo depois não mexe em nada aqui.
+ *
+ *  Cada chip carrega DUAS coisas: o verbo (um `<select>` à esquerda) e o alvo.
+ *  Chip novo nasce SEM prefixo, que é o `consome` de sempre — é o que mantém o
+ *  catalogo.csv byte a byte enquanto ninguém trocar o verbo de nada. */
+function ChipsField({
+  label,
+  placeholder,
+  values,
+  options,
+  verbos,
+  ghostNote,
+  onChange,
+}: ChipsFieldProps) {
   const [text, setText] = useState('')
 
   const porRef = useMemo(() => new Map(options.map((o) => [o.ref, o])), [options])
   // Nome → componente: resolve o que o usuário digita e as referências que
   // ainda estão por nome (formato antigo).
   const porNome = useMemo(() => new Map(options.map((o) => [norm(o.nome), o])), [options])
+  // Só o vocabulário cadastrado é prefixo: um componente chamado "RAR: 12
+  // meses" continua resolvendo inteiro.
+  const indiceVerbos = useMemo(() => criarIndiceVerbos(verbos), [verbos])
 
-  const rotuloDe = (ref: string): string =>
-    porRef.get(ref)?.nome ?? porNome.get(norm(ref))?.nome ?? ref
-  const ehFantasma = (ref: string): boolean => !porRef.has(ref) && !porNome.has(norm(ref))
+  /** O que a célula aponta, sem o verbo — é o alvo, e só ele, que é resolvido
+   *  contra o catálogo. */
+  const alvoDe = (celula: string): string => indiceVerbos.referencia(celula).alvo
+  /** Slug do verbo da célula; sem prefixo vale o padrão. */
+  const verboDaCelula = (celula: string): string => {
+    const v = indiceVerbos.referencia(celula).verbo
+    return v === '' ? VERBO_PADRAO : v
+  }
 
-  // Comparação por RÓTULO: impede escolher duas vezes o mesmo componente, mesmo
-  // que um chip esteja por id e o outro por nome (linha de catálogo antigo).
+  const rotuloDe = (celula: string): string => {
+    const alvo = alvoDe(celula)
+    return porRef.get(alvo)?.nome ?? porNome.get(norm(alvo))?.nome ?? alvo
+  }
+  const ehFantasma = (celula: string): boolean => {
+    const alvo = alvoDe(celula)
+    return !porRef.has(alvo) && !porNome.has(norm(alvo))
+  }
+
+  // Comparação pelo RÓTULO DO ALVO: um chip por alvo, mesmo que um esteja por
+  // id e o outro por nome (linha de catálogo antigo) ou com verbos diferentes —
+  // trocar o verbo é mexer no chip que já existe, não criar um segundo.
   const rotulosEscolhidos = new Set(values.map((v) => norm(rotuloDe(v))))
   // Sem memo: a lista de opções é do tamanho do catálogo e isto roda a cada
   // tecla digitada de qualquer jeito.
@@ -118,7 +152,8 @@ function ChipsField({ label, placeholder, values, options, ghostNote, onChange }
   const add = (raw: string) => {
     const v = raw.trim()
     // Nome digitado que existe no catálogo entra como o ID do componente; o que
-    // não existe entra como texto e vira fantasma até ganhar linha.
+    // não existe entra como texto e vira fantasma até ganhar linha. Sempre SEM
+    // prefixo: a célula nasce igual à de hoje, e o verbo é o gesto seguinte.
     const ref = porNome.get(norm(v))?.ref ?? v
     if (!v || rotulosEscolhidos.has(norm(rotuloDe(ref)))) {
       setText('')
@@ -126,6 +161,17 @@ function ChipsField({ label, placeholder, values, options, ghostNote, onChange }
     }
     onChange([...values, ref])
     setText('')
+  }
+
+  /** Troca o verbo de UM chip, preservando o alvo exatamente como está na
+   *  célula (id, nome antigo ou texto livre). O verbo padrão volta a gravar só
+   *  o alvo — ver formatarReferencia. */
+  const trocarVerbo = (idx: number, verbo: string) => {
+    onChange(
+      values.map((celula, i) =>
+        i === idx ? formatarReferencia({ verbo, alvo: alvoDe(celula) }) : celula,
+      ),
+    )
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -145,15 +191,30 @@ function ChipsField({ label, placeholder, values, options, ghostNote, onChange }
       <span className="cform__label">{label}</span>
       <div className="chips-input">
         <div className="chips-input__box">
-          {values.map((v) => {
+          {values.map((v, i) => {
             const ghost = ehFantasma(v)
             const rotulo = rotuloDe(v)
             return (
+              // A key é o ALVO, não a célula: trocar o verbo reescreve o texto
+              // da célula, e com a célula como key o chip inteiro remontaria a
+              // cada troca (perdendo o foco do próprio select).
               <span
-                key={v}
+                key={alvoDe(v)}
                 className={ghost ? 'chips-input__chip chips-input__chip--ghost' : 'chips-input__chip'}
                 title={ghost ? 'Não existe no catálogo: vira nó fantasma' : undefined}
               >
+                <select
+                  className="chips-input__verbo"
+                  aria-label={`Relação com ${rotulo}`}
+                  value={verboDaCelula(v)}
+                  onChange={(e) => trocarVerbo(i, e.target.value)}
+                >
+                  {verbos.map((vb) => (
+                    <option key={vb.slug} value={vb.slug}>
+                      {vb.titulo}
+                    </option>
+                  ))}
+                </select>
                 {ghost && '⚠ '}
                 {rotulo}
                 <button
@@ -215,8 +276,12 @@ interface CatalogFormProps {
   target: FormTarget
   /** Bloco `niveis` do graph.json: monta o select "Nível/Camada". */
   niveis: readonly NivelDef[]
-  /** Componentes que existem no grafo (alvos possíveis de "Consome/Upstream" e
-   *  "Associações"), com o id de cada um — é ele que vai para a célula. */
+  /** Bloco `verbos` do graph.json: o vocabulário das relações, que vira o
+   *  `<select>` de cada chip de "Consome/Upstream" — e é o que diz o que conta
+   *  como prefixo ao ler a célula. */
+  verbos: readonly VerboDef[]
+  /** Componentes que existem no grafo (alvos possíveis de "Consome/Upstream"),
+   *  com o id de cada um — é ele que vai para a célula. */
   componentesGrafo: Opcao[]
   /** Save confirmado pela API: o App re-busca as rows do catálogo. */
   onSaved(): void
@@ -228,6 +293,7 @@ export default function CatalogForm({
   rows,
   target,
   niveis,
+  verbos,
   componentesGrafo,
   onSaved,
   onClose,
@@ -251,7 +317,6 @@ export default function CatalogForm({
   const [dominio, setDominio] = useState(initial?.dominio ?? '')
   const [novoDominio, setNovoDominio] = useState('')
   const [consome, setConsome] = useState<string[]>(initial?.consome ?? [])
-  const [associacoes, setAssociacoes] = useState<string[]>(initial?.associacoes ?? [])
   const [descricao, setDescricao] = useState(initial?.descricao ?? '')
   const [observacoes, setObservacoes] = useState(initial?.observacoes ?? '')
   const [debito, setDebito] = useState<Debito | ''>(initial ? initial.debito : 'avaliar')
@@ -325,7 +390,6 @@ export default function CatalogForm({
       tipoComponente,
       dominio: dominioFinal,
       consome,
-      associacoes,
       descricao,
       observacoes,
       debito,
@@ -335,7 +399,7 @@ export default function CatalogForm({
       produtoDeDados,
     }),
     [
-      nome, nivel, tipoComponente, dominioFinal, consome, associacoes,
+      nome, nivel, tipoComponente, dominioFinal, consome,
       descricao, observacoes, debito, status, owner, centroDeCusto, produtoDeDados,
     ],
   )
@@ -365,7 +429,7 @@ export default function CatalogForm({
       // o conjunto completo a partir delas apagaria o cadastro anterior.
       const atuais = (await store.lerCatalogo()) ?? rows
       const idx = idAlvo === '' ? -1 : atuais.findIndex((r) => r.id === idAlvo)
-      const row: CatalogoRow = montarRow(estado, idx >= 0 ? atuais[idx] : null, idsConhecidos)
+      const row: CatalogoRow = montarRow(estado, idx >= 0 ? atuais[idx] : null, idsConhecidos, verbos)
       // Nada a propagar ao renomear: as ligações apontam para o ID, que a
       // edição não toca. O componente novo entra sem id — a gravação gera um.
       const next = idx >= 0 ? atuais.map((r, i) => (i === idx ? row : r)) : [...atuais, row]
@@ -394,7 +458,7 @@ export default function CatalogForm({
     setSaving(true)
     try {
       const atuais = (await store.lerCatalogo()) ?? rows
-      const r = removerComponente(atuais, { id: idAlvo, nome: initial?.nome ?? nome })
+      const r = removerComponente(atuais, { id: idAlvo, nome: initial?.nome ?? nome }, verbos)
       if (!r.encontrada) {
         setErrors([`"${initial?.nome ?? nome}" não está mais no catálogo.`])
         return
@@ -546,22 +610,17 @@ export default function CatalogForm({
                 )}
               </div>
 
+              {/* A ÚNICA relação que a linha declara: o upstream. Quem consome
+                  ESTE componente não tem campo — é a mesma ligação lida do
+                  outro lado, e aparece no balão na seção "↩ Consome". */}
               <ChipsField
                 label="Consome/Upstream"
                 placeholder="buscar componente do catálogo…"
                 values={consome}
                 options={opcoes}
+                verbos={verbos}
                 ghostNote="Nome fora do catálogo: vira nó fantasma no mapa até ganhar linha própria."
                 onChange={setConsome}
-              />
-
-              <ChipsField
-                label="Associações"
-                placeholder="buscar componente do catálogo…"
-                values={associacoes}
-                options={opcoes}
-                ghostNote="Nome fora do catálogo: vira nó fantasma no mapa até ganhar linha própria."
-                onChange={setAssociacoes}
               />
 
               <div className="cform__field">

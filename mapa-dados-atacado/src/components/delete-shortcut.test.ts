@@ -17,7 +17,6 @@ const row = (id: string, nome: string, nivel: string): CatalogoRow => ({
   owner: null,
   centro_de_custo: null,
   observacoes: '',
-  associacoes: [],
   produto_de_dados: '',
 })
 

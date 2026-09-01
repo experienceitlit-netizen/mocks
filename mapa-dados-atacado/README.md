@@ -24,9 +24,10 @@ Daí saem as duas regras que governam o build inteiro:
 1. **Todo nó vem de uma LINHA do `catalogo.csv`.** Nada é derivado de campo: preencher a
    coluna `dominio` não cria um nó de domínio, nenhum campo cria um nó de
    sistema. Quer o componente no mapa? Cadastre a linha dele, no nível dele.
-2. **Toda aresta vem de uma referência declarada.** Só duas colunas ligam componentes:
-   `consome` (aresta **"consome"**) e `associacoes` (aresta **"vem de"**). O build não
-   infere ligação nenhuma.
+2. **Toda aresta vem de uma referência declarada.** Uma coluna só liga componentes:
+   `consome` (aresta **"consome"**), em que a linha declara o **upstream** — de quem ela
+   consome dado. O build não infere ligação nenhuma. O outro lado (a seção "↩ Consome"
+   do balão) não é campo: é a **mesma** aresta lida de trás para frente.
 
 As referências guardam o **`id`** do alvo — a chave estável da linha, que **não muda**
 quando o componente é renomeado, trocado de nível ou de tipo. É o que faz uma ligação
@@ -44,8 +45,7 @@ ambíguo (o mesmo rótulo em níveis diferentes) gera aviso à parte e vence o n
 **menor ordem** — ambiguidade que some assim que a célula vira id.
 
 Nome citado em `consome` que não existe em lugar nenhum vira **nó fantasma** (fica no
-mapa, com aviso: é justamente o buraco que o mapa precisa mostrar). Em `associacoes`,
-gera só o aviso, sem criar nó — não dá para adivinhar em que nível ele existiria.
+mapa, com aviso: é justamente o buraco que o mapa precisa mostrar).
 
 Um componente está **incompleto** (gap de governança) quando `owner` **ou**
 `centro_de_custo` está vazio. A regra é uma só, para todos os níveis: nenhum nível é
@@ -86,6 +86,7 @@ Mapa de Dados do Atacado/
   catalogo/
     catalogo.csv                  # cópia do catálogo no momento da geração
     niveis.csv
+    verbos.csv                    # só existe se o vocabulário tiver sido editado
   LEIA-ME.txt                     # como navegar e como editar
 ```
 
@@ -119,7 +120,7 @@ vão. O chip no alto da tela sempre diz qual modo está valendo.
 
 | Modo | Quando | Chip | Onde a edição vai parar |
 | --- | --- | --- | --- |
-| **Dev server** | `npm run dev` | `✎ dev server` | O Vite grava o `catalogo.csv`/`niveis.csv` do projeto e regenera o `graph.json` (API `/api/catalogo` e `/api/niveis`). |
+| **Dev server** | `npm run dev` | `✎ dev server` | O Vite grava o `catalogo.csv`/`niveis.csv`/`verbos.csv` do projeto e regenera o `graph.json` (API `/api/catalogo`, `/api/niveis` e `/api/verbos`). |
 | **Arquivo local** | HTML de arquivo único no Chrome/Edge | `✎ pasta/catalogo.csv` | O próprio navegador grava nos CSVs da pasta que você escolher. Sem servidor e sem instalar nada. |
 | **Somente leitura** | nenhum catálogo aberto | `🔒 somente leitura` | Nada é gravado; nenhum controle de edição aparece. |
 
@@ -164,15 +165,15 @@ Detalhes que valem saber:
 
 2. Para um componente novo, acrescente uma linha e preencha as colunas (tabela abaixo).
    **Deixe a primeira célula (`id`) vazia**: o app gera o id a partir do nome na próxima
-   gravação. Listas (`consome`, `associacoes`) separam os alvos por ` | ` (barra
-   vertical) e guardam o **id** de cada um — mas você pode escrever o **nome**, que o
+   gravação. A lista `consome` separa os alvos por ` | ` (barra
+   vertical) e guarda o **id** de cada um — mas você pode escrever o **nome**, que o
    app converte para id ao gravar. Não sabe owner ou centro de custo? Deixe a célula
    vazia — o nó aparece com borda tracejada, sinalizando o gap de governança. Exemplo de
-   linha (`observacoes` e `associacoes` omitidas, e `produto_de_dados` marcando o
-   componente como produto de dados):
+   linha (`observacoes` omitida, e `produto_de_dados` marcando o componente como produto
+   de dados):
 
    ```
-   ;Meu Novo Painel;final;Tabela Delta;Risco;gdad | rating;painel de risco da mesa;nao;producao;;;;;sim
+   ;Meu Novo Painel;final;Tabela Delta;Risco;gdad | rating;painel de risco da mesa;nao;producao;;;;sim
    ```
 
    Nunca edite nem reordene um `id` já preenchido: ele é a chave que segura as ligações.
@@ -192,9 +193,9 @@ Detalhes que valem saber:
 
 ## Colunas do catalogo.csv
 
-Cabeçalho, nesta ordem (14 colunas): `id; nome; nivel; tipo_componente; dominio;
+Cabeçalho, nesta ordem (13 colunas): `id; nome; nivel; tipo_componente; dominio;
 consome; descricao; debito; status; owner;
-centro_de_custo; observacoes; associacoes; produto_de_dados`.
+centro_de_custo; observacoes; produto_de_dados`.
 
 As **mesmas colunas valem em qualquer nível** — não há formato de linha por nível.
 
@@ -205,19 +206,27 @@ As **mesmas colunas valem em qualquer nível** — não há formato de linha por
 | `nivel` | sim | slug de um nível ativo (`raiz`, `dominio`, `final`, `primario`, `fonte`, `origem`… ou qualquer um cadastrado no `niveis.csv`) | é o que define o componente; nível inexistente (ou removido da cadeia) faz a linha ser ignorada com aviso, e é erro no formulário |
 | `tipo_componente` | não | `Tabela SQL` \| `Tabela Delta` \| `Excel` \| `Default` | tecnologia do componente; manda no **ícone dentro do nó** (ver abaixo); vazio = `Default`; valor fora da lista vira aviso no build (assume `Default`) e erro no formulário |
 | `dominio` | não | texto livre (`Cadastro`, `Mercado`, `Risco`…) | filtro por domínio na UI; é **só um campo** — não cria nó de domínio (para isso, cadastre a linha no nível `dominio`) |
-| `consome` | não | **ids** separados por ` \| ` (nome também é aceito) | cria as arestas **"consome"**; resolve em **qualquer linha do catálogo**, de qualquer nível. Nome resolve com aviso e vira id na próxima gravação; o que não resolve de jeito nenhum vira nó fantasma + aviso |
+| `consome` | não | **ids** separados por ` \| ` (nome também é aceito) | **a única coluna de relação**: cria as arestas **"consome"** e resolve em **qualquer linha do catálogo**, de qualquer nível. Nome resolve com aviso e vira id na próxima gravação; o que não resolve de jeito nenhum vira nó fantasma + aviso |
 | `descricao` | não | uma linha | aparece no balão e na busca |
 | `debito` | não | `sim` \| `nao` \| `avaliar` ou vazio | manda na cor do nó (ver abaixo); opcional em qualquer nível, mas preenchido tem de ser um dos três |
 | `status` | não | `producao` \| `transicao` \| `investigacao` ou vazio | opcional em qualquer nível |
 | `owner` | sim (aceita vazio) | texto ou vazio | vazio = a definir → nó com borda tracejada |
 | `centro_de_custo` | sim (aceita vazio) | texto ou vazio | vazio = a definir → nó com borda tracejada |
 | `observacoes` | não | Markdown livre (multilinha, entre aspas) | corpo do balão de detalhe; wikilinks só navegam, não criam arestas |
-| `associacoes` | não | **ids** separados por ` \| ` (nome também é aceito) | cria as arestas **"vem de"**, em qualquer nível; resolve como `consome`, mas alvo inexistente só gera aviso — nenhum nó é criado |
 | `produto_de_dados` | não | `sim` \| `nao` ou vazio | marca o componente como **produto de dados**: o nó vira **losango** e ganha o **rótulo em negrito** no mapa (ver abaixo), ganha um chip no balão e entra no filtro "Somente produtos de dados". Vazio = `nao`; valor fora do par vira aviso no build (assume `nao`) e erro no formulário. Vale em **qualquer nível** — a bandeira é ortogonal à camada, como o débito |
 
-`id`, `tipo_componente`, `associacoes` e `produto_de_dados` são **opcionais na leitura**:
-um `catalogo.csv` antigo, sem essas colunas, abre sem aviso nenhum (elas entram vazias, e
-os ids são gerados dos nomes). O serializador sempre grava as 14.
+`id`, `tipo_componente` e `produto_de_dados` são **opcionais na leitura**: um
+`catalogo.csv` antigo, sem essas colunas, abre sem aviso nenhum (elas entram vazias, e os
+ids são gerados dos nomes). O serializador sempre grava as 13.
+
+A coluna **`associacoes`** foi aposentada. Ela era a segunda relação declarada (aresta
+"vem de") e o modelo passou a ter só uma, o upstream. Um arquivo antigo que ainda a traga
+abre sem reclamar de coluna desconhecida, e **o conteúdo não é perdido**: cada referência
+dela vira um `consome` na leitura, com aviso, e a próxima gravação escreve o arquivo já
+sem a coluna. Consequência a saber: uma associação para um alvo inexistente, que antes só
+gerava aviso, agora cria **nó fantasma** — o tratamento único de toda referência que não
+resolve. (As colunas `origem`, `fonte_sistema` e `fontes_secundarias` também são
+toleradas, mas ali o conteúdo é ignorado: virou nível próprio.)
 
 Problema no catálogo gera **warning** no build (não erro) — o componente entra mesmo
 assim, para o gap ficar visível em vez de escondido. A exceção é a linha que o build não
@@ -253,7 +262,13 @@ aviso dizendo por quê.
                                     // (sem linha, o id vem prefixado: `fantasma-…`)
     }
   ],
-  "links": [ { "source": "…", "target": "…", "label": "consome" | "vem de" } ]
+  "verbos": [
+    // o vocabulário das relações: `label` da aresta → título, sentido e seta.
+    // Ausente em builds antigos (toda aresta de lá é "consome").
+    { "slug": "consome", "titulo": "Consome", "sentido": "montante", "seta": true, "builtin": true },
+    { "slug": "relaciona", "titulo": "Relaciona", "sentido": "nenhum", "seta": false, "builtin": true }, …
+  ],
+  "links": [ { "source": "…", "target": "…", "label": "consome" } ]
 }
 ```
 
@@ -277,7 +292,7 @@ fonte secundária e a fonte, do mais refinado ao mais cru.
 **Nível cadastrado não é uma classe à parte.** A linha dele tem exatamente as mesmas
 colunas de qualquer outra, e o nó tem exatamente os mesmos campos: as regras de cor por
 débito, de borda tracejada por owner/centro de custo vazio e de arestas por
-`consome`/`associacoes` valem igual em todos os níveis. Preencher apenas nome e descrição
+`consome` valem igual em todos os níveis. Preencher apenas nome e descrição
 continua valendo — o resto fica vazio. Transferir um componente entre níveis muda só o id
 (e a coluna em que ele aparece): não quebra quem o consome nem apaga a ficha dele.
 
@@ -286,8 +301,8 @@ Pelo app (`npm run dev`): botão **≣ Níveis** no topo lista **todos** os nív
 traz dois seletores de cor (fundo e borda da faixa) e um **↺** que devolve o nível à cor
 padrão. Remover um nível em uso é recusado, com a lista de linhas que o utilizam. Linhas de nível customizado são
 cadastradas pelo **+ Novo componente** (ou pelo **✎ Editar** de um nó) escolhendo o nível
-no campo "Tipo de componente"; o campo "Associações" liga a linha às demais (coluna
-`associacoes`). Trocar o tipo de uma linha **nunca apaga campo**: o que o nível novo não
+no campo "Tipo de componente"; o campo "Consome/Upstream" liga a linha às demais (coluna
+`consome`). Trocar o tipo de uma linha **nunca apaga campo**: o que o nível novo não
 usa continua na planilha, e o formulário avisa antes de salvar o que não couber.
 
 ### Renomear e remover: o `slug` é a chave
@@ -314,8 +329,8 @@ colunas, segue funcionando sem aviso):
 Remover um nível **leva junto as linhas dele** — e nenhum nível é exceção, nem a `raiz`.
 Por isso o modal recusa remover um nível em uso, listando as linhas que o utilizam: o
 caminho é mover essas linhas para outro nível antes. As arestas que apontavam para os nós
-removidos somem com eles (uma `associacao` órfã vira aviso; um `consome` órfão vira nó
-fantasma). Recriar o nível com o mesmo slug traz tudo de volta.
+removidos somem com eles: quem citava a linha removida fica com um `consome` órfão, que
+vira nó fantasma. Recriar o nível com o mesmo slug traz tudo de volta.
 
 Uma coluna só vira faixa no grafo quando tem ao menos um componente.
 
@@ -347,19 +362,106 @@ faixa herdando a cor da borda clareada** (para uma borda escura continuar legív
 texto). Definir só uma das cores colore o título do mesmo jeito, para a faixa ficar
 coerente. Os valores vivem em `src/components/band-colors.ts`.
 
-### Visão limpa: "Mostrar associações"
+## Vocabulário das relações (`verbos.csv`)
 
-O checkbox **Mostrar associações** (na barra de foco e no painel de filtros) esconde todas
+Uma célula da coluna `consome` pode trazer um **prefixo de verbo** —
+`envia:rar-grupo` —, e é ele que diz QUAL relação a linha está declarando.
+Célula **sem prefixo vale `consome`**, que é o que mantém todo catálogo já
+escrito valendo o que valia: uma referência de sempre continua gravada como
+`rar-grupo`, byte a byte.
+
+O vocabulário vive num terceiro arquivo, ao lado do `catalogo.csv` e do
+`niveis.csv`, com quatro colunas:
+
+```
+titulo;slug;sentido;seta
+Consome;consome;montante;sim
+Acessa;acessa;montante;sim
+Envia;envia;jusante;sim
+Associado;associado;ambos;nao
+Relaciona;relaciona;nenhum;nao
+```
+
+**O arquivo não vem no repositório.** Esses cinco são os **embutidos**, e valem
+enquanto o `verbos.csv` não existir — que é o estado normal. Ele nasce na
+primeira gravação (`POST /api/verbos`, ou a mesma gravação feita pelo navegador
+no modo arquivo local), sempre pelo serializador, **nunca à mão**.
+
+Ao contrário do `niveis.csv`, aqui não há modo legado × explícito: **ausente ou
+vazio = os embutidos; presente = a lista COMPLETA** — embutido que não estiver
+listado está removido. O único que nunca sai é o `consome`, e a gravação recusa
+a lista sem ele: é o significado de toda célula sem prefixo. Remover um verbo
+**em uso** por alguma referência também é recusado, com a lista de quem o usa.
+
+- **`slug`** é a chave, como nos níveis: vazio = derivar do título (`Envia` →
+  `envia`); preenchido = esta linha *é* aquele verbo, com o título que ela
+  disser. Renomear "Envia" para "Manda" **não reescreve nenhuma célula do
+  `catalogo.csv`**.
+- **`sentido`** (`montante` | `jusante` | `ambos` | `nenhum`; vazio = `montante`)
+  responde *"a linhagem sobe, desce, faz os dois ou ignora?"*.
+- **`seta`** (`sim`/`nao`; vazia = `sim`) responde *"a aresta desenha ponta?"*.
+
+Os dois são eixos **independentes**, e é de propósito: "Associado" não tem ponta
+e mesmo assim carrega o dado — sem ponta ≠ fora da linhagem. A ponta, quando
+existe, aponta sempre para o **alvo declarado**; quem lê o `sentido` é a
+travessia, nunca o desenho.
+
+Um prefixo com cara de verbo (`transp:`) que **não** está cadastrado não vira
+`consome` calado: a célula inteira vira o nome do alvo (um fantasma com
+dois-pontos no nome, feio de propósito) e o build avisa citando o prefixo — o
+buraco aparece no mapa, e cadastrar o verbo depois conserta retroativamente. Um
+componente chamado `RAR: 12 meses` continua resolvendo inteiro, porque só conta
+como prefixo o que casa `minúsculas-e-dígitos:`.
+
+### Visão limpa: "Mostrar ligações"
+
+O checkbox **Mostrar ligações** (na barra de foco e no painel de filtros) esconde todas
 as setas do grafo, deixando só os nós — útil quando o mapa inteiro está na tela. O
 destaque continua valendo: ao passar o mouse, fixar um nó com o clique ou abrir o balão
 com o botão direito, as ligações **daquele** componente reaparecem (na vista de níveis, a
 cadeia inteira dele). Companheiro do **Mostrar níveis**, que esconde as faixas.
 
+### Alcance do foco: até onde a vista vai
+
+Focar num componente sempre mostrou a **cadeia montante** dele e nada mais — e isso
+escondia metade do que ele declara. Um Job que `envia` para uma tabela é a **origem**
+daquela aresta, e a travessia montante (que num verbo `jusante` sobe da ponta para a
+origem) nunca chega ao alvo: focar no Job trazia só o que ele consome. O alcance é a
+resposta — em vez de uma constante, um controle de três posições na barra de foco, válido
+na vista **Níveis**:
+
+| Posição | O que entra na vista |
+| --- | --- |
+| **Montante** | a cadeia de que o componente depende, recursiva — o comportamento de sempre |
+| **+ Vizinhos** *(padrão)* | o montante inteiro **mais** todo vizinho de primeiro nível, em qualquer sentido |
+| **Dois sentidos** | montante e jusante, os dois recursivos |
+
+As três são uma **escada**: cada posição contém a anterior. É por isso que "Dois sentidos"
+também traz os vizinhos diretos — sem isso, andar para a direita esconderia justamente o
+vizinho ligado por um verbo de sentido `nenhum`, e um alcance que tira coisa ao ser
+aumentado não se explicaria. O padrão é **+ Vizinhos**: é ele que mostra tudo que o
+componente declara sem abrir o mapa inteiro.
+
+O alcance vai para a URL (`?alcance=`), junto de `?foco=` e `?vista=` — o link reproduz o
+que está na tela. A **linhagem do balão não muda**: ela continua sendo a cadeia montante,
+que é a leitura certa para "de onde vem este dado".
+
+### Filtrar por tipo de ligação
+
+Ao lado do "Mostrar ligações", um **chip por verbo** do vocabulário (`Consome`, `Acessa`,
+`Envia`… — a lista vem do bloco `verbos`, então verbo cadastrado em **⇢ Verbos** ganha
+chip sozinho). Chip aceso = aquelas arestas aparecem; apagado = somem do mapa.
+
+Os **nós continuam onde estão**: esconder um tipo de ligação não esconde quem ela liga.
+E o chip vence o destaque — com "Envia" apagado, nem a aresta do nó sob o cursor volta,
+senão o hover ressuscitaria justamente o que se acabou de tirar da tela. É estado de
+sessão, como o próprio "Mostrar ligações": não vai para a URL nem para o CSV.
+
 ### Excluir um componente
 
 Há dois caminhos, com a **mesma** confirmação: ela nomeia o componente e lista o que sai
-junto — a linha e **cada menção a ela** nas colunas que geram aresta (`Consome/Upstream` e
-`Associações`). Limpar as menções é o ponto: sem isso, quem consumia o componente ficaria
+junto — a linha e **cada menção a ela** na coluna que gera aresta (`Consome/Upstream`).
+Limpar as menções é o ponto: sem isso, quem consumia o componente ficaria
 apontando para um nó fantasma. (Wikilink em `observacoes` não gera aresta e não é mexido.)
 
 - **Pelo formulário**: o **✎ Editar** de uma linha já cadastrada traz o botão **🗑
@@ -446,21 +548,24 @@ sem aresta, nasce do tamanho dos pares em vez de encolhido no raio mínimo.
 ```
 catalogo.csv                # conteúdo: a planilha do catálogo (uma linha por componente)
 niveis.csv                  # níveis da cadeia (titulo;ordem;slug;cor_fundo;cor_borda) — vazio = só os padrão
+verbos.csv                  # vocabulário das relações (titulo;slug;sentido;seta) — AUSENTE = só os embutidos
 scripts/
-  build-graph.ts            # CLI: lê catalogo.csv e emite src/data/graph.json
+  build-graph.ts            # CLI: lê os três CSVs e emite src/data/graph.json
   graph-lib.ts              # lógica pura do build (parser CSV, níveis, montagem do grafo)
   graph-lib.test.ts         # testes do build (npm test)
   niveis.test.ts            # testes dos níveis dinâmicos
+  verbos.test.ts            # testes do vocabulário de verbos e da leitura das células
   catalogo-serde.test.ts    # testes do round-trip CSV e da validação da API
-  vite-plugin-catalogo.ts   # API do dev server: /api/catalogo e /api/niveis (grava os CSVs)
+  vite-plugin-catalogo.ts   # API do dev server: /api/catalogo, /api/niveis e /api/verbos (grava os CSVs)
 src/
   data/graph.json           # GERADO pelo build — não editar à mão (mas é commitado)
   components/
     Graph.tsx               # canvas do grafo (react-force-graph-2d)
     NodeBalloon.tsx         # balão de detalhe ancorado no nó selecionado
     Filters.tsx             # domínio, débito, nível, "somente sem owner", camada de linhagem, contadores
-    FocusBar.tsx            # barra do modo foco: breadcrumb, vista (níveis/força), sair
-    lineage.ts              # vista de linhagem em níveis: cadeia montante + layout em colunas
+    FocusBar.tsx            # barra do modo foco: breadcrumb, vista (níveis/força), alcance, chips por verbo, sair
+    lineage.ts              # vista de linhagem em níveis: cadeia montante, alcance do foco + layout em colunas
+    arestas-visiveis.ts     # quais arestas o mapa desenha: "Mostrar ligações" + chips por verbo
     SearchBox.tsx           # busca por nome/descrição
     TableView.tsx           # visão de tabela dos dados (aba "Tabela")
     table-utils.ts          # helpers puros da tabela: filtro, ordenação, agrupamento
@@ -469,13 +574,13 @@ src/
     palette.ts              # fonte única das cores dos nós (semântica de débito)
     band-colors.ts          # cor da faixa de cada nível: o alpha que a cor escolhida recebe
     graph-types.ts          # tipos do schema + wrapper tipado da lib de grafo
-    catalog-api.ts          # cliente da API do dev server (/api/catalogo, /api/niveis)
+    catalog-api.ts          # cliente da API do dev server (/api/catalogo, /api/niveis, /api/verbos)
     catalog-store.ts        # interface de persistência + store HTTP (o modo de sempre)
     catalog-store-local.ts  # store que grava CSV sem servidor: valida, grava, remonta o grafo
     catalog-delete.ts       # exclusão pura: tira a linha (pelo id) e as menções a ela
     DeleteConfirm.tsx       # painel de confirmação da exclusão (formulário e atalho de teclado)
     delete-shortcut.ts      # regras do atalho Delete/Backspace: qual componente e quando vale
-    fs-access.ts            # File System Access: escolher pasta, ler/gravar, lembrar o handle
+    fs-access.ts            # File System Access: escolher pasta, ler/gravar os três CSVs, lembrar o handle
     graph-build.ts          # re-export de scripts/graph-lib.ts para o bundle do front-end
     useFonteCatalogo.ts     # escolha do modo no mount (HTTP → arquivo local → importar)
     FonteBar.tsx            # chip do modo ativo + "Abrir catálogo" / "Importar CSV"
@@ -539,8 +644,11 @@ FUTURO.md                   # itens fora do MVP (Fase 6)
   Clicar no nome de um produto volta ao mapa com o nó centralizado e o balão aberto; o estado
   do mapa (foco, filtros, zoom) sobrevive à ida e volta. `Esc` na tabela retorna ao mapa.
 - A URL reflete o estado e pode ser compartilhada: `?no=rar-12m` seleciona um nó,
-  `?foco=rar-12m` abre o foco na vista de níveis, `?foco=rar-12m&vista=forca&prof=2`
-  na vista de força com a profundidade escolhida e `?aba=tabela` abre direto na tabela.
+  `?foco=rar-12m&vista=niveis&alcance=vizinhos` abre o foco na vista de níveis com o
+  alcance escolhido, `?foco=rar-12m&vista=forca&prof=2` na vista de força com a
+  profundidade escolhida e `?aba=tabela` abre direto na tabela. Cada vista leva só o seu
+  regulador de amplitude (`&prof=` na de força, `&alcance=` na de níveis); link antigo sem
+  `&alcance=` abre no padrão **+ Vizinhos**.
 - O toggle **"Somente sem owner"** nos filtros acende os nós sem responsável definido, e
   o **"Somente produtos de dados"** acende só os losangos
   (`produto_de_dados: sim`) — a leitura de reunião "o que, disto tudo, é produto?".

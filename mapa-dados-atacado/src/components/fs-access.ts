@@ -1,4 +1,4 @@
-// File System Access API: escolher a pasta do catálogo, ler os dois CSVs,
+// File System Access API: escolher a pasta do catálogo, ler os três CSVs,
 // gravá-los de volta e lembrar a pasta entre sessões.
 //
 // É a única parte do adaptador que fala com o navegador — por isso fica
@@ -35,6 +35,7 @@ type JanelaComPicker = Window & {
  *  de arquivo do projeto. */
 export const ARQUIVO_CATALOGO = 'catalogo.csv'
 export const ARQUIVO_NIVEIS = 'niveis.csv'
+export const ARQUIVO_VERBOS = 'verbos.csv'
 
 const ESCRITA: DescritorPermissao = { mode: 'readwrite' }
 
@@ -79,9 +80,10 @@ async function lerArquivo(pasta: PastaHandle, nome: string): Promise<string | nu
 }
 
 /**
- * Lê os dois CSVs da pasta. catalogo.csv é obrigatório (sem ele a pasta não é
- * um catálogo); niveis.csv ausente vira "", a mesma tolerância do build — o
- * mapa fica com os níveis padrão.
+ * Lê os três CSVs da pasta. catalogo.csv é obrigatório (sem ele a pasta não é
+ * um catálogo); niveis.csv e verbos.csv ausentes viram "", a mesma tolerância
+ * do build — o mapa fica com os níveis e os verbos padrão. O verbos.csv é o
+ * caso NORMAL de ausência: ele só nasce na primeira gravação da tela.
  */
 export async function lerArquivosDaPasta(pasta: PastaHandle): Promise<ArquivosCatalogo> {
   const catalogo = await lerArquivo(pasta, ARQUIVO_CATALOGO)
@@ -90,12 +92,17 @@ export async function lerArquivosDaPasta(pasta: PastaHandle): Promise<ArquivosCa
       `A pasta "${pasta.name}" não tem ${ARQUIVO_CATALOGO} — escolha a pasta onde o catálogo está.`,
     )
   }
-  return { catalogo, niveis: (await lerArquivo(pasta, ARQUIVO_NIVEIS)) ?? '' }
+  return {
+    catalogo,
+    niveis: (await lerArquivo(pasta, ARQUIVO_NIVEIS)) ?? '',
+    verbos: (await lerArquivo(pasta, ARQUIVO_VERBOS)) ?? '',
+  }
 }
 
 const NOME_DO_ARQUIVO: Record<ArquivoCatalogo, string> = {
   catalogo: ARQUIVO_CATALOGO,
   niveis: ARQUIVO_NIVEIS,
+  verbos: ARQUIVO_VERBOS,
 }
 
 /** Destino que grava de verdade na pasta escolhida. */

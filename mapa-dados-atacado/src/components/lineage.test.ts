@@ -97,7 +97,7 @@ function colunaDeTipo(n: number, extras: Partial<GraphNodeData>, grau = 0) {
     for (let k = 0; k < grau; k++) {
       const id = `${item.id}-f${k}`
       fontes.push({ id, nome: id, nivel: 'fonte' })
-      links.push({ source: item.id, target: id, label: 'vem de' })
+      links.push({ source: item.id, target: id, label: 'consome' })
     }
   })
   const nodes = [RAIZ, PROD, ...itens, ...fontes]
@@ -187,5 +187,40 @@ describe('passo vertical adaptativo', () => {
     const { col, gaps } = colunaDeTipo(1, { tipoComponente: 'Salesforce' })
     expect(gaps).toEqual([])
     expect(col.yMax - col.yMin).toBe(0)
+  })
+})
+
+// O par (origem, alvo) não identifica uma aresta: duas linhas do catálogo
+// podem declarar VERBOS diferentes entre os mesmos dois componentes, e são
+// duas relações. A chave de dedup daqui é a mesma do build (source, target,
+// label) — enquanto ela ignorava o rótulo, a segunda aresta sumia da vista e
+// qual das duas sobrevivia era arbitrário.
+describe('dedup das arestas da vista', () => {
+  const NODES: GraphNodeData[] = [
+    { id: 'a', nome: 'A', nivel: 'final' },
+    { id: 'b', nome: 'B', nivel: 'bronze' },
+  ]
+
+  it('dois verbos entre o MESMO par são duas arestas', () => {
+    const links: GraphLinkData[] = [
+      { source: 'a', target: 'b', label: 'consome' },
+      { source: 'a', target: 'b', label: 'envia' },
+    ]
+    const lineage = buildLineage(null, NODES, links, NIVEIS)
+    if (!lineage) throw new Error('lineage null')
+    expect(lineage.graph.links).toHaveLength(2)
+    expect(lineage.graph.links.map((l) => l.label).sort()).toEqual(['consome', 'envia'])
+  })
+
+  it('a MESMA aresta repetida continua colapsando numa só', () => {
+    const links: GraphLinkData[] = [
+      { source: 'a', target: 'b', label: 'consome' },
+      { source: 'a', target: 'b', label: 'consome' },
+      // Sem label = consome (formato antigo do build): é a mesma aresta.
+      { source: 'a', target: 'b' },
+    ]
+    const lineage = buildLineage(null, NODES, links, NIVEIS)
+    if (!lineage) throw new Error('lineage null')
+    expect(lineage.graph.links).toHaveLength(1)
   })
 })

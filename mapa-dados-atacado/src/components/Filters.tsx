@@ -20,7 +20,7 @@ interface FiltersProps {
   /** Esmaece tudo que não é produto de dados — a leitura de reunião "o que
    *  destes componentes é produto?". */
   somenteProdutos: boolean
-  assocOn: boolean
+  ligacoesOn: boolean
   counts: Counts
   hasActiveFilter: boolean
   onToggleDominio(dominio: string): void
@@ -28,7 +28,7 @@ interface FiltersProps {
   onToggleNivel(slug: string): void
   onToggleSemOwner(): void
   onToggleProdutos(): void
-  onToggleAssoc(): void
+  onToggleLigacoes(): void
   onClear(): void
 }
 
@@ -42,7 +42,7 @@ export default function Filters({
   selectedNiveis,
   somenteSemOwner,
   somenteProdutos,
-  assocOn,
+  ligacoesOn,
   counts,
   hasActiveFilter,
   onToggleDominio,
@@ -50,7 +50,7 @@ export default function Filters({
   onToggleNivel,
   onToggleSemOwner,
   onToggleProdutos,
-  onToggleAssoc,
+  onToggleLigacoes,
   onClear,
 }: FiltersProps) {
   return (
@@ -140,8 +140,8 @@ export default function Filters({
         className="filters__toggle"
         title="Mostrar as setas entre os componentes; desligado, só as do nó em destaque aparecem"
       >
-        <input type="checkbox" checked={assocOn} onChange={onToggleAssoc} />
-        Mostrar associações
+        <input type="checkbox" checked={ligacoesOn} onChange={onToggleLigacoes} />
+        Mostrar ligações
       </label>
 
       {hasActiveFilter && (

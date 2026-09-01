@@ -1,13 +1,14 @@
 // Testes dos níveis dinâmicos: niveis.csv (parse/serialize/validação, modo
 // legado x explícito), edição e remoção de QUALQUER nível (built-in incluso),
-// colunas opcionais do catalogo.csv (tipo_componente e associacoes), linhas de
+// colunas opcionais do catalogo.csv (id e tipo_componente), linhas de
 // nível cadastrado no build e bloco `niveis` do graph.json.
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   buildGraph,
   carregarNiveis,
+  carregarVerbos,
   COLUNAS,
   defsDeNiveis,
   montarNiveis,
@@ -76,7 +77,6 @@ const catalogoRow = (extra: Partial<CatalogoRow>): CatalogoRow => ({
   owner: null,
   centro_de_custo: null,
   observacoes: '',
-  associacoes: [],
   produto_de_dados: '',
   ...extra,
 })
@@ -479,28 +479,28 @@ describe('validarNiveisContraCatalogo (remoção de nível em uso)', () => {
   })
 })
 
-describe('catalogo.csv — colunas opcionais (id, tipo_componente e associacoes)', () => {
-  it('arquivo legado sem as três parseia sem warning; todas saem vazias', () => {
-    const legado = COLUNAS.filter((c) => c !== 'id' && c !== 'associacoes' && c !== 'tipo_componente')
-    const texto = legado.join(';') + '\r\n' + 'Alfa;primario;Risco;o;s;;;d;nao;producao;;;\r\n'
+describe('catalogo.csv — colunas opcionais (id e tipo_componente)', () => {
+  it('arquivo legado sem as duas parseia sem warning; ambas saem vazias', () => {
+    const legado = COLUNAS.filter((c) => c !== 'id' && c !== 'tipo_componente')
+    const texto = legado.join(';') + '\r\n' + 'Alfa;primario;Risco;o;s;;;d;nao;producao;;\r\n'
     expect(parseCatalogo(texto).warnings).toEqual([])
-    expect(parseCatalogoRows(texto)[0]).toMatchObject({ id: '', tipo_componente: '', associacoes: [] })
+    expect(parseCatalogoRows(texto)[0]).toMatchObject({ id: '', tipo_componente: '' })
     expect(parseCatalogo(texto).rows[0].node.tipoComponente).toBe('Default')
     // Sem id no arquivo, o build gera um do nome — o nó existe do mesmo jeito.
     expect(parseCatalogo(texto).rows[0].node.id).toBe('alfa')
   })
 
-  it('round-trip: tipo_componente e associacoes "A | B" vão e voltam', () => {
+  it('round-trip: tipo_componente e consome "A | B" vão e voltam', () => {
     const row = catalogoRow({
       id: 'tabela-raw-x',
       nome: 'Tabela Raw X',
       nivel: 'bronze',
       tipo_componente: 'Tabela Delta',
       debito: '',
-      associacoes: ['banco SQL legado (on-premise)', 'ADAT'],
+      consome: ['banco SQL legado (on-premise)', 'ADAT'],
     })
     const texto = serializarCatalogo([row])
-    expect(texto).toContain(';banco SQL legado (on-premise) | ADAT;\r\n')
+    expect(texto).toContain(';banco SQL legado (on-premise) | ADAT;')
     expect(parseCatalogoRows(texto)[0]).toEqual(row)
   })
 
@@ -512,7 +512,7 @@ describe('catalogo.csv — colunas opcionais (id, tipo_componente e associacoes)
         nivel,
         debito: '',
         tipo_componente: 'Excel',
-        associacoes: ['alfa'],
+        consome: ['alfa'],
       }),
     )
     expect(parseCatalogoRows(serializarCatalogo(rows))).toEqual(rows)
@@ -543,10 +543,10 @@ describe('buildGraph com níveis cadastrados', () => {
     })
   })
 
-  it('associação resolve por nome (case/acento-insensitive) e gera aresta "vem de"', () => {
+  it('referência resolve por nome (case/acento-insensitive) e gera a aresta', () => {
     const { graph, warnings } = buildGraph(
       csv(
-        completo({ nome: 'Tabela Raw X', nivel: 'bronze', debito: '', associacoes: 'ADAT' }),
+        completo({ nome: 'Tabela Raw X', nivel: 'bronze', debito: '', consome: 'ADAT' }),
         completo({ nome: 'Adát', nivel: 'prata', debito: '' }),
       ),
       NIVEIS,
@@ -554,20 +554,20 @@ describe('buildGraph com níveis cadastrados', () => {
     // Resolveu, com o aviso de que a célula guarda um nome e não a chave.
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toContain('resolvido por NOME (id "adat")')
-    expect(arestas(graph)).toEqual(['tabela-raw-x -vem de-> adat'])
+    expect(arestas(graph)).toEqual(['tabela-raw-x -consome-> adat'])
   })
 
-  it('associação entre níveis cadastrados (Ouro vem de Prata vem de Bronze)', () => {
+  it('cadeia entre níveis cadastrados (Ouro consome Prata, que consome Bronze)', () => {
     const { graph, warnings } = buildGraph(
       csv(
-        completo({ nome: 'O', nivel: 'ouro', debito: '', associacoes: 'p' }),
-        completo({ nome: 'P', nivel: 'prata', debito: '', associacoes: 'b' }),
+        completo({ nome: 'O', nivel: 'ouro', debito: '', consome: 'p' }),
+        completo({ nome: 'P', nivel: 'prata', debito: '', consome: 'b' }),
         completo({ nome: 'B', nivel: 'bronze', debito: '' }),
       ),
       NIVEIS,
     )
     expect(warnings).toEqual([])
-    expect(arestas(graph)).toEqual(['o -vem de-> p', 'p -vem de-> b'])
+    expect(arestas(graph)).toEqual(['o -consome-> p', 'p -consome-> b'])
   })
 
   it('consome cruza níveis cadastrados e built-in livremente, nos dois sentidos', () => {
@@ -638,7 +638,7 @@ describe('buildGraph com níveis cadastrados', () => {
   })
 
   it('determinismo: mesma saída independentemente da ordem das linhas', () => {
-    const a = completo({ nome: 'O', nivel: 'ouro', debito: '', associacoes: 'p', consome: 'final-f' })
+    const a = completo({ nome: 'O', nivel: 'ouro', debito: '', consome: 'p | final-f' })
     const b = completo({ nome: 'P', nivel: 'prata', debito: '' })
     const c = completo({ nome: 'Final F', nivel: 'final' })
     expect(buildGraph(csv(c, b, a), NIVEIS).graph).toEqual(buildGraph(csv(a, b, c), NIVEIS).graph)
@@ -646,12 +646,12 @@ describe('buildGraph com níveis cadastrados', () => {
 })
 
 describe('buildGraph com built-in editado ou removido', () => {
-  // Uma linha por nível da ponta à ponta da cadeia, ligadas por consome e
-  // associacoes: é o que mostra que remover um nível só apaga as linhas DELE.
+  // Uma linha por nível da ponta à ponta da cadeia, ligadas por consome: é o
+  // que mostra que remover um nível só apaga as linhas DELE.
   const CATALOGO = csv(
     completo({ nome: 'Portfólio', nivel: 'raiz', debito: '', consome: 'alfa' }),
     completo({ nome: 'Alfa', nivel: 'final', consome: 'beta' }),
-    completo({ nome: 'Beta', nivel: 'primario', associacoes: 'risco' }),
+    completo({ nome: 'Beta', nivel: 'primario', consome: 'risco' }),
     completo({ nome: 'Risco', nivel: 'dominio', debito: '' }),
   )
   const PADRAO = carregarNiveis('').niveis
@@ -666,7 +666,7 @@ describe('buildGraph com built-in editado ou removido', () => {
     expect(ids(graph)).toEqual(['alfa', 'beta', 'portfolio', 'risco'])
     expect(arestas(graph)).toEqual([
       'alfa -consome-> beta',
-      'beta -vem de-> risco',
+      'beta -consome-> risco',
       'portfolio -consome-> alfa',
     ])
   })
@@ -701,15 +701,24 @@ describe('buildGraph com built-in editado ou removido', () => {
         ' (use um destes: dominio, final, primario, fonte-secundaria, fonte, origem) — linha ignorada',
     ])
     // O resto da cadeia segue de pé, com as arestas que não passavam pela raiz.
-    expect(arestas(graph)).toEqual(['alfa -consome-> beta', 'beta -vem de-> risco'])
+    expect(arestas(graph)).toEqual(['alfa -consome-> beta', 'beta -consome-> risco'])
   })
 
-  it('remover `dominio` desfaz também a associação que apontava para lá', () => {
+  // A linha do nível removido sai, e quem a citava fica apontando para o vazio
+  // — o que agora vira FANTASMA, como qualquer `consome` que não resolve. Antes
+  // desta referência ser um `consome`, ela era uma associação, e associação
+  // quebrada só avisava; hoje o buraco aparece no mapa em vez de sumir dele.
+  it('remover `dominio` deixa quem apontava para lá com um nó fantasma', () => {
     const { graph, warnings } = buildGraph(CATALOGO, semNiveis('dominio'))
     expect(ids(graph)).not.toContain('risco')
-    expect(arestas(graph)).toEqual(['alfa -consome-> beta', 'portfolio -consome-> alfa'])
+    expect(graph.nodes.filter((n) => n.fantasma === true).map((n) => n.nome)).toEqual(['risco'])
+    expect(arestas(graph)).toEqual([
+      'alfa -consome-> beta',
+      'beta -consome-> fantasma-risco',
+      'portfolio -consome-> alfa',
+    ])
     expect(warnings).toHaveLength(2)
-    expect(warnings[1]).toContain('associação "risco" não corresponde a nenhum componente')
+    expect(warnings[1]).toContain('consome quebrado: "risco" em "Beta"')
   })
 
   it('remover um nível vazio não mexe em nada', () => {
@@ -832,6 +841,14 @@ describe('catálogo e niveis.csv reais', () => {
   const raiz = resolve(import.meta.dirname, '..')
   const catalogoReal = readFileSync(resolve(raiz, 'catalogo.csv'), 'utf8')
   const niveisReal = readFileSync(resolve(raiz, 'niveis.csv'), 'utf8')
+  // Mesmo caminho do build (scripts/build-graph.ts): o verbos.csv é opcional —
+  // ausente vale o vocabulário embutido. Sem ler o arquivo, um verbo que o
+  // usuário cadastrasse pela tela viraria "prefixo desconhecido" e derrubaria
+  // estes casos, que são sobre NÍVEIS.
+  const arquivoVerbos = resolve(raiz, 'verbos.csv')
+  const { verbos } = carregarVerbos(
+    existsSync(arquivoVerbos) ? readFileSync(arquivoVerbos, 'utf8') : '',
+  )
 
   it('niveis.csv real carrega sem warnings, ordenado e sem slug repetido', () => {
     // O arquivo é editável pelo app (renomear, reordenar e remover qualquer
@@ -846,7 +863,11 @@ describe('catálogo e niveis.csv reais', () => {
   })
 
   it('o grafo real builda limpo e todo nó pertence a um nível declarado', () => {
-    const { graph, warnings } = buildGraph(catalogoReal, carregarNiveis(niveisReal).niveis)
+    const { graph, warnings } = buildGraph(
+      catalogoReal,
+      carregarNiveis(niveisReal).niveis,
+      verbos,
+    )
     expect(warnings).toEqual([])
     expect(graph.nodes.filter((n) => n.fantasma === true)).toEqual([])
     // Os níveis do arquivo são editáveis pelo app: o invariante é a ordenação
@@ -861,7 +882,7 @@ describe('catálogo e niveis.csv reais', () => {
 
   it('os níveis cadastrados carregam nós de verdade (o catálogo usa a cadeia inteira)', () => {
     const { niveis } = carregarNiveis(niveisReal)
-    const { graph } = buildGraph(catalogoReal, niveis)
+    const { graph } = buildGraph(catalogoReal, niveis, verbos)
     // Quantos nós cada nível tem depende do que o usuário cadastrou; o
     // invariante é que os níveis NÃO built-in do arquivo estão em uso.
     const custom = graph.niveis.filter((n) => !n.builtin)

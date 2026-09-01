@@ -28,8 +28,12 @@ const destino = join(tmp, NOME)
 mkdirSync(join(destino, 'catalogo'), { recursive: true })
 
 cpSync(HTML, join(destino, `${NOME}.html`))
-for (const csv of ['catalogo.csv', 'niveis.csv']) {
-  cpSync(join(RAIZ, csv), join(destino, 'catalogo', csv))
+// niveis.csv e verbos.csv são OPCIONAIS (o verbos.csv só nasce quando alguém
+// grava a tela de verbos): copia-se o que existir, e a falta de um deles vale
+// os padrões embutidos, igual ao build.
+for (const csv of ['catalogo.csv', 'niveis.csv', 'verbos.csv']) {
+  const origem = join(RAIZ, csv)
+  if (existsSync(origem)) cpSync(origem, join(destino, 'catalogo', csv))
 }
 
 const hoje = new Date().toLocaleDateString('pt-BR')

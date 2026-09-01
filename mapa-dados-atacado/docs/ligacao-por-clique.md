@@ -1,14 +1,18 @@
 # Ligação por clique no grafo
 
-Especificação para uma melhoria futura: criar `Consome/Upstream` e `Associações`
-ligando um componente ao outro **direto no mapa**, sem abrir o formulário. Nada
+Especificação para uma melhoria futura: criar a ligação `Consome/Upstream`
+de um componente ao outro **direto no mapa**, sem abrir o formulário. Nada
 disto está implementado — o documento existe para a decisão não precisar ser
 tomada de novo do zero.
+
+> Atualizado quando a coluna `associacoes` saiu do modelo: o gesto tinha duas
+> relações possíveis e agora tem UMA, o `consome`. Isso apagou a primeira das
+> decisões pendentes; a direção e o desfazer continuam de pé.
 
 ## Por que é barato
 
 A gravação já existe e é a mesma do formulário: ligar A a B é acrescentar o **id**
-de B na coluna `consome` (ou `associacoes`) da linha de A e salvar o catálogo
+de B na coluna `consome` da linha de A e salvar o catálogo
 completo por `POST /api/catalogo`. O build resolve id → nó e emite a aresta.
 
 Ou seja, **nada muda no build nem na API**: a melhoria é uma camada de interação
@@ -30,14 +34,10 @@ destacados e o resto esmaecido (a mecânica de `dimmedIds` já faz isso).
 
 ## Decisões pendentes (de produto, não técnicas)
 
-1. **Qual relação o gesto cria.** `Consome/Upstream` e `Associações` são
-   semanticamente diferentes. Opções: perguntar ao soltar (menu de duas opções
-   no ponto do drop), usar tecla modificadora (arrastar = consome, Shift =
-   associação) ou fixar uma e deixar a outra só no formulário.
-2. **A direção.** Arrastar de A para B significa "A consome B" ou "B consome A"?
+1. **A direção.** Arrastar de A para B significa "A consome B" ou "B consome A"?
    A direção precisa estar visível durante o arraste (seta na linha fantasma e
    rótulo tipo "A consome B"), senão o usuário liga invertido sem perceber.
-3. **Desfazer.** O save é imediato e não há undo no app. Ou o gesto pede
+2. **Desfazer.** O save é imediato e não há undo no app. Ou o gesto pede
    confirmação, ou a ligação recém-criada oferece um "desfazer" por alguns
    segundos (o inverso — remover o nome da coluna — é trivial).
 
@@ -50,7 +50,7 @@ o rótulo). Renomear um componente também deixava órfã toda menção a ele.
 
 **Isso foi resolvido antes desta melhoria.** O `catalogo.csv` tem hoje uma coluna
 `id` — a chave estável de cada linha, gerada do nome na criação e imutável daí em
-diante —, e `consome`/`associacoes` guardam **ids**. Consequências para o gesto
+diante —, e `consome` guarda **ids**. Consequências para o gesto
 de ligar por clique:
 
 - **A ambiguidade sumiu.** Gravar o id do nó em que o usuário soltou o cursor diz

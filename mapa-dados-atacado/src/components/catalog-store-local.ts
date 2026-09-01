@@ -14,26 +14,31 @@
 // pasta escolhida (File System Access) ou só guarda em memória, para o usuário
 // baixar depois (fallback do Firefox).
 import { normalizeProdutoDeDados, normalizeTipoComponente } from './catalog-api'
-import type { CatalogoRow, NivelApiRow, SaveResult } from './catalog-api'
+import type { CatalogoRow, NivelApiRow, SaveResult, VerboApiRow } from './catalog-api'
 import type { ArquivosCatalogo, CatalogStore, ModoPersistencia } from './catalog-store'
 import {
   buildGraph,
   canonizarCatalogo,
   carregarNiveis,
+  carregarVerbos,
   normalizarCor,
   parseCatalogoRows,
   resolverNiveis,
+  resolverVerbos,
   serializarCatalogo,
   serializarNiveis,
+  serializarVerbos,
   validarCatalogo,
   validarNiveis,
   validarNiveisContraCatalogo,
+  validarVerbos,
+  validarVerbosContraCatalogo,
 } from './graph-build'
-import type { Graph, GraphNode, NivelRow } from './graph-build'
+import type { Graph, GraphNode, NivelRow, VerboRow } from './graph-build'
 import type { Debito, GraphJson, GraphNodeData } from './graph-types'
 
-/** Qual dos dois arquivos do catálogo está sendo gravado. */
-export type ArquivoCatalogo = 'catalogo' | 'niveis'
+/** Qual dos três arquivos do catálogo está sendo gravado. */
+export type ArquivoCatalogo = 'catalogo' | 'niveis' | 'verbos'
 
 /** Para onde o CSV serializado vai. Só isso separa "gravar na pasta do
  *  usuário" de "guardar para baixar depois". */
@@ -89,10 +94,13 @@ function nodeJson(n: GraphNode): GraphNodeData {
   return node
 }
 
-/** Grafo do build → o mesmo objeto que o app importa de src/data/graph.json. */
+/** Grafo do build → o mesmo objeto que o app importa de src/data/graph.json.
+ *  A cópia é campo a campo: bloco novo do build só chega ao front quando
+ *  aparece aqui também (foi o que faltou ao `verbos` na fase anterior). */
 export function comoGraphJson(graph: Graph): GraphJson {
   return {
     niveis: graph.niveis.map((nv) => ({ ...nv })),
+    verbos: graph.verbos.map((v) => ({ ...v })),
     nodes: graph.nodes.map(nodeJson),
     links: graph.links.map((l) => ({ ...l })),
   }
@@ -114,6 +122,22 @@ function comoNivelRow(r: NivelApiRow): NivelRow {
   return row
 }
 
+/** VerboApiRow (formato da UI e do POST /api/verbos) → linha bruta do
+ *  verbos.csv, com a mesma leitura de `slug` do plugin: vazio não vira campo,
+ *  porque é o que marca "verbo novo, derive o slug do título". `seta` é
+ *  booleano na API e "sim"/"nao" no arquivo — a conversão é aqui; `sentido`
+ *  vazio não vira campo (vale o padrão) e o que vier fora do vocabulário entra
+ *  cru, para validarVerbos recusar citando o valor. */
+function comoVerboRow(r: VerboApiRow): VerboRow {
+  const slug = (r.slug ?? '').trim()
+  const sentido = (r.sentido ?? '').trim()
+  const row: VerboRow = { titulo: r.titulo.trim() }
+  if (slug !== '') row.slug = slug
+  if (sentido !== '') row.sentido = sentido
+  if (r.seta !== undefined) row.seta = r.seta ? 'sim' : 'nao'
+  return row
+}
+
 function dedup(...listas: string[][]): string[] {
   return [...new Set(listas.flat())]
 }
@@ -123,18 +147,20 @@ function counts(graph: Graph): Record<string, number> {
 }
 
 /**
- * Store sobre os textos dos dois CSVs, já carregados na memória da aba.
+ * Store sobre os textos dos três CSVs, já carregados na memória da aba.
  * Cada save regrava o arquivo inteiro (nunca um patch) e recalcula o grafo,
  * exatamente como o POST da API faz.
  */
 export function criarStoreLocal(destino: DestinoLocal, arquivos: ArquivosCatalogo): CatalogStore {
   let csvCatalogo = arquivos.catalogo
   let csvNiveis = arquivos.niveis
+  let csvVerbos = arquivos.verbos
   let grafoAtual = montar()
 
   function montar(): GraphJson {
     const { niveis } = carregarNiveis(csvNiveis)
-    return comoGraphJson(buildGraph(csvCatalogo, niveis).graph)
+    const { verbos } = carregarVerbos(csvVerbos)
+    return comoGraphJson(buildGraph(csvCatalogo, niveis, verbos).graph)
   }
 
   return {
@@ -145,22 +171,27 @@ export function criarStoreLocal(destino: DestinoLocal, arquivos: ArquivosCatalog
 
     lerNiveis: () => Promise.resolve(carregarNiveis(csvNiveis).niveis.map((nv) => ({ ...nv }))),
 
+    // verbos.csv ausente ("") devolve os embutidos, com builtin: true — é o
+    // estado normal, o arquivo só nasce na primeira gravação daqui.
+    lerVerbos: () => Promise.resolve(carregarVerbos(csvVerbos).verbos.map((v) => ({ ...v }))),
+
     async salvarCatalogo(rows: CatalogoRow[]): Promise<SaveResult> {
       const { niveis, warnings: warningsNiveis } = carregarNiveis(csvNiveis)
-      const { errors, warnings } = validarCatalogo(rows, niveis)
+      const { verbos, warnings: warningsVerbos } = carregarVerbos(csvVerbos)
+      const { errors, warnings } = validarCatalogo(rows, niveis, verbos)
       if (errors.length > 0) return { ok: false, errors }
 
       // Mesma ordem do plugin: canonizar (ids preenchidos, referências em id) e
       // só então serializar — o CSV que sai daqui e o que sai do dev server são
       // o mesmo arquivo.
-      const csv = serializarCatalogo(canonizarCatalogo(rows, niveis))
-      const { graph, warnings: warningsBuild } = buildGraph(csv, niveis)
+      const csv = serializarCatalogo(canonizarCatalogo(rows, niveis, verbos))
+      const { graph, warnings: warningsBuild } = buildGraph(csv, niveis, verbos)
       await destino.gravar('catalogo', csv)
       csvCatalogo = csv
       grafoAtual = comoGraphJson(graph)
       return {
         ok: true,
-        warnings: dedup(warningsNiveis, warnings, warningsBuild),
+        warnings: dedup(warningsNiveis, warningsVerbos, warnings, warningsBuild),
         counts: counts(graph),
       }
     },
@@ -174,14 +205,47 @@ export function criarStoreLocal(destino: DestinoLocal, arquivos: ArquivosCatalog
       if (errosUso.length > 0) return { ok: false, errors: errosUso }
 
       const csv = serializarNiveis(brutas)
-      const { graph, warnings: warningsBuild } = buildGraph(csvCatalogo, resolverNiveis(brutas))
+      const { verbos } = carregarVerbos(csvVerbos)
+      const { graph, warnings: warningsBuild } = buildGraph(
+        csvCatalogo,
+        resolverNiveis(brutas),
+        verbos,
+      )
       await destino.gravar('niveis', csv)
       csvNiveis = csv
       grafoAtual = comoGraphJson(graph)
       return { ok: true, warnings: dedup(warnings, warningsBuild), counts: counts(graph) }
     },
 
+    async salvarVerbos(rows: VerboApiRow[]): Promise<SaveResult> {
+      const brutas = rows.map(comoVerboRow)
+      const { errors, warnings } = validarVerbos(brutas)
+      if (errors.length > 0) return { ok: false, errors }
+      // Remover verbo ainda usado por alguma referência é erro, como na API. O
+      // vocabulário VIGENTE é o que diz o que é prefixo: sem ele, "envia:x"
+      // com `envia` fora da lista atual pareceria referência quebrada.
+      const { verbos: vigentes } = carregarVerbos(csvVerbos)
+      const errosUso = validarVerbosContraCatalogo(
+        brutas,
+        parseCatalogoRows(csvCatalogo),
+        vigentes,
+      )
+      if (errosUso.length > 0) return { ok: false, errors: errosUso }
+
+      const csv = serializarVerbos(brutas)
+      const { niveis } = carregarNiveis(csvNiveis)
+      const { graph, warnings: warningsBuild } = buildGraph(
+        csvCatalogo,
+        niveis,
+        resolverVerbos(brutas),
+      )
+      await destino.gravar('verbos', csv)
+      csvVerbos = csv
+      grafoAtual = comoGraphJson(graph)
+      return { ok: true, warnings: dedup(warnings, warningsBuild), counts: counts(graph) }
+    },
+
     grafo: () => grafoAtual,
-    arquivos: () => ({ catalogo: csvCatalogo, niveis: csvNiveis }),
+    arquivos: () => ({ catalogo: csvCatalogo, niveis: csvNiveis, verbos: csvVerbos }),
   }
 }

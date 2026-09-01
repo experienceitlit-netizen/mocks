@@ -217,8 +217,12 @@
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 1rem;
-  max-width: min(60rem, 92vw);
+  /* Quebra de linha: os chips por verbo vêm do VOCABULÁRIO, que é dado — o
+     usuário cadastra quantos quiser, e a barra tem de acomodar em vez de
+     empurrar o "Ver mapa completo" para fora da tela. */
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  max-width: min(72rem, 92vw);
   padding: 0.4rem 0.8rem;
   border-radius: 8px;
   border: 1px solid #3a3a3a;
@@ -298,6 +302,39 @@
 .focus-bar__vista button.focus-bar__vista--active {
   background: rgba(127, 180, 232, 0.15);
   color: #7fb4e8;
+}
+
+/* Alcance do foco e chips por verbo: os dois são "um rótulo curto + o
+   controle", e por isso dividem a mesma caixa. O alcance reusa o desenho do
+   switch de vista (.focus-bar__vista) porque é a mesma coisa — uma escolha
+   entre poucas posições. */
+.focus-bar__alcance,
+.focus-bar__verbos {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.focus-bar__label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8a8a8a;
+  white-space: nowrap;
+}
+
+.focus-bar__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+/* O chip da barra é o mesmo .filter-chip do painel de filtros, um tamanho
+   abaixo: a barra é uma faixa fina e o painel, uma coluna. */
+.focus-bar__chips .filter-chip {
+  padding: 0.12rem 0.45rem;
+  font-size: 0.68rem;
 }
 
 .focus-bar__bands {
@@ -1240,6 +1277,41 @@
   max-width: 100%;
 }
 
+/* O verbo do chip: mesmo tamanho do texto, sem moldura própria e separado do
+   nome por um filete — a relação e o alvo são um chip só, não dois controles.
+   Fica à ESQUERDA porque é assim que a célula se lê: "envia: Bulk API".
+   O seletor carrega o `.cform__field` porque o campo inteiro é um, e a regra
+   genérica de select do formulário (largura total, moldura, fundo) ganharia
+   deste chip por especificidade. */
+.cform__field select.chips-input__verbo {
+  width: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  border-right: 1px solid rgba(157, 180, 200, 0.35);
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.7rem;
+  padding: 0 0.35rem 0 0;
+  margin-right: 0.1rem;
+  max-width: 6.5rem;
+  cursor: pointer;
+  outline: none;
+}
+
+.cform__field select.chips-input__verbo:focus {
+  color: #cfe1f0;
+  border-color: rgba(157, 180, 200, 0.6);
+}
+
+/* O menu nativo herda a cor do sistema, não a do chip. */
+.chips-input__verbo option {
+  color: #e0e0e0;
+  background: #2a2a2a;
+}
+
 /* Nome livre fora do catálogo: vai virar nó fantasma. */
 .chips-input__chip--ghost {
   border-style: dashed;
@@ -1781,6 +1853,64 @@
   font-size: 0.72rem;
   color: #8a8a8a;
   line-height: 1.4;
+}
+
+/* --- modal "⇢ Verbos" (vocabulário das relações; só em modo edição) ---
+   A lista, a linha, a confirmação e os botões são os MESMOS do modal de
+   níveis (.niveis-modal__*): aquilo é layout de lista editável, não desenho de
+   nível. Aqui só o que a linha do verbo tem a mais — o select de sentido e a
+   caixinha da seta — e a barra de adicionar sem o campo de ordem. */
+
+.verbos-modal__sentido {
+  flex-shrink: 0;
+  padding: 0.25rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid #3a3a3a;
+  background: #242424;
+  color: #e0e0e0;
+  font-size: 0.78rem;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+}
+
+.verbos-modal__sentido:focus {
+  border-color: #6a6a6a;
+}
+
+.verbos-modal__sentido:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* A caixinha e a palavra andam juntas: o rótulo é o alvo do clique, e o eixo
+   "desenha ponta?" fica legível ao lado do eixo "por onde a linhagem passa". */
+.verbos-modal__seta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: #8a8a8a;
+  cursor: pointer;
+}
+
+.verbos-modal__seta input {
+  cursor: pointer;
+}
+
+.verbos-modal__seta:has(input:disabled) {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Sem coluna de ordem: só o título e o botão (o niveis-modal__add-row tem três
+   colunas porque o nível tem ordem semântica; o verbo não tem). */
+.verbos-modal__add-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.75rem;
+  align-items: end;
 }
 
 

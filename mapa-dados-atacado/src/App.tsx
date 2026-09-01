@@ -3,7 +3,9 @@ import graphJson from './data/graph.json'
 import Graph from './components/Graph'
 import type { GraphHandle } from './components/Graph'
 import NodeBalloon from './components/NodeBalloon'
-import type { BalloonAnchor, Connection } from './components/NodeBalloon'
+import type { BalloonAnchor } from './components/NodeBalloon'
+import type { Ligacao } from './components/ligacoes-por-verbo'
+import { agruparLigacoesPorVerbo } from './components/ligacoes-por-verbo'
 import SearchBox from './components/SearchBox'
 import Filters from './components/Filters'
 import FocusBar from './components/FocusBar'
@@ -19,6 +21,7 @@ import type {
   NivelDef,
   SimLink,
   SimNode,
+  VerboDef,
 } from './components/graph-types'
 import {
   debitoDe,
@@ -26,13 +29,19 @@ import {
   ehProdutoDeDados,
   isReal,
   linkEndId,
+  linkLabel,
   nivelDe,
+  tituloDoVerbo,
 } from './components/graph-types'
-import { buildLineage, buildLineageTree } from './components/lineage'
+import type { Alcance } from './components/lineage'
+import { ALCANCE_INICIAL, buildLineage, buildLineageTree, ehAlcance } from './components/lineage'
+import { comVerboAlternado } from './components/arestas-visiveis'
 import { grausPorId } from './components/node-size'
 import CatalogForm from './components/CatalogForm'
 import type { FormTarget } from './components/CatalogForm'
 import NiveisModal from './components/NiveisModal'
+import VerbosModal from './components/VerbosModal'
+import { VERBOS_PADRAO } from './components/graph-build'
 import DeleteConfirm from './components/DeleteConfirm'
 import type { Referencia } from './components/catalog-delete'
 import { removerComponente } from './components/catalog-delete'
@@ -81,6 +90,16 @@ function niveisDoGrafo(graph: GraphJson): NivelDef[] {
     : derivarNiveis(graph.nodes)
 }
 
+/** Vocabulário das relações na ordem do arquivo (o `<select>` de verbo de cada
+ *  chip do formulário e a tela "⇢ Verbos"). graph.json sem o bloco `verbos`
+ *  (build antigo) cai nos embutidos — e NADA é derivado das arestas: o
+ *  vocabulário é dado declarado, não a lista do que está em uso. */
+function verbosDoGrafo(graph: GraphJson): VerboDef[] {
+  return graph.verbos !== undefined && graph.verbos.length > 0
+    ? [...graph.verbos]
+    : [...VERBOS_PADRAO]
+}
+
 function readUrlSelection(): string | null {
   return new URLSearchParams(window.location.search).get('no')
 }
@@ -110,6 +129,14 @@ function readUrlDepth(): number {
 /** ?vista=niveis|forca; ausente (links antigos com ?foco=) = níveis. */
 function readUrlVista(): Vista {
   return new URLSearchParams(window.location.search).get('vista') === 'forca' ? 'forca' : 'niveis'
+}
+
+/** ?alcance=montante|vizinhos|ambos — o quanto do entorno o foco traz na vista
+ *  Níveis. Ausente (link antigo com ?foco=) ou valor desconhecido = o padrão da
+ *  tela, "+ vizinhos diretos". */
+function readUrlAlcance(): Alcance {
+  const bruto = new URLSearchParams(window.location.search).get('alcance')
+  return ehAlcance(bruto) ? bruto : ALCANCE_INICIAL
 }
 
 type Aba = 'mapa' | 'tabela'
@@ -147,6 +174,7 @@ function App() {
   const graph = grafoLocal ?? GRAPH_INICIAL
   const { nodes, links } = graph
   const niveis = useMemo(() => niveisDoGrafo(graph), [graph])
+  const verbos = useMemo(() => verbosDoGrafo(graph), [graph])
 
   // A lib de força muta os objetos (injeta x/y) — clona uma única vez.
   const simData = useMemo<{ nodes: SimNode[]; links: SimLink[] }>(
@@ -212,6 +240,14 @@ function App() {
     [niveis],
   )
 
+  /** Título de um verbo pelo rótulo da aresta (listas e árvore do balão).
+   *  Espelha o nivelTituloDe; verbo fora do vocabulário mostra o próprio slug,
+   *  que é o que {@link tituloDoVerbo} devolve. */
+  const verboTituloDe = useCallback(
+    (label: string) => tituloDoVerbo(verbos, label),
+    [verbos],
+  )
+
   // --- estado de UI ---
   // Aba ativa: o mapa (grafo) continua montado sob a tabela, preservando
   // pan/zoom, foco e filtros ao alternar.
@@ -231,11 +267,21 @@ function App() {
   const [focusPath, setFocusPath] = useState<string[]>(readInitialFocusPath)
   const [depth, setDepth] = useState<number>(readUrlDepth)
   const [vista, setVista] = useState<Vista>(readUrlVista)
+  /** Quanto do entorno o foco traz na vista Níveis (ver Alcance em lineage.ts).
+   *  Mora na URL junto de ?foco= e ?vista=: o link tem de reproduzir o que está
+   *  na tela, e o alcance muda o mapa inteiro. */
+  const [alcance, setAlcance] = useState<Alcance>(readUrlAlcance)
   // Faixas de nível (retângulos + títulos + chevrons) da vista Níveis.
   const [bandsOn, setBandsOn] = useState(true)
-  /** "Mostrar associações": desligado, o grafo fica só com os nós — as arestas
+  /** "Mostrar ligações": desligado, o grafo fica só com os nós — as arestas
    *  do nó em destaque (hover, clique fixado ou balão) continuam visíveis. */
-  const [assocOn, setAssocOn] = useState(true)
+  const [ligacoesOn, setLigacoesOn] = useState(true)
+  /** Verbos com o chip apagado na barra de foco: as arestas deles somem do
+   *  mapa (os nós ficam). Guarda os OCULTOS, e não os visíveis, para que verbo
+   *  cadastrado depois já nasça aceso — ver arestas-visiveis.ts. Estado de
+   *  SESSÃO, como o "Mostrar ligações" de que ele é o irmão fino: não vai para
+   *  a URL nem para o CSV. */
+  const [verbosOcultos, setVerbosOcultos] = useState<ReadonlySet<string>>(() => new Set())
 
   // Tamanho ajustado à mão, arrastando a borda do nó (ver node-resize.ts).
   // Estado de SESSÃO e nada além disso: não vai para o CSV, nem para a URL, nem
@@ -333,6 +379,8 @@ function App() {
   const [catalogForm, setCatalogForm] = useState<FormTarget | null>(null)
   // Modal "≣ Níveis" (gerenciar níveis; só em modo edição).
   const [niveisOpen, setNiveisOpen] = useState(false)
+  // Modal "⇢ Verbos" (vocabulário das relações; só em modo edição).
+  const [verbosOpen, setVerbosOpen] = useState(false)
   useEffect(() => {
     if (store === null) {
       setCatalogRows(null)
@@ -495,8 +543,10 @@ function App() {
   // identidade e só as colunas mudam.
   const lineageBase = useMemo(
     () =>
-      vista === 'niveis' ? buildLineage(focusId, nodes, links, niveis) : null,
-    [focusId, vista, nodes, links, niveis],
+      vista === 'niveis'
+        ? buildLineage(focusId, nodes, links, niveis, verbos, alcance)
+        : null,
+    [focusId, vista, nodes, links, niveis, verbos, alcance],
   )
   // Y de origem de cada nó, capturado junto com a linhagem e ANTES de qualquer
   // deslocamento: aplicarDeslocamentos escreve o y absoluto e precisa da base
@@ -654,6 +704,17 @@ function App() {
     setEscalas((prev) => podadas(prev, (id) => nodesById.has(id)))
   }, [nodesById])
 
+  // Verbo excluído no modal "⇢ Verbos": o chip apagado dele vai junto. Sem
+  // isto, o slug ficaria preso no conjunto sem chip nenhum para reacendê-lo, e
+  // um verbo recadastrado com o mesmo slug voltaria invisível.
+  useEffect(() => {
+    const slugs = new Set(verbos.map((v) => v.slug))
+    setVerbosOcultos((prev) => {
+      const proximo = new Set([...prev].filter((slug) => slugs.has(slug)))
+      return proximo.size === prev.size ? prev : proximo
+    })
+  }, [verbos])
+
   // Nível excluído no modal "≣ Níveis": a largura e o deslocamento ajustados
   // dele vão junto.
   useEffect(() => {
@@ -699,10 +760,12 @@ function App() {
   // Clique direito: abre o balão de detalhe (a antiga ação do esquerdo).
   const handleNodeRightClick = useCallback((id: string) => select(id), [select])
 
-  // URL reflete aba (?aba=tabela), seleção (?no=) e foco (?foco=&vista=, com
-  // &prof= só na vista de força) sem poluir o histórico. Sem foco, a URL fica
-  // limpa — o inverso exato de readInitialFocusPath, e agora sem exceção: todo
-  // foco é explícito, então todo foco vai para a URL e sobrevive ao recarregar.
+  // URL reflete aba (?aba=tabela), seleção (?no=) e foco (?foco=&vista=) sem
+  // poluir o histórico. Cada vista leva só o seu regulador de amplitude —
+  // &prof= na de força, &alcance= na de níveis —, porque a URL não deve
+  // prometer um ajuste que a vista da vez não usa. Sem foco, a URL fica limpa:
+  // o inverso exato de readInitialFocusPath, e sem exceção — todo foco é
+  // explícito, então todo foco vai para a URL e sobrevive ao recarregar.
   useEffect(() => {
     const url = new URL(window.location.href)
     if (aba === 'tabela') url.searchParams.set('aba', 'tabela')
@@ -712,15 +775,21 @@ function App() {
     if (focusId) {
       url.searchParams.set('foco', focusId)
       url.searchParams.set('vista', vista)
-      if (vista === 'forca') url.searchParams.set('prof', String(depth))
-      else url.searchParams.delete('prof')
+      if (vista === 'forca') {
+        url.searchParams.set('prof', String(depth))
+        url.searchParams.delete('alcance')
+      } else {
+        url.searchParams.delete('prof')
+        url.searchParams.set('alcance', alcance)
+      }
     } else {
       url.searchParams.delete('foco')
       url.searchParams.delete('prof')
+      url.searchParams.delete('alcance')
       url.searchParams.delete('vista')
     }
     window.history.replaceState(null, '', url)
-  }, [aba, selectedId, focusId, depth, vista])
+  }, [aba, selectedId, focusId, depth, vista, alcance])
 
   // --- exclusão pelo teclado ---
   // Delete (e Backspace, o hábito do macOS) sobre o componente em evidência
@@ -738,10 +807,11 @@ function App() {
       selectedId === exclusaoPendente.id &&
       catalogForm === null &&
       !niveisOpen &&
+      !verbosOpen &&
       aba === 'mapa' &&
       store !== null
     if (!valida) setExclusaoPendente(null)
-  }, [exclusaoPendente, selectedId, catalogForm, niveisOpen, aba, store])
+  }, [exclusaoPendente, selectedId, catalogForm, niveisOpen, verbosOpen, aba, store])
 
   const executarExclusao = useCallback(
     async (pedido: PedidoExclusao) => {
@@ -754,7 +824,7 @@ function App() {
         // sessão não recarrega a página, então as rows do estado podem estar
         // atrás do CSV.
         const atuais = (await store.lerCatalogo()) ?? catalogRows ?? []
-        const r = removerComponente(atuais, { id: pedido.id, nome: pedido.nome })
+        const r = removerComponente(atuais, { id: pedido.id, nome: pedido.nome }, verbos)
         if (!r.encontrada) {
           falhar(`"${pedido.nome}" não está mais no catálogo.`)
           return
@@ -776,15 +846,15 @@ function App() {
         setExcluindo(false)
       }
     },
-    [store, catalogRows, refreshCatalogo],
+    [store, catalogRows, verbos, refreshCatalogo],
   )
 
   // Handlers globais leem o estado por ref (o listener é registrado uma vez).
   const teclaExcluirRef = useRef<(e: KeyboardEvent) => void>(() => {})
   teclaExcluirRef.current = (e) => {
     // Digitando em um campo, Delete/Backspace são do texto; com o formulário,
-    // o modal de níveis ou a tabela na tela, a tecla não é do mapa.
-    if (catalogForm !== null || niveisOpen || aba !== 'mapa') return
+    // um dos modais de vocabulário ou a tabela na tela, a tecla não é do mapa.
+    if (catalogForm !== null || niveisOpen || verbosOpen || aba !== 'mapa') return
     if (ehCampoDeTexto(document.activeElement)) return
     const alvo = alvoDoAtalho({ selectedId, pinnedId, nodesById, rows: catalogRows })
     if (alvo === null) return
@@ -792,7 +862,7 @@ function App() {
     select(alvo.id) // abre o balão do alvo (e assume o destaque do fixado)
     setExclusaoPendente({
       ...alvo,
-      referencias: removerComponente(catalogRows ?? [], alvo).referencias,
+      referencias: removerComponente(catalogRows ?? [], alvo, verbos).referencias,
       erro: null,
     })
   }
@@ -814,6 +884,7 @@ function App() {
     if (exclusaoPendente) setExclusaoPendente(null)
     else if (catalogForm) setCatalogForm(null)
     else if (niveisOpen) setNiveisOpen(false)
+    else if (verbosOpen) setVerbosOpen(false)
     else if (aba === 'tabela') setAba('mapa')
     else if (selectedId) setSelectedId(null)
     else if (pinnedId) setPinnedId(null)
@@ -861,8 +932,8 @@ function App() {
     return { modo: 'cadastrar', nome: selectedNode.nome, nivel: nivelDe(selectedNode) }
   }, [catalogRows, selectedNode])
 
-  // Alvos possíveis de "Consome/Upstream" e "Associações" no formulário: o
-  // formulário mostra o nome e grava o id.
+  // Alvos possíveis de "Consome/Upstream" no formulário: o formulário mostra o
+  // nome e grava o id.
   const componentesGrafo = useMemo(
     () => nodes.filter(isReal).map((n) => ({ ref: n.id, nome: n.nome })),
     [nodes],
@@ -870,27 +941,30 @@ function App() {
 
   // Árvore de linhagem do painel.
   const selectedLineage = useMemo(
-    () => (selectedNode ? buildLineageTree(selectedNode.id, nodes, links) : null),
-    [selectedNode, nodes, links],
+    () => (selectedNode ? buildLineageTree(selectedNode.id, nodes, links, verbos) : null),
+    [selectedNode, nodes, links, verbos],
   )
 
-  const { outgoing, incoming } = useMemo(() => {
-    const out: Connection[] = []
-    const inc: Connection[] = []
+  // As ligações do nó selecionado, agrupadas por VERBO para o balão. A aresta
+  // de SAÍDA é a que este componente declarou (sentido direto); a de ENTRADA é
+  // a mesma relação lida do outro lado, e vai marcada `invertida` — é
+  // ligacoes-por-verbo.ts que decide título, ordem e agrupamento.
+  const secoesDeLigacoes = useMemo(() => {
+    const ligacoes: Ligacao[] = []
     if (selectedId) {
       for (const l of links) {
-        const label = l.label ?? 'consome'
+        const label = linkLabel(l)
         if (l.source === selectedId) {
           const node = nodesById.get(l.target)
-          if (node) out.push({ node, label })
+          if (node) ligacoes.push({ node, label, invertida: false })
         } else if (l.target === selectedId) {
           const node = nodesById.get(l.source)
-          if (node) inc.push({ node, label })
+          if (node) ligacoes.push({ node, label, invertida: true })
         }
       }
     }
-    return { outgoing: out, incoming: inc }
-  }, [selectedId, links, nodesById])
+    return agruparLigacoesPorVerbo(ligacoes, verbos)
+  }, [selectedId, links, nodesById, verbos])
 
   // Âncora do balão: posição do nó selecionado em coordenadas de tela, lida
   // a cada frame pelo próprio balão (segue pan/zoom/física sem re-render).
@@ -921,6 +995,7 @@ function App() {
         ref={graphRef}
         data={graphData}
         degreeById={degreeById}
+        verbos={verbos}
         dimmedIds={dimmedIds}
         hoverId={hoverId}
         pinnedId={pinnedId}
@@ -937,7 +1012,8 @@ function App() {
         onDeslocamentoChange={alterarDeslocamento}
         onArrasteFaixaChange={alterarArrasteFaixa}
         onRestaurarFaixa={restaurarFaixa}
-        assocOn={assocOn}
+        ligacoesOn={ligacoesOn}
+        verbosOcultos={verbosOcultos}
         onNodeClick={handleNodeClick}
         onNodeRightClick={handleNodeRightClick}
         onNodeHover={setHoverId}
@@ -953,6 +1029,7 @@ function App() {
             nodes={nodes}
             links={links}
             niveis={niveis}
+            verbos={verbos}
             onSelectNode={openFromTable}
           />
         </div>
@@ -994,6 +1071,13 @@ function App() {
               onClick={() => setNiveisOpen(true)}
             >
               ≣ Níveis
+            </button>
+            <button
+              type="button"
+              className="topbar__new topbar__verbos"
+              onClick={() => setVerbosOpen(true)}
+            >
+              ⇢ Verbos
             </button>
             {/* Fica AQUI, junto do "≣ Níveis", e não na legenda ao lado do
                 "restaurar o layout": os dois botões desta ponta da barra gravam
@@ -1039,13 +1123,19 @@ function App() {
           path={breadcrumb}
           depth={depth}
           vista={lineage ? 'niveis' : 'forca'}
+          emFoco={focusId !== null}
+          alcance={alcance}
           bandsOn={bandsOn}
-          assocOn={assocOn}
+          ligacoesOn={ligacoesOn}
+          verbos={verbos}
+          verbosOcultos={verbosOcultos}
           onCrumbClick={(i) => setFocusPath((path) => path.slice(0, i + 1))}
           onDepthChange={setDepth}
           onVistaChange={setVista}
+          onAlcanceChange={setAlcance}
           onToggleBands={() => setBandsOn((v) => !v)}
-          onToggleAssoc={() => setAssocOn((v) => !v)}
+          onToggleLigacoes={() => setLigacoesOn((v) => !v)}
+          onToggleVerbo={(slug) => setVerbosOcultos((prev) => comVerboAlternado(prev, slug))}
           onExit={exitFocus}
         />
       )}
@@ -1060,7 +1150,7 @@ function App() {
           selectedNiveis={selNiveis}
           somenteSemOwner={somenteSemOwner}
           somenteProdutos={somenteProdutos}
-          assocOn={assocOn}
+          ligacoesOn={ligacoesOn}
           counts={counts}
           hasActiveFilter={hasActiveFilter}
           onToggleDominio={(d) => setSelDominios((prev) => toggled(prev, d))}
@@ -1068,7 +1158,7 @@ function App() {
           onToggleNivel={(n) => setSelNiveis((prev) => toggled(prev, n))}
           onToggleSemOwner={() => setSomenteSemOwner((v) => !v)}
           onToggleProdutos={() => setSomenteProdutos((v) => !v)}
-          onToggleAssoc={() => setAssocOn((v) => !v)}
+          onToggleLigacoes={() => setLigacoesOn((v) => !v)}
           onClear={() => {
             setQuery('')
             setSelDominios(new Set())
@@ -1094,11 +1184,11 @@ function App() {
       {aba === 'mapa' && selectedNode && (
         <NodeBalloon
           node={selectedNode}
-          outgoing={outgoing}
-          incoming={incoming}
+          secoesDeLigacoes={secoesDeLigacoes}
           lineage={selectedLineage}
           isFocused={selectedId === focusId}
           nivelTituloDe={nivelTituloDe}
+          verboTituloDe={verboTituloDe}
           resolveWikiLink={resolveWikiLink}
           onNavigate={(id) => select(id, true)}
           onFocus={focusOn}
@@ -1133,6 +1223,7 @@ function App() {
           rows={catalogRows}
           target={catalogForm}
           niveis={niveis}
+          verbos={verbos}
           componentesGrafo={componentesGrafo}
           onSaved={refreshCatalogo}
           onClose={() => setCatalogForm(null)}
@@ -1145,6 +1236,15 @@ function App() {
           niveis={niveis}
           onSaved={refreshCatalogo}
           onClose={() => setNiveisOpen(false)}
+        />
+      )}
+
+      {verbosOpen && (
+        <VerbosModal
+          store={store}
+          verbos={verbos}
+          onSaved={refreshCatalogo}
+          onClose={() => setVerbosOpen(false)}
         />
       )}
 

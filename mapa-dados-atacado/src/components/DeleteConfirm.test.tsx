@@ -22,7 +22,7 @@ describe('DeleteConfirm', () => {
         nome="GDAD"
         referencias={[
           { nome: 'RAR 12M', campo: 'Consome/Upstream' },
-          { nome: 'Painel', campo: 'Associações' },
+          { nome: 'Painel', campo: 'Consome/Upstream' },
         ]}
       />,
     )
@@ -31,12 +31,11 @@ describe('DeleteConfirm', () => {
     expect(out).toContain('RAR 12M')
     expect(out).toContain('Consome/Upstream')
     expect(out).toContain('Painel')
-    expect(out).toContain('Associações')
   })
 
   it('uma menção só fica no singular', () => {
     const out = html(
-      <DeleteConfirm nome="GDAD" referencias={[{ nome: 'RAR 12M', campo: 'Associações' }]} />,
+      <DeleteConfirm nome="GDAD" referencias={[{ nome: 'RAR 12M', campo: 'Consome/Upstream' }]} />,
     )
 
     expect(out).toContain('Uma menção também será removida')

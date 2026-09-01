@@ -35,8 +35,8 @@ revertendo o desenho anterior. Vieram de discussão, não de conveniência técn
 - **Todo nó é um COMPONENTE que pertence a um NÍVEL.** Não existe "produto",
   "insumo", "raiz" ou "domínio" como categoria especial no código — o que
   classifica um nó é o nível dele.
-- **Nada é inferido.** Todo nó vem de uma linha do catálogo; toda aresta vem de
-  uma coluna (`consome` ou `associacoes`). O build não deriva nós de campos nem
+- **Nada é inferido.** Todo nó vem de uma linha do catálogo; toda aresta vem da
+  coluna `consome`. O build não deriva nós de campos nem
   cria ligações automáticas — isso já existiu e foi removido a pedido. Uma regra
   que pintava de âmbar quem tivesse "legado" ou "planilha" no nome também caiu
   pelo mesmo motivo: o débito já é declarado na coluna `debito`, e adivinhá-lo
@@ -54,6 +54,13 @@ revertendo o desenho anterior. Vieram de discussão, não de conveniência técn
   ÍCONE interno diz o tipo de componente; a BORDA TRACEJADA diz que falta owner
   ou centro de custo. O **tamanho** não é eixo de dado: é grau de conexões mais
   o ajuste manual da sessão.
+- **UMA relação declarada, e ela aponta para o UPSTREAM** (2026-08-31). A linha
+  diz o que ela **consome**; o "← Consumido por" do balão é a MESMA aresta lida
+  de trás para frente, derivada, sem coluna própria. A segunda coluna de relação
+  (`associacoes`, aresta "vem de") saiu: dizia a mesma coisa de um jeito
+  ambíguo, e o rótulo "vem de" estava errado para o caso que a usava (a relação
+  `Rentabilidade_Grupo_Mensal.cd_grupo → Account.cd_grupo`). Ver "A fusão das
+  relações" abaixo.
 - **O CSV precisa continuar legível** para quem abre na planilha. Foi o que
   descartou identificadores opacos (uuid) quando surgiu a necessidade de chave
   estável.
@@ -76,10 +83,10 @@ Edição pelo app, em três modos escolhidos por detecção automática:
 
 ## Estado ao salvar este documento
 
-Código e testes verdes: **425 testes**, `tsc` limpo, `npm run data` com 0 avisos.
-O worktree tem alterações **não commitadas** (só dados): `catalogo.csv`,
-`niveis.csv`, `src/data/graph.json` — e `backup/` untracked, que não está no
-`.gitignore`.
+Código e testes verdes: **434 testes**, `tsc` limpo, `npm run data` com 0 avisos
+(45 nós, 55 arestas, todas `consome`). O worktree tem alterações **não
+commitadas** de código (a fusão das relações) e de dados (`catalogo.csv`,
+`src/data/graph.json`) — e `backup/` untracked, que não está no `.gitignore`.
 
 ### O catálogo é a ARQUITETURA DO RAR NO DATA CLOUD, não dado de exemplo
 
@@ -167,10 +174,37 @@ implementada:
    **"a avaliar"** com a explicação no corpo. Fica visível com o rótulo errado.
 2. **Só há dois tipos de aresta.** Os seis verbos reais viraram todos `consome`;
    sobrevivem apenas como texto no corpo.
-3. **`associacoes` é rotulada "vem de"**, que é errado para a relação
-   `Rentabilidade_Grupo_Mensal.cd_grupo → Account.cd_grupo`. São as 3 arestas
-   de relação (as outras 52 são `consome`).
+3. ~~**`associacoes` é rotulada "vem de"**~~ — **RESOLVIDO em 2026-08-31**: a
+   coluna saiu e as 3 arestas viraram `consome` (ver "A fusão das relações").
 4. **Não dá para saber se um componente chega ao consumo** (ver Pendências).
+
+### A fusão das relações: só existe `consome` (2026-08-31)
+
+Pedido do usuário: *"o que faz sentido hoje é apontar o upstream, ou seja, quem o
+componente consome — isso já relaciona e associa upstream e downstream"*. A
+coluna `associacoes` e a aresta "vem de" saíram do modelo inteiro (CSV,
+`graph-lib`, API, formulário, balão, Tabela).
+
+- O `catalogo.csv` tem **13 colunas** agora, e o `graph.json` tem 55 arestas, as
+  55 `consome`. As 3 referências que estavam em `associacoes` (os DMOs com
+  `Account`) foram **migradas**, não descartadas.
+- **Arquivo antigo não perde dado.** `associacoes` entrou em `COLUNAS_OBSOLETAS`,
+  mas é o caso diferente das outras três (`origem`, `fonte_sistema`,
+  `fontes_secundarias`, cujo conteúdo é ignorado): o dela é **dobrado dentro de
+  `consome` na leitura**, com aviso, e a próxima gravação escreve o arquivo já
+  sem a coluna. É `mesclarAssociacoes` em `graph-lib.ts`, chamada tanto pelo
+  `parseCatalogo` quanto pelo `parseCatalogoRows` — os dois, senão uma gravação
+  descartaria o que a leitura mostrou.
+- **Mudança de comportamento declarada**: associação que não resolvia só gerava
+  aviso, sem criar nó; virando `consome`, ela agora cria **nó fantasma**. É o
+  tratamento único de toda referência quebrada, e o buraco passa a aparecer no
+  mapa em vez de sumir dele.
+- **O toggle não sumiu, o rótulo mudou.** `assocOn` nunca foi a coluna: é a
+  visibilidade das ARESTAS. Virou `ligacoesOn`, rotulado **"Mostrar ligações"**.
+- **A capacidade de rótulo por aresta continua**: `GraphLink.label`, `linkLabel()`
+  e o `papel` do `LineageBranch` estão de pé, porque o desenho pendente de VERBO
+  POR REFERÊNCIA (`envia:alvo`) vai precisar deles. O que saiu foi o segundo
+  valor do vocabulário, não o mecanismo.
 
 ### A restrição que os TESTES impõem ao catálogo vivo
 
@@ -263,7 +297,8 @@ mexer em código.
   célula do `consome`, referência sem prefixo continua valendo `consome`. Como
   `CatalogoRow.consome` continua `string[]`, o serializador e o teste de
   round-trip byte a byte não mudam; só `buildGraph` e `normalizarReferencias`
-  precisam separar verbo e alvo.
+  precisam separar verbo e alvo. Com a fusão das relações, `consome` é a única
+  coluna — o verbo por referência é o caminho para representar os outros.
   **A decisão que falta é dele**: `envia` aponta para o lado CONTRÁRIO de
   `consome`, e o `buildLineage` percorre as arestas de saída como montante — um
   `envia` ingênuo faria a linhagem dizer que o produto do processo é insumo
@@ -272,8 +307,10 @@ mexer em código.
 - **A fixture de níveis de `catalog-store-local.test.ts` prende o catálogo
   vivo** a 10 slugs, e os 10 já estão ocupados: não cabe mais uma camada. Uma
   linha naquela fixture resolve. Ver "A restrição que os TESTES impõem" acima.
-- **O pacote de demonstração está desatualizado**: `entregas/` ainda tem o mapa
-  de exemplo. `npm run pacote` regera com a arquitetura nova, quando ele pedir.
+- **O pacote de demonstração está desatualizado E agora é INCOMPATÍVEL**:
+  `entregas/` ainda tem o mapa de exemplo, e o HTML de lá conhece as 14 colunas
+  antigas. Um `catalogo.csv` de 13 colunas aberto nele perde dado na primeira
+  gravação. `npm run pacote` regera; é decisão do usuário quando.
 - **O mapa abre cortado nas pontas** com seis colunas cheias: a primeira some
   atrás da legenda e a última passa da borda direita, e só se vê tudo dando zoom
   out. O `zoomToFit` roda (`Graph.tsx`, efeito de `fixedLayout`) mas não dá conta

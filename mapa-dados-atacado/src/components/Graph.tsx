@@ -1,8 +1,25 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import ForceGraph2D from 'react-force-graph-2d'
 import type { Ref } from 'react'
-import type { GraphLinkData, GraphMethods, GraphNodeData, SimLink, SimNode } from './graph-types'
-import { ehProdutoDeDados, linkEndId, tipoComponenteDe } from './graph-types'
+import type {
+  GraphLinkData,
+  GraphMethods,
+  GraphNodeData,
+  SimLink,
+  SimNode,
+  VerboDef,
+} from './graph-types'
+import {
+  curvaDaAresta,
+  ehProdutoDeDados,
+  linkEndId,
+  linkLabel,
+  temSeta,
+  tipoComponenteDe,
+  tituloDoVerbo,
+} from './graph-types'
+import { arestaVisivel } from './arestas-visiveis'
+import { fonteDoRotulo, pontoDoRotulo, tarjaDoRotulo } from './rotulo-aresta'
 import {
   DEBITO_BORDA,
   drawGlifo,
@@ -59,11 +76,22 @@ export interface GraphHandle {
 interface GraphProps {
   data: { nodes: SimNode[]; links: SimLink[] }
   degreeById: ReadonlyMap<string, number>
+  /** Vocabulário das relações: diz se a aresta desenha PONTA e dá o título que
+   *  o tooltip nativo da lib mostra. Lista vazia (ou verbo fora dela) cai no
+   *  padrão — com seta, título igual ao slug. Não confundir com o `sentido`,
+   *  que é da travessia (lineage.ts) e nunca do desenho: a ponta, quando
+   *  existe, aponta sempre para o alvo DECLARADO. */
+  verbos: readonly VerboDef[]
   /** Conjunto final de nós esmaecidos (hover + filtros, calculado no App). */
   dimmedIds: ReadonlySet<string>
   /** false esconde todas as arestas, menos as do nó em destaque (hover, clique
    *  fixado ou balão aberto) — visão limpa sem perder a relação sob análise. */
-  assocOn: boolean
+  ligacoesOn: boolean
+  /** Slugs de verbo com o chip apagado na barra de foco: as arestas deles não
+   *  são desenhadas, nem as do nó em destaque. Os NÓS não saem do mapa —
+   *  esconder um tipo de ligação não é esconder quem ela liga. Ver
+   *  arestas-visiveis.ts, onde a regra dos dois controles mora. */
+  verbosOcultos: ReadonlySet<string>
   hoverId: string | null
   /** "Hover fixado" pelo clique esquerdo: mesmo visual do hover, persistente. */
   pinnedId: string | null
@@ -115,6 +143,14 @@ const MAX_FIT_ZOOM = 4
 
 /** Comprimento da ponta da seta da aresta, em unidades do grafo. */
 const SETA_COMPRIMENTO = 7
+
+/** Tarja atrás do verbo: o próprio fundo da tela (BACKGROUND, #1E1E1E) com um
+ *  fio de transparência, para o que passa por baixo — faixa de nível, outra
+ *  aresta, um nó — ainda se adivinhar sem competir com as letras. */
+const FUNDO_ROTULO_ARESTA = 'rgba(30,30,30,0.86)'
+/** Contorno da tarja, na mesma tinta discreta das bordas de faixa: fecha o
+ *  corte que ela abre na linha em vez de deixá-lo parecendo falha do traço. */
+const BORDA_ROTULO_ARESTA = 'rgba(255,255,255,0.30)'
 /** Respiro entre a ponta da seta e a silhueta do nó apontado: sem ele a ponta
  *  encosta no traço do nó e as duas formas viram uma mancha só. */
 const SETA_FOLGA = 2.5
@@ -196,8 +232,10 @@ const BAND_RADIUS = 12
 export default function Graph({
   data,
   degreeById,
+  verbos,
   dimmedIds,
-  assocOn,
+  ligacoesOn,
+  verbosOcultos,
   hoverId,
   pinnedId,
   selectedId,
@@ -1107,16 +1145,18 @@ export default function Graph({
     [activeId],
   )
 
-  // Com "Mostrar associações" desligado o grafo fica só com os nós; as arestas
+  // Com "Mostrar ligações" desligado o grafo fica só com os nós; as arestas
   // do destaque atual continuam visíveis (mesma regra do esmaecimento: o que
-  // não está em dimmedIds é o que está em foco).
+  // não está em dimmedIds é o que está em foco). O chip do verbo vem antes dos
+  // dois — a regra inteira, e o porquê da ordem, em arestas-visiveis.ts.
   const linkVisible = useCallback(
-    (link: SimLink) => {
-      if (assocOn) return true
-      if (activeId === null) return false
-      return !dimmedIds.has(linkEndId(link.source)) && !dimmedIds.has(linkEndId(link.target))
-    },
-    [assocOn, activeId, dimmedIds],
+    (link: SimLink) =>
+      arestaVisivel(
+        { ligacoesOn, verbosOcultos, temDestaque: activeId !== null },
+        linkLabel(link),
+        !dimmedIds.has(linkEndId(link.source)) && !dimmedIds.has(linkEndId(link.target)),
+      ),
+    [ligacoesOn, verbosOcultos, activeId, dimmedIds],
   )
 
   const linkColor = useCallback(
@@ -1138,6 +1178,23 @@ export default function Graph({
   // losango do produto de dados não tem raio constante, e o comprimento da
   // aresta muda quando ela pula colunas. Então é medida por aresta, com o mesmo
   // `raioNaDirecao` que o canvas usa para desenhar a borda do nó.
+  // Comprimento da ponta POR ARESTA: 0 apaga a seta, e a aresta vira traço
+  // puro. É o eixo `seta` do verbo, independente do `sentido` — "Associado"
+  // não tem ponta e mesmo assim carrega o dado na linhagem. O `linkWidth` e o
+  // `linkDirectionalArrowRelPos` ao lado já são funções: a lib mede cada
+  // aresta sozinha, então isto não custa nada a mais.
+  const setaComprimento = useCallback(
+    (link: SimLink) => (temSeta(verbos, linkLabel(link)) ? SETA_COMPRIMENTO : 0),
+    [verbos],
+  )
+
+  /** Tooltip nativo da lib (homônimo por acaso do linkLabel do graph-types):
+   *  o TÍTULO do verbo, que é o que o usuário cadastrou. */
+  const tooltipDaAresta = useCallback(
+    (link: SimLink) => tituloDoVerbo(verbos, linkLabel(link)),
+    [verbos],
+  )
+
   const setaRelPos = useCallback((link: SimLink) => {
     const origem = link.source
     const alvo = link.target
@@ -1151,6 +1208,98 @@ export default function Graph({
     const raio = raioNaDirecao(ehProdutoDeDados(alvo), raioDe(alvo), Math.atan2(oy - ay, ox - ax))
     return Math.max(0, 1 - (raio + SETA_FOLGA) / dist)
   }, [raioDe])
+
+  // O VERBO ESCRITO SOBRE A ARESTA.
+  //
+  // Escopo: só o PRIMEIRO NÍVEL de ligação do nó em destaque — as arestas em
+  // que ele é uma das duas pontas, que é exatamente `linkTouchesActive`, o mesmo
+  // conjunto que já embranquece (linkColor) e engrossa (linkWidth). Nada de
+  // fecho transitivo, nada de aresta entre dois vizinhos: se o nó ativo não é
+  // ponta, não há rótulo. Vale para os três jeitos de ativar, porque `activeId`
+  // já é hover ?? fixado ?? balão.
+  //
+  // Aqui TODO verbo aparece, `consome` inclusive — ao contrário do balão e da
+  // Tabela, onde o padrão é omitido de propósito. Lá o rótulo estaria em toda
+  // linha da lista e viraria ruído; aqui ele existe em meia dúzia de arestas de
+  // cada vez, as do nó sob a mão, e omitir o mais comum deixaria o mapa dizendo
+  // "envia" numa aresta e nada na do lado — o que se lê como falta, não como
+  // padrão.
+  //
+  // O texto fica DEITADO — o porquê está em rotulo-aresta.ts, junto com o ponto
+  // sobre a curva e as medidas, tudo testado. O que sobra aqui é canvas.
+  //
+  // POR QUE `onRenderFramePost`, e não `linkCanvasObject`. A lib pinta na ordem
+  // arestas → setas → NÓS, e o desenho por aresta (mesmo em modo 'after') entra
+  // no primeiro passo: o rótulo saía por baixo dos nós e, pior, por baixo do
+  // NOME deles, que o canvas escreve logo abaixo de cada nó. Numa aresta curta
+  // — duas caixas vizinhas na vista em força — o meio da linha cai justamente
+  // nessa faixa, e o verbo virava um borrão de letras sobrepostas: nem o nome
+  // nem o verbo se liam. `onRenderFramePost` roda depois do quadro inteiro, nas
+  // mesmas coordenadas de grafo do `onRenderFramePre` das faixas, e é o único
+  // ponto em que o rótulo fica por cima de tudo.
+  //
+  // E ele fica por cima de propósito: quem está com a mão no nó já sabe QUEM o
+  // nó é — tem o cursor nele, o halo aceso e às vezes o balão aberto. O que ele
+  // não sabe é o verbo, e é essa a pergunta do gesto. Tapar um pedaço do nome
+  // por um instante custa menos que entregar o verbo ilegível.
+  //
+  // De quebra, isto deixa o desenho NATIVO da aresta intocado — linha,
+  // curvatura, cor, espessura e a ponta da seta por aresta (`setaComprimento`,
+  // que é o que faz "Associado" e "Relaciona" não terem ponta) continuam
+  // exatamente como estavam, porque nada aqui entra no passo das arestas.
+  const drawLinkLabels = useCallback(
+    (ctx: CanvasRenderingContext2D, scale: number) => {
+      if (activeId === null) return
+      ctx.save()
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      // Tudo medido em px de TELA e dividido pela escala, como o rótulo do nó:
+      // é o que faz o verbo continuar legível com o mapa inteiro na janela sem
+      // virar cartaz quando se aproxima.
+      const fonteTela = fonteDoRotulo(scale)
+      ctx.font = `600 ${fonteTela / scale}px system-ui, sans-serif`
+      for (const link of data.links) {
+        // Aqui a lista é a COMPLETA (o filtro de visibilidade é da lib, e este
+        // passo roda fora dele): sem rótulo no que está escondido nem no que
+        // está esmaecido.
+        if (!linkTouchesActive(link) || !linkVisible(link)) continue
+        const origem = link.source
+        const alvo = link.target
+        if (typeof origem !== 'object' || typeof alvo !== 'object') continue
+        const { x: ox, y: oy } = origem
+        const { x: ax, y: ay } = alvo
+        if (ox === undefined || oy === undefined || ax === undefined || ay === undefined) continue
+
+        const texto = tituloDoVerbo(verbos, linkLabel(link))
+        if (texto === '') continue
+
+        // Sobre a curva de verdade: na vista em níveis a aresta é curva, e o
+        // meio da corda cai fora dela. O ponto de controle é o que a LIB acabou
+        // de usar para desenhar esta aresta, neste quadro.
+        const p = pontoDoRotulo({ x: ox, y: oy }, { x: ax, y: ay }, curvaDaAresta(link))
+        const tarja = tarjaDoRotulo(ctx.measureText(texto).width * scale, fonteTela)
+        // A tarja corta a linha no meio e devolve fundo ao texto — sem ela o
+        // traço branco da aresta acesa passa por dentro das letras.
+        ctx.beginPath()
+        ctx.roundRect(
+          p.x - tarja.largura / 2 / scale,
+          p.y - tarja.altura / 2 / scale,
+          tarja.largura / scale,
+          tarja.altura / scale,
+          tarja.raio / scale,
+        )
+        ctx.fillStyle = FUNDO_ROTULO_ARESTA
+        ctx.fill()
+        ctx.strokeStyle = BORDA_ROTULO_ARESTA
+        ctx.lineWidth = 1 / scale
+        ctx.stroke()
+        ctx.fillStyle = 'rgba(255,255,255,0.95)'
+        ctx.fillText(texto, p.x, p.y)
+      }
+      ctx.restore()
+    },
+    [activeId, data, linkTouchesActive, linkVisible, verbos],
+  )
 
   return (
     // O menu de contexto do navegador é suprimido sobre o canvas: o botão
@@ -1167,6 +1316,7 @@ export default function Graph({
         cooldownTicks={fixedLayout ? 0 : 150}
         onEngineStop={handleEngineStop}
         onRenderFramePre={fixedLayout ? drawLevelBands : undefined}
+        onRenderFramePost={drawLinkLabels}
         linkCurvature={fixedLayout ? 0.18 : 0}
         autoPauseRedraw={false}
         nodeLabel={() => ''}
@@ -1175,10 +1325,10 @@ export default function Graph({
         linkVisibility={linkVisible}
         linkColor={linkColor}
         linkWidth={(l) => (linkTouchesActive(l) ? 1.6 : 1)}
-        linkDirectionalArrowLength={SETA_COMPRIMENTO}
+        linkDirectionalArrowLength={setaComprimento}
         linkDirectionalArrowRelPos={setaRelPos}
         linkDirectionalArrowColor={linkColor}
-        linkLabel={(l) => l.label ?? 'consome'}
+        linkLabel={tooltipDaAresta}
         onNodeClick={(node) => onNodeClick(node.id)}
         onNodeRightClick={(node) => onNodeRightClick(node.id)}
         onNodeHover={(node) => onNodeHover(node ? node.id : null)}

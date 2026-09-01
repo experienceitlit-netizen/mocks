@@ -2,7 +2,7 @@
 // LINHA do catálogo, e o que separa um nó de outro é só o NÍVEL dele. Nada é
 // derivado de campo, e nenhum nível tem tratamento especial — os testes abaixo
 // existem em boa parte para garantir justamente isso.
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
@@ -10,17 +10,21 @@ import {
   buildGraph,
   canonizarCatalogo,
   carregarNiveis,
+  carregarVerbos,
   COLUNAS,
   criarIndiceAlvos,
+  criarIndiceVerbos,
   montarNiveis,
   NIVEIS_PADRAO,
   parseCatalogo,
   parseCatalogoRows,
   parseCsv,
   serializarCatalogo,
+  serializarVerbos,
   slugify,
   TIPOS_COMPONENTE,
   TIPO_COMPONENTE_DEFAULT,
+  VERBOS_PADRAO,
   type GraphLink,
   type NivelInfo,
 } from './graph-lib.ts'
@@ -245,9 +249,8 @@ describe('parseCatalogo — uma linha, um nó, em qualquer nível', () => {
     const { warnings } = parseCatalogo('nome;nivel;inventada\r\nA;primario;x\r\n')
     expect(warnings).toContain('catalogo.csv: coluna obrigatória "dominio" ausente do cabeçalho')
     expect(warnings).toContain('catalogo.csv: coluna desconhecida "inventada" ignorada')
-    // tipo_componente e associacoes são opcionais: CSV legado não reclama.
+    // tipo_componente é opcional: CSV legado não reclama.
     expect(warnings.some((w) => w.includes('"tipo_componente" ausente'))).toBe(false)
-    expect(warnings.some((w) => w.includes('"associacoes" ausente'))).toBe(false)
   })
 
   it('arquivo vazio vira warning e catálogo vazio', () => {
@@ -444,10 +447,13 @@ describe('buildGraph — nós', () => {
 })
 
 describe('buildGraph — arestas', () => {
-  it('`consome` vira aresta "consome" e `associacoes` vira "vem de"', () => {
+  // `consome` é a ÚNICA coluna de relação: a linha declara o upstream, e
+  // "consumido por" é a mesma aresta lida de trás para frente. Não há segundo
+  // rótulo — a coluna `associacoes`, que gerava "vem de", saiu do modelo.
+  it('`consome` vira aresta "consome", e é a única aresta que existe', () => {
     const { graph, warnings } = buildGraph(
       csv(
-        completo({ nome: 'Alfa', consome: 'beta', associacoes: 'gama' }),
+        completo({ nome: 'Alfa', consome: 'beta | gama' }),
         completo({ nome: 'Beta' }),
         completo({ nome: 'Gama', nivel: 'fonte', debito: '' }),
       ),
@@ -455,7 +461,7 @@ describe('buildGraph — arestas', () => {
     expect(warnings).toEqual([])
     expect(graph.links).toEqual([
       { source: 'alfa', target: 'beta', label: 'consome' },
-      { source: 'alfa', target: 'gama', label: 'vem de' },
+      { source: 'alfa', target: 'gama', label: 'consome' },
     ])
   })
 
@@ -463,7 +469,7 @@ describe('buildGraph — arestas', () => {
     const { graph, warnings } = buildGraph(
       csv(
         completo({ nome: 'Origem A', nivel: 'origem', debito: '', consome: 'raiz-z' }),
-        completo({ nome: 'Raiz Z', nivel: 'raiz', debito: '', consome: 'origem-a', associacoes: 'gold-g' }),
+        completo({ nome: 'Raiz Z', nivel: 'raiz', debito: '', consome: 'origem-a | gold-g' }),
         completo({ nome: 'Gold G', nivel: 'gold', debito: '' }),
       ),
       COM_MEDALHAO,
@@ -471,7 +477,7 @@ describe('buildGraph — arestas', () => {
     expect(warnings).toEqual([])
     expect(graph.links).toEqual([
       { source: 'origem-a', target: 'raiz-z', label: 'consome' },
-      { source: 'raiz-z', target: 'gold-g', label: 'vem de' },
+      { source: 'raiz-z', target: 'gold-g', label: 'consome' },
       { source: 'raiz-z', target: 'origem-a', label: 'consome' },
     ])
   })
@@ -492,7 +498,7 @@ describe('buildGraph — arestas', () => {
   it('resolve por NOME (caixa/acentos à parte) e avisa que a célula será normalizada', () => {
     const { graph, warnings } = buildGraph(
       csv(
-        completo({ nome: 'Alfa', consome: 'capital regulatorio', associacoes: 'BETA' }),
+        completo({ nome: 'Alfa', consome: 'capital regulatorio | BETA' }),
         completo({ nome: 'Capital Regulatório' }),
         completo({ nome: 'Beta', nivel: 'silver', debito: '' }),
       ),
@@ -502,7 +508,7 @@ describe('buildGraph — arestas', () => {
     expect(warnings).toEqual([
       '"Alfa": consome "capital regulatorio" resolvido por NOME (id "capital-regulatorio") —' +
         ' a ligação por nome quebra ao renomear; a próxima gravação normaliza a célula para o id',
-      '"Alfa": associação "BETA" resolvido por NOME (id "beta") —' +
+      '"Alfa": consome "BETA" resolvido por NOME (id "beta") —' +
         ' a ligação por nome quebra ao renomear; a próxima gravação normaliza a célula para o id',
     ])
   })
@@ -532,28 +538,6 @@ describe('buildGraph — arestas', () => {
       '"Alfa": consome "Resultado", nome de 2 linhas do catálogo — usando "Resultado" (final)',
     )
     expect(warnings[1]).toContain('resolvido por NOME (id "resultado-2")')
-  })
-
-  it('associação ambígua também avisa e desempata pelo nível de menor ordem', () => {
-    const { warnings } = buildGraph(
-      csv(
-        completo({ nome: 'Alfa', associacoes: 'Resultado' }),
-        completo({ nome: 'Resultado', nivel: 'silver', debito: '' }),
-        completo({ nome: 'Resultado', nivel: 'final' }),
-      ),
-      COM_MEDALHAO,
-    )
-    expect(warnings[0]).toBe(
-      '"Alfa": associação "Resultado" é ambígua (2 componentes) — usando "Resultado" (final)',
-    )
-    expect(warnings[1]).toContain('resolvido por NOME (id "resultado-2")')
-  })
-
-  it('associação a si mesmo é ignorada (nunca vira self-loop)', () => {
-    const { graph, warnings } = buildGraph(csv(completo({ nome: 'Alfa', associacoes: 'Alfa' })))
-    expect(graph.links).toEqual([])
-    expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toContain('associação "Alfa" não corresponde a nenhum componente')
   })
 
   it('arestas repetidas são deduplicadas — o mesmo alvo por id e por nome', () => {
@@ -599,16 +583,6 @@ describe('buildGraph — nó fantasma', () => {
     expect(warnings).toHaveLength(1)
   })
 
-  it('`associacoes` sem alvo NÃO cria nó — só avisa', () => {
-    const { graph, warnings } = buildGraph(csv(completo({ nome: 'Alfa', associacoes: 'Não Cadastrado' })))
-    expect(graph.nodes.map((n) => n.id)).toEqual(['alfa'])
-    expect(graph.links).toEqual([])
-    expect(warnings).toEqual([
-      '"Alfa": associação "Não Cadastrado" não corresponde a nenhum componente do mapa' +
-        ' — ignorada (nenhum nó criado)',
-    ])
-  })
-
   it('cadastrar a linha faz o fantasma virar nó normal', () => {
     const antes = buildGraph(csv(completo({ nome: 'Alfa', consome: 'sumido' })))
     expect(antes.graph.nodes.some((n) => n.fantasma === true)).toBe(true)
@@ -639,13 +613,198 @@ describe('buildGraph — nó fantasma', () => {
   })
 })
 
+// O VERBO vive na própria célula do `consome` ("envia:alvo") e é o rótulo da
+// aresta. A célula sem prefixo continua valendo `consome` — é o que faz todo
+// catálogo já escrito buildar exatamente como antes.
+describe('buildGraph — verbo por referência', () => {
+  it('o prefixo vira o label da aresta; sem prefixo, o label é "consome"', () => {
+    const { graph, warnings } = buildGraph(
+      csv(
+        completo({ nome: 'Job', consome: 'envia:beta | gama' }),
+        completo({ nome: 'Beta' }),
+        completo({ nome: 'Gama', nivel: 'fonte', debito: '' }),
+      ),
+    )
+    expect(warnings).toEqual([])
+    expect(graph.links).toEqual([
+      { source: 'job', target: 'beta', label: 'envia' },
+      { source: 'job', target: 'gama', label: 'consome' },
+    ])
+  })
+
+  it('só o ALVO é resolvido: o verbo não entra na busca por id nem por nome', () => {
+    const { graph, warnings } = buildGraph(
+      csv(completo({ nome: 'Job', consome: 'acessa:Beta' }), completo({ nome: 'Beta' })),
+    )
+    // Resolveu por NOME (o aviso é sobre "Beta", não sobre "acessa:Beta").
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('consome "Beta" resolvido por NOME')
+    expect(graph.links).toEqual([{ source: 'job', target: 'beta', label: 'acessa' }])
+  })
+
+  it('o fantasma nasce com o nome do ALVO, nunca "verbo:alvo"', () => {
+    const { graph, warnings } = buildGraph(
+      csv(completo({ nome: 'Job', consome: 'acessa:Não Cadastrado' })),
+    )
+    expect(graph.nodes.find((n) => n.fantasma === true)).toMatchObject({
+      nome: 'Não Cadastrado',
+      id: 'fantasma-nao-cadastrado',
+    })
+    expect(graph.links).toEqual([
+      { source: 'job', target: 'fantasma-nao-cadastrado', label: 'acessa' },
+    ])
+    expect(warnings).toEqual([
+      'consome quebrado: "Não Cadastrado" em "Job" não corresponde a nenhuma linha do catálogo' +
+        ' — criado nó fantasma "fantasma-nao-cadastrado"',
+    ])
+  })
+
+  it('"x" e "acessa:x" são o MESMO componente: um fantasma, duas arestas', () => {
+    const { graph, warnings } = buildGraph(
+      csv(
+        completo({ nome: 'Alfa', consome: 'Sumido' }),
+        completo({ nome: 'Job', consome: 'acessa:sumido' }),
+      ),
+    )
+    expect(graph.nodes.filter((n) => n.fantasma === true)).toHaveLength(1)
+    expect(graph.links).toEqual([
+      { source: 'alfa', target: 'fantasma-sumido', label: 'consome' },
+      { source: 'job', target: 'fantasma-sumido', label: 'acessa' },
+    ])
+    expect(warnings).toHaveLength(1)
+  })
+
+  it('dois verbos entre os MESMOS dois nós são duas arestas (o dedup lê o label)', () => {
+    const { graph } = buildGraph(
+      csv(completo({ nome: 'Job', consome: 'beta | envia:beta' }), completo({ nome: 'Beta' })),
+    )
+    expect(graph.links).toEqual([
+      { source: 'job', target: 'beta', label: 'consome' },
+      { source: 'job', target: 'beta', label: 'envia' },
+    ])
+  })
+
+  it('prefixo fora do vocabulário NÃO vira consome calado: célula inteira + aviso', () => {
+    const { graph, warnings } = buildGraph(csv(completo({ nome: 'Job', consome: 'transp:beta' })))
+    // O fantasma sai com dois-pontos no nome, de propósito: o buraco aparece
+    // no mapa em vez de sumir dele.
+    expect(graph.nodes.find((n) => n.fantasma === true)).toMatchObject({
+      nome: 'transp:beta',
+      id: 'fantasma-transp-beta',
+    })
+    expect(graph.links).toEqual([
+      { source: 'job', target: 'fantasma-transp-beta', label: 'consome' },
+    ])
+    expect(warnings).toHaveLength(2)
+    expect(warnings[0]).toContain('o prefixo "transp:", que não é um verbo cadastrado')
+    expect(warnings[1]).toContain('criado nó fantasma')
+  })
+
+  it('o vocabulário é DADO: cadastrar o verbo conserta a referência retroativamente', () => {
+    const catalogo = csv(
+      completo({ nome: 'Job', consome: 'transporta:beta' }),
+      completo({ nome: 'Beta' }),
+    )
+    const semVerbo = buildGraph(catalogo)
+    expect(semVerbo.graph.nodes.some((n) => n.fantasma === true)).toBe(true)
+
+    const { verbos } = carregarVerbos(
+      serializarVerbos([
+        { titulo: 'Consome', slug: 'consome', sentido: 'montante', seta: 'sim' },
+        { titulo: 'Transporta', slug: 'transporta', sentido: 'jusante', seta: 'sim' },
+      ]),
+    )
+    const comVerbo = buildGraph(catalogo, NIVEIS_PADRAO, verbos)
+    expect(comVerbo.warnings).toEqual([])
+    expect(comVerbo.graph.nodes.some((n) => n.fantasma === true)).toBe(false)
+    expect(comVerbo.graph.links).toEqual([
+      { source: 'job', target: 'beta', label: 'transporta' },
+    ])
+    // E o bloco `verbos` do grafo é a lista que o build recebeu, na ordem.
+    expect(comVerbo.graph.verbos.map((v) => v.slug)).toEqual(['consome', 'transporta'])
+  })
+
+  it('um componente chamado "RAR: 12 meses" resolve inteiro, sem virar verbo', () => {
+    const { graph, warnings } = buildGraph(
+      csv(
+        completo({ nome: 'Alfa', consome: 'RAR: 12 meses' }),
+        completo({ id: 'rar-12', nome: 'RAR: 12 meses', nivel: 'fonte', debito: '' }),
+      ),
+    )
+    expect(warnings.filter((w) => w.includes('prefixo'))).toEqual([])
+    expect(graph.links).toEqual([{ source: 'alfa', target: 'rar-12', label: 'consome' }])
+  })
+})
+
+// A coluna `associacoes` foi a SEGUNDA relação declarada (aresta "vem de") e
+// saiu: o modelo passou a ter uma só, o upstream. O arquivo antigo não perde
+// nada — o conteúdo dela é migrado para `consome` na leitura.
+describe('coluna aposentada `associacoes`', () => {
+  /** Cabeçalho canônico de antes da fusão (14 colunas). */
+  const CABECALHO_ANTIGO =
+    'id;nome;nivel;tipo_componente;dominio;consome;descricao;debito;status;owner;' +
+    'centro_de_custo;observacoes;associacoes;produto_de_dados'
+  /** id;nome;nivel;tipo;dominio;consome;desc;debito;status;owner;cc;obs;assoc;produto */
+  const antigo = (...linhas: string[]): string =>
+    [CABECALHO_ANTIGO, ...linhas].join('\r\n') + '\r\n'
+  const linhaAntiga = (nome: string, consome: string, associacoes: string): string =>
+    [
+      slugify(nome), nome, 'primario', '', 'Risco', consome, 'd', 'nao', 'producao',
+      'Fulano', 'CC-1', '', associacoes, '',
+    ].join(';')
+
+  it('o cabeçalho antigo não vira "coluna desconhecida"', () => {
+    const { warnings } = parseCatalogo(antigo(linhaAntiga('Alfa', '', '')))
+    expect(warnings).toEqual([])
+  })
+
+  it('o conteúdo vira `consome` (com aviso), em vez de sumir em silêncio', () => {
+    const { graph, warnings } = buildGraph(
+      antigo(linhaAntiga('Alfa', 'beta', 'gama'), linhaAntiga('Beta', '', ''), linhaAntiga('Gama', '', '')),
+    )
+    expect(graph.links).toEqual([
+      { source: 'alfa', target: 'beta', label: 'consome' },
+      { source: 'alfa', target: 'gama', label: 'consome' },
+    ])
+    expect(warnings).toEqual([
+      'catalogo.csv linha 2 ("Alfa"): coluna "associacoes" foi aposentada —' +
+        ' 1 referência(s) migrada(s) para "consome" (a próxima gravação atualiza o arquivo)',
+    ])
+  })
+
+  it('o mesmo alvo nas duas colunas não vira referência repetida', () => {
+    const rows = parseCatalogoRows(antigo(linhaAntiga('Alfa', 'beta', 'BETA')))
+    expect(rows[0].consome).toEqual(['beta'])
+  })
+
+  // MUDANÇA DE COMPORTAMENTO declarada: uma associação quebrada só avisava e
+  // não criava nada; virando `consome`, ela agora cria nó fantasma — que é o
+  // tratamento único das referências que não resolvem.
+  it('referência que não resolve passa a criar nó fantasma', () => {
+    const { graph, warnings } = buildGraph(antigo(linhaAntiga('Alfa', '', 'Não Cadastrado')))
+    expect(graph.nodes.map((n) => n.fantasma === true)).toEqual([false, true])
+    expect(graph.links).toEqual([
+      { source: 'alfa', target: 'fantasma-nao-cadastrado', label: 'consome' },
+    ])
+    expect(warnings.some((w) => w.includes('consome quebrado: "Não Cadastrado"'))).toBe(true)
+  })
+
+  it('gravar migra o arquivo: a coluna some e a relação continua', () => {
+    const texto = antigo(linhaAntiga('Alfa', '', 'beta'), linhaAntiga('Beta', '', ''))
+    const migrado = serializarCatalogo(canonizarCatalogo(parseCatalogoRows(texto)))
+    expect(migrado).not.toContain('associacoes')
+    expect(parseCatalogoRows(migrado)[0].consome).toEqual(['beta'])
+    expect(buildGraph(migrado).warnings).toEqual([])
+  })
+})
+
 // É por isto que a coluna `id` existe: com a referência por nome, qualquer um
 // dos dois gestos abaixo deixava a menção órfã (nó fantasma no mapa).
 describe('a chave estável: editar um componente não mexe em quem aponta para ele', () => {
-  /** Duas linhas ligadas por ID: "Alfa" consome "Beta" e se associa a ele. */
+  /** Duas linhas ligadas por ID: "Alfa" consome "Beta". */
   const ligadas = (beta: { nome: string; nivel: string }): string =>
     csv(
-      completo({ id: 'alfa', nome: 'Alfa', consome: 'beta', associacoes: 'beta' }),
+      completo({ id: 'alfa', nome: 'Alfa', consome: 'beta' }),
       completo({ id: 'beta', nome: beta.nome, nivel: beta.nivel, debito: '' }),
     )
 
@@ -675,17 +834,14 @@ describe('a chave estável: editar um componente não mexe em quem aponta para e
   it('renomear E mudar de nível na mesma edição também não quebra', () => {
     const depois = arestas(ligadas({ nome: 'Outro nome, outro lugar', nivel: 'origem' }))
     expect(depois.warnings).toEqual([])
-    expect(depois.graph.links).toEqual([
-      { source: 'alfa', target: 'beta', label: 'consome' },
-      { source: 'alfa', target: 'beta', label: 'vem de' },
-    ])
+    expect(depois.graph.links).toEqual([{ source: 'alfa', target: 'beta', label: 'consome' }])
   })
 })
 
 describe('buildGraph — determinismo', () => {
   const linhas = [
     completo({ nome: 'Zulu', consome: 'alfa | Não Existe' }),
-    completo({ nome: 'Alfa', nivel: 'final', associacoes: 'mike' }),
+    completo({ nome: 'Alfa', nivel: 'final', consome: 'mike' }),
     completo({ nome: 'Mike', nivel: 'silver', debito: '', consome: 'zulu' }),
   ]
 
@@ -716,6 +872,14 @@ describe('buildGraph — determinismo', () => {
     const uma = JSON.stringify(buildGraph(csv(...linhas), COM_MEDALHAO).graph)
     const outra = JSON.stringify(buildGraph(csv(...linhas), COM_MEDALHAO).graph)
     expect(outra).toBe(uma)
+  })
+
+  it('o bloco `verbos` sai como recebido — verbo não tem ordem semântica', () => {
+    const { graph } = buildGraph(csv(), COM_MEDALHAO)
+    // Sem verbos.csv valem os embutidos, e o `consome` (o padrão de toda
+    // célula sem prefixo) está entre eles.
+    expect(graph.verbos).toEqual([...VERBOS_PADRAO])
+    expect(graph.verbos.map((v) => v.slug)).toContain('consome')
   })
 
   it('o bloco `niveis` sai por ordem asc, como recebido', () => {
@@ -750,14 +914,6 @@ describe('criarIndiceAlvos', () => {
     expect(porNome.candidatos.map((c) => c.id)).toEqual(['resultado', 'resultado-2'])
   })
 
-  it('excluirId tira o próprio nó da resolução', () => {
-    const indice = criarIndiceAlvos(COM_MEDALHAO, [
-      { id: 'resultado', nome: 'Resultado', nivel: 'final' },
-      { id: 'resultado-2', nome: 'Resultado', nivel: 'silver' },
-    ])
-    expect(indice.resolver('Resultado', 'resultado').alvo?.id).toBe('resultado-2')
-  })
-
   it('nome desconhecido resolve para null', () => {
     expect(criarIndiceAlvos().resolver('nada').alvo).toBeNull()
   })
@@ -767,8 +923,18 @@ describe('catalogo.csv real — invariantes (o usuário edita o catálogo a qual
   const raizProjeto = resolve(import.meta.dirname, '..')
   const textoCatalogo = readFileSync(resolve(raizProjeto, 'catalogo.csv'), 'utf8')
   const { niveis } = carregarNiveis(readFileSync(resolve(raizProjeto, 'niveis.csv'), 'utf8'))
-  const { graph, warnings } = buildGraph(textoCatalogo, niveis)
+  // Mesmo caminho do build (scripts/build-graph.ts): o verbos.csv é OPCIONAL —
+  // ausente vale o vocabulário embutido. Ler o arquivo QUANDO ele existe é o
+  // que mantém estes invariantes válidos depois que o usuário cadastrar um
+  // verbo pela tela; cravar os embutidos aqui traria a mesma armadilha da
+  // fixture congelada de níveis.
+  const arquivoVerbos = resolve(raizProjeto, 'verbos.csv')
+  const { verbos } = carregarVerbos(
+    existsSync(arquivoVerbos) ? readFileSync(arquivoVerbos, 'utf8') : '',
+  )
+  const { graph, warnings } = buildGraph(textoCatalogo, niveis, verbos)
   const registros = parseCsv(textoCatalogo)
+  const indiceVerbos = criarIndiceVerbos(verbos)
 
   it('builda sem warnings e sem nós fantasma', () => {
     expect(warnings).toEqual([])
@@ -822,7 +988,14 @@ describe('catalogo.csv real — invariantes (o usuário edita o catálogo a qual
   it('toda referência do arquivo aponta para um ID existente (nada por nome)', () => {
     const ids = new Set(parseCatalogoRows(textoCatalogo).map((r) => r.id))
     for (const row of parseCatalogoRows(textoCatalogo)) {
-      for (const ref of [...row.consome, ...row.associacoes]) expect(ids.has(ref)).toBe(true)
+      for (const celula of row.consome) {
+        // A célula pode declarar o VERBO ("envia:rar-grupo"): quem tem de
+        // resolver é o ALVO, depois de separado o prefixo pelo vocabulário —
+        // comparar a célula crua com ids diria que "envia:x" está quebrado.
+        const ref = indiceVerbos.referencia(celula)
+        expect(ref.prefixoDesconhecido).toBeNull()
+        expect(ids.has(ref.alvo)).toBe(true)
+      }
     }
   })
 
@@ -832,11 +1005,16 @@ describe('catalogo.csv real — invariantes (o usuário edita o catálogo a qual
 
   it('grafo íntegro: toda aresta liga nós existentes, sem self-loop, com label conhecido', () => {
     const existe = new Set(graph.nodes.map((n) => n.id))
+    // O vocabulário do próprio grafo: "conhecido" é estar cadastrado, não ser
+    // um valor fixo. Cravar `consome` aqui era verdade enquanto toda referência
+    // era consumo puro — o verbo por referência mudou o propósito da coluna, e
+    // um teste que trava a decisão velha muda junto.
+    const vocabulario = new Set(graph.verbos.map((v) => v.slug))
     for (const l of graph.links) {
       expect(existe.has(l.source)).toBe(true)
       expect(existe.has(l.target)).toBe(true)
       expect(l.source).not.toBe(l.target)
-      expect(['consome', 'vem de']).toContain(l.label)
+      expect(vocabulario.has(l.label)).toBe(true)
     }
   })
 
@@ -847,7 +1025,7 @@ describe('catalogo.csv real — invariantes (o usuário edita o catálogo a qual
   })
 
   it('o catálogo real é determinístico byte a byte entre execuções', () => {
-    const outra = buildGraph(textoCatalogo, niveis)
+    const outra = buildGraph(textoCatalogo, niveis, verbos)
     expect(JSON.stringify(outra.graph)).toBe(JSON.stringify(graph))
   })
 })

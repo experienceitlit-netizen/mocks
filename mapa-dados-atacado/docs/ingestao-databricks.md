@@ -40,7 +40,7 @@ código, porque é tentador e alguém vai tentar.
 ### A costura: coluna `tabelas_fisicas`
 
 Lista de nomes plenamente qualificados (`catalogo.esquema.tabela`), separados por ` | `
-como `consome` e `associacoes` já fazem — a cardinalidade real é 1:N (o "BACEN
+como `consome` já faz — a cardinalidade real é 1:N (o "BACEN
 3040/45/46/47" é visivelmente mais de uma tabela; um componente `Processos` é zero).
 Nome em pt-BR e neutro de fornecedor, como o resto do arquivo.
 

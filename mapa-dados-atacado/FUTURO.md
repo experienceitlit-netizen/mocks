@@ -27,10 +27,9 @@ implementado; a ordem abaixo não é prioridade.
 - **Visão por sistema e visão por owner** — agrupar/clusterizar o grafo por fonte
   (Databricks, planilhas, legado on-premise...) e por responsável. *Parcialmente atendida
   pela camada de linhagem (toggle "Fontes e origens" + modo foco); falta a visão por owner.*
-- **Ligação por clique no grafo** — criar `Consome/Upstream` e `Associações` arrastando
+- **Ligação por clique no grafo** — criar a ligação `Consome/Upstream` arrastando
   de um componente ao outro no mapa, sem abrir o formulário. Especificação escrita em
   [`docs/ligacao-por-clique.md`](docs/ligacao-por-clique.md): o gesto é barato (a gravação
-  é a mesma do formulário), o que falta decidir é qual relação o gesto cria, a direção do
-  arraste e o desfazer.
+  é a mesma do formulário), o que falta decidir é a direção do arraste e o desfazer.
 - **Exportar subgrafo como imagem** — recorte do grafo (um nó + vizinhança, ou o resultado
   de um filtro) em PNG/SVG para apresentações executivas.

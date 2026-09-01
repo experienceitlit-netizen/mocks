@@ -20,6 +20,7 @@ import type { PastaHandle } from './fs-access'
 import {
   ARQUIVO_CATALOGO,
   ARQUIVO_NIVEIS,
+  ARQUIVO_VERBOS,
   destinoPasta,
   escolherPasta,
   esquecerPasta,
@@ -47,7 +48,7 @@ export interface FonteCatalogo {
   /** Carrega CSVs vindos de um <input type="file"> (fallback sem File System
    *  Access): a edição passa a valer em memória. */
   importarArquivos(arquivos: FileList | null): void
-  /** Baixa os dois CSVs como estão agora (fallback sem File System Access). */
+  /** Baixa os CSVs como estão agora (fallback sem File System Access). */
   baixarCsvs(): void
   descartarErro(): void
 }
@@ -89,7 +90,7 @@ export function useFonteCatalogo(): FonteCatalogo {
     storeRef.current = store
   }, [store])
 
-  /** Abre a pasta como fonte de edição: lê os dois CSVs e monta o store. */
+  /** Abre a pasta como fonte de edição: lê os três CSVs e monta o store. */
   const usarPasta = useCallback(async (escolhida: PastaHandle, lembrar: boolean) => {
     const arquivos = await lerArquivosDaPasta(escolhida)
     setStore(criarStoreLocal(destinoPasta(escolhida), arquivos))
@@ -192,10 +193,18 @@ export function useFonteCatalogo(): FonteCatalogo {
         const atual = storeRef.current?.arquivos() ?? null
         let catalogo = atual?.catalogo ?? null
         let niveis = atual?.niveis ?? ''
+        let verbos = atual?.verbos ?? ''
         let origem = ARQUIVO_CATALOGO
         for (const arquivo of escolhidos) {
           const texto = await arquivo.text()
-          if (arquivo.name.toLowerCase().includes('niveis')) {
+          // A ORDEM IMPORTA, e é esta: os auxiliares primeiro, o catálogo como
+          // último recurso. Quem não casa com nenhum nome conhecido é tratado
+          // como o catálogo (é o arquivo que o usuário pode ter renomeado), e
+          // por isso todo arquivo novo precisa ser testado ANTES desse `else`.
+          const nome = arquivo.name.toLowerCase()
+          if (nome.includes('verbos')) {
+            verbos = texto
+          } else if (nome.includes('niveis')) {
             niveis = texto
           } else {
             catalogo = texto
@@ -203,10 +212,12 @@ export function useFonteCatalogo(): FonteCatalogo {
           }
         }
         if (catalogo === null) {
-          setErro(`Escolha o ${ARQUIVO_CATALOGO} (o ${ARQUIVO_NIVEIS} é opcional).`)
+          setErro(
+            `Escolha o ${ARQUIVO_CATALOGO} (o ${ARQUIVO_NIVEIS} e o ${ARQUIVO_VERBOS} são opcionais).`,
+          )
           return
         }
-        setStore(criarStoreLocal(destinoMemoria(origem), { catalogo, niveis }))
+        setStore(criarStoreLocal(destinoMemoria(origem), { catalogo, niveis, verbos }))
       } catch (err) {
         setErro(mensagem(err))
       } finally {
@@ -219,7 +230,11 @@ export function useFonteCatalogo(): FonteCatalogo {
     const arquivos = storeRef.current?.arquivos() ?? null
     if (arquivos === null) return
     baixarTexto(ARQUIVO_CATALOGO, arquivos.catalogo)
+    // Os auxiliares só descem se existirem: baixar um verbos.csv vazio daria
+    // ao usuário um arquivo que o build leria como "vocabulário sem nenhuma
+    // linha" — exatamente o que os embutidos já cobrem.
     if (arquivos.niveis.trim() !== '') baixarTexto(ARQUIVO_NIVEIS, arquivos.niveis)
+    if (arquivos.verbos.trim() !== '') baixarTexto(ARQUIVO_VERBOS, arquivos.verbos)
   }, [])
 
   return {

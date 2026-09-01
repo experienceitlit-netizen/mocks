@@ -1,8 +1,8 @@
 // Helpers da visão de tabela (TableView): uma linha POR COMPONENTE, com as
 // relações de saída resolvidas nos nós de destino. Puros, sem React, para
 // facilitar teste.
-import type { Debito, GraphLinkData, GraphNodeData, NivelDef } from './graph-types'
-import { isReal, linkLabel, nivelDe, ordemDoNivel, tituloDoNivel } from './graph-types'
+import type { Debito, GraphLinkData, GraphNodeData, NivelDef, VerboDef } from './graph-types'
+import { isReal, linkLabel, nivelDe, ordemDoNivel, tituloDoNivel, tituloDoVerbo } from './graph-types'
 
 /** Ordem executiva dos domínios (mesma da tabela que originou o projeto). */
 export const DOMAIN_ORDER: readonly string[] = [
@@ -78,6 +78,17 @@ export function normalizeText(text: string): string {
 
 const COLLATOR = new Intl.Collator('pt-BR', { sensitivity: 'base' })
 
+/** Uma relação de saída da linha: o componente alvo e o verbo declarado.
+ *
+ *  O verbo vem em duas metades pelo mesmo motivo que o nível — `verbo` é o
+ *  slug (o `label` da aresta, que é o que compara com o padrão) e
+ *  `verboTitulo` é o que a tela mostra e o filtro procura. */
+export interface RelacaoDeSaida {
+  node: GraphNodeData
+  verbo: string
+  verboTitulo: string
+}
+
 /** Linha da tabela = um componente do catálogo. */
 export interface ComponenteRow {
   /** Chave estável para o React (o próprio id do nó). */
@@ -88,10 +99,9 @@ export interface ComponenteRow {
   nivelTitulo: string
   /** Ordem do nível (ordenação da coluna Nível). */
   nivelOrdem: number
-  /** Alvos das arestas "consome" saindo deste componente. */
-  consome: GraphNodeData[]
-  /** Alvos das arestas "vem de" saindo deste componente. */
-  associacoes: GraphNodeData[]
+  /** Relações declaradas NESTA linha (as arestas de saída): o alvo e o verbo
+   *  de cada uma. Quem se relaciona com ELA se lê pelas arestas de entrada. */
+  consome: RelacaoDeSaida[]
 }
 
 /** Uma linha por componente real (fantasmas ficam fora: não têm linha no
@@ -100,19 +110,23 @@ export function buildRows(
   nodes: readonly GraphNodeData[],
   links: readonly GraphLinkData[],
   niveis: readonly NivelDef[] = [],
+  verbos: readonly VerboDef[] = [],
 ): ComponenteRow[] {
   const byId = new Map(nodes.map((n) => [n.id, n]))
-  const consome = new Map<string, GraphNodeData[]>()
-  const assoc = new Map<string, GraphNodeData[]>()
+  const consome = new Map<string, RelacaoDeSaida[]>()
   for (const l of links) {
     const alvo = byId.get(l.target)
     if (!alvo) continue
-    const mapa = linkLabel(l) === 'vem de' ? assoc : consome
-    const lista = mapa.get(l.source)
-    if (lista) lista.push(alvo)
-    else mapa.set(l.source, [alvo])
+    const verbo = linkLabel(l)
+    const rel: RelacaoDeSaida = { node: alvo, verbo, verboTitulo: tituloDoVerbo(verbos, verbo) }
+    const lista = consome.get(l.source)
+    if (lista) lista.push(rel)
+    else consome.set(l.source, [rel])
   }
-  const porNome = (a: GraphNodeData, b: GraphNodeData) => COLLATOR.compare(a.nome, b.nome)
+  // Duas relações podem ter o mesmo alvo com verbos diferentes: o verbo
+  // desempata, senão a ordem das duas dependeria da ordem das arestas.
+  const porNome = (a: RelacaoDeSaida, b: RelacaoDeSaida) =>
+    COLLATOR.compare(a.node.nome, b.node.nome) || COLLATOR.compare(a.verboTitulo, b.verboTitulo)
 
   return nodes.filter(isReal).map((node) => {
     const slug = nivelDe(node)
@@ -123,13 +137,13 @@ export function buildRows(
       nivelTitulo: tituloDoNivel(niveis, slug),
       nivelOrdem: ordemDoNivel(niveis, slug),
       consome: [...(consome.get(node.id) ?? [])].sort(porNome),
-      associacoes: [...(assoc.get(node.id) ?? [])].sort(porNome),
     }
   })
 }
 
 /** Filtro rápido sobre a linha: nome, descrição, nível, domínio, governança e
- *  os nomes das relações, insensível a acentos. */
+ *  as relações dela — nome do alvo E título do verbo, para "envia" achar as
+ *  linhas que enviam. Insensível a acentos. */
 export function matchesFilter(row: ComponenteRow, query: string): boolean {
   const q = normalizeText(query.trim())
   if (q === '') return true
@@ -144,8 +158,7 @@ export function matchesFilter(row: ComponenteRow, query: string): boolean {
       node.status ?? '',
       node.owner ?? '',
       node.centroDeCusto ?? '',
-      ...row.consome.map((n) => n.nome),
-      ...row.associacoes.map((n) => n.nome),
+      ...row.consome.flatMap((r) => [r.node.nome, r.verboTitulo]),
     ].join('\n'),
   )
   return haystack.includes(q)

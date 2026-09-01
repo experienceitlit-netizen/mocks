@@ -14,7 +14,7 @@ COMO NAVEGAR
 - Clique num componente para fixar o destaque das relações dele.
 - Botão DIREITO abre o balão com os detalhes.
 - Duplo clique (ou "Focar neste nó") entra na cadeia daquele componente.
-- "Mostrar níveis" e "Mostrar associações" limpam a visualização.
+- "Mostrar níveis" e "Mostrar ligações" limpam a visualização.
 - Aba "Tabela" lista tudo em formato de planilha, com busca e ordenação.
 
 
@@ -27,11 +27,13 @@ Para editar de verdade:
   2. Escolha a PASTA "catalogo" que veio junto deste arquivo.
   3. Autorize o acesso quando o navegador perguntar.
 
-Pronto: os botões de cadastrar, editar, excluir e gerenciar níveis aparecem,
-e tudo que você salvar é gravado nos arquivos catalogo.csv e niveis.csv que
-estão dentro daquela pasta.
+Pronto: os botões de cadastrar, editar, excluir, gerenciar níveis e gerenciar
+verbos aparecem, e tudo que você salvar é gravado nos arquivos catalogo.csv,
+niveis.csv e verbos.csv que estão dentro daquela pasta.
 
-Para devolver o que você editou, basta enviar de volta esses dois arquivos.
+Para devolver o que você editou, basta enviar de volta os arquivos .csv dessa
+pasta. O verbos.csv pode não estar lá: ele só nasce quando alguém salva alguma
+coisa na tela de verbos.
 
 Observações:
 - A edição precisa de Chrome ou Edge. No Firefox o app abre em leitura.

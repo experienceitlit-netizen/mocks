@@ -217,8 +217,15 @@ export default function Legend({
         <li className="legend__hint">
           o nível de cada componente é a coluna em que ele aparece
         </li>
+        {/* A ponta aponta sempre para o alvo DECLARADO na linha — o `sentido`
+            do verbo é da travessia da linhagem, nunca do desenho. E verbo sem
+            direção ("Relaciona", "Associado") não desenha ponta nenhuma: a
+            aresta vira traço puro. */}
         <li className="legend__hint">
-          a seta aponta para o componente consumido
+          a seta aponta para o componente declarado
+        </li>
+        <li className="legend__hint">
+          relação sem direção não tem ponta
         </li>
         <li className="legend__hint">
           botão direito no nó = detalhes · clique fixa o destaque

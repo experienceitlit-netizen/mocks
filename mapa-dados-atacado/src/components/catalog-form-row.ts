@@ -6,7 +6,8 @@
 // já estava preenchido. Colunas que o formulário não edita (as que o build
 // ainda mantém no CSV) viajam intactas a partir da linha original.
 import type { CatalogoRow } from './catalog-api'
-import type { Debito, TipoComponente } from './graph-types'
+import type { Debito, TipoComponente, VerboDef } from './graph-types'
+import { criarIndiceVerbos } from './graph-build'
 
 /** Estado dos campos do formulário (um por campo editável do catálogo). */
 export interface RowFormState {
@@ -17,9 +18,11 @@ export interface RowFormState {
   dominio: string
   /** Referências como vão para o CSV: o id do alvo quando ele existe no
    *  catálogo, ou o texto digitado quando não (vira fantasma). O formulário
-   *  mostra NOMES; a conversão é feita no CatalogForm. */
+   *  mostra NOMES; a conversão é feita no CatalogForm.
+   *
+   *  É a ÚNICA relação que o formulário declara: o upstream. O "Consumido por"
+   *  do balão é o mesmo dado lido do outro lado, e por isso não tem campo. */
   consome: string[]
-  associacoes: string[]
   descricao: string
   observacoes: string
   debito: Debito | ''
@@ -57,14 +60,20 @@ export function montarRow(
    *  componente mesmo quando o texto coincide com o nome deste — id gerado é o
    *  slug de um nome, e sem esta lista "GDAD" apagaria o id `gdad` do vizinho. */
   idsConhecidos?: ReadonlySet<string>,
+  /** Vocabulário vigente — é ele que diz o que é prefixo de verbo. Sem ele,
+   *  valem os embutidos (é o que basta para todo catálogo sem verbos.csv). */
+  verbos?: readonly VerboDef[],
 ): CatalogoRow {
   const nome = estado.nome.trim()
   const proprioId = (base?.id ?? '').trim()
+  const indiceVerbos = criarIndiceVerbos(verbos)
   // Auto-referência sai pelo id (o caso normal) e pelo nome, que é como o texto
-  // digitado livre e o formato antigo ainda citam um componente.
+  // digitado livre e o formato antigo ainda citam um componente. A comparação é
+  // com o ALVO da referência, nunca com a célula inteira: sem isso, "envia:gdad"
+  // na linha do próprio `gdad` passaria batido e viraria um laço no mapa.
   const semAutoReferencia = (lista: string[]): string[] =>
     lista.filter((item) => {
-      const ref = item.trim()
+      const ref = indiceVerbos.referencia(item).alvo
       if (proprioId !== '' && ref === proprioId) return false
       if (idsConhecidos?.has(ref) === true) return true
       return chave(ref) !== chave(nome)
@@ -81,7 +90,6 @@ export function montarRow(
     tipo_componente: estado.tipoComponente,
     dominio: estado.dominio,
     consome: semAutoReferencia(estado.consome),
-    associacoes: semAutoReferencia(estado.associacoes),
     descricao: estado.descricao.trim(),
     // Débito e status valem para todo componente: o vazio do formulário cai no
     // default em vez de virar um estado a mais.

@@ -2,7 +2,7 @@
 // plugin regrava catalogo.csv e regenera graph.json ao salvar). O App faz
 // feature-detect no mount: se o GET falhar (build estático/standalone),
 // nenhum controle de edição aparece.
-import type { Debito, SimNao, TipoComponente } from './graph-types'
+import type { Debito, Sentido, SimNao, TipoComponente } from './graph-types'
 import { TIPO_COMPONENTE_PADRAO, TIPOS_COMPONENTE } from './graph-types'
 
 /** Linha do catalogo.csv como servida por GET /api/catalogo. Uma linha por
@@ -18,11 +18,11 @@ export interface CatalogoRow {
   nivel: string
   tipo_componente: TipoComponente
   dominio: string
-  /** Ids consumidos por este componente (arestas "consome"). Um NOME ainda é
-   *  aceito (catálogo antigo, edição na planilha) e vira id na gravação. */
+  /** Ids consumidos por este componente (arestas "consome") — a ÚNICA relação
+   *  declarada da linha; "consumido por" é derivado das arestas de entrada. Um
+   *  NOME ainda é aceito (catálogo antigo, edição na planilha) e vira id na
+   *  gravação. */
   consome: string[]
-  /** Ids a que este componente se associa (arestas "vem de"). */
-  associacoes: string[]
   descricao: string
   /** "" = não declarado (linha antiga); o formulário sempre grava um valor. */
   debito: Debito | ''
@@ -91,7 +91,6 @@ export async function fetchCatalogo(): Promise<CatalogoRow[] | null> {
       nivel: typeof r.nivel === 'string' ? r.nivel : '',
       tipo_componente: normalizeTipoComponente(r.tipo_componente),
       consome: asStringArray(r.consome),
-      associacoes: asStringArray(r.associacoes),
       produto_de_dados: normalizeProdutoDeDados(r.produto_de_dados),
     }))
   } catch {
@@ -148,6 +147,54 @@ export async function fetchNiveis(): Promise<NivelApiRow[] | null> {
  *  linha; a API recusa se o nível estiver em uso). */
 export async function saveNiveis(rows: NivelApiRow[]): Promise<SaveResult> {
   return postJson('/api/niveis', { rows })
+}
+
+/** Verbo como trafegado por GET/POST /api/verbos — o vocabulário das relações
+ *  (o prefixo `envia:alvo` de uma célula do `consome`). Espelha
+ *  {@link NivelApiRow}: `slug` é a chave semântica (mandá-lo de volta é o que
+ *  diz "este é aquele verbo, só mudei o rótulo"; ausente/vazio, o backend
+ *  deriva um novo do título) e `builtin` só vem no GET.
+ *
+ *  `seta` é BOOLEANO aqui, e não o "sim"/"nao" da coluna do CSV: é uma
+ *  caixinha de marcar na tela, e a conversão para o vocabulário do arquivo é
+ *  do backend — a mesma divisão de trabalho de `ordem`, que a API aceita como
+ *  number e o CSV guarda como texto. */
+export interface VerboApiRow {
+  titulo: string
+  slug?: string
+  /** Ausente = "montante" (o consumo de sempre). */
+  sentido?: Sentido
+  /** Ausente = true (relação com direção). */
+  seta?: boolean
+  builtin?: boolean
+}
+
+/** GET /api/verbos. null quando a API não existe (mesma disciplina de
+ *  feature-detect do fetchCatalogo). Arquivo ausente NÃO é ausência de API: o
+ *  backend responde com os verbos embutidos. */
+export async function fetchVerbos(): Promise<VerboApiRow[] | null> {
+  try {
+    const res = await fetch('/api/verbos')
+    if (!res.ok) return null
+    const body: unknown = await res.json()
+    if (typeof body !== 'object' || body === null) return null
+    const rows = (body as { rows?: unknown }).rows
+    if (!Array.isArray(rows)) return null
+    const ok = rows.every(
+      (r: unknown) =>
+        typeof r === 'object' && r !== null && typeof (r as { titulo?: unknown }).titulo === 'string',
+    )
+    return ok ? (rows as VerboApiRow[]) : null
+  } catch {
+    return null
+  }
+}
+
+/** POST /api/verbos com a lista COMPLETA de verbos (remoção = lista sem a
+ *  linha; a API recusa se o verbo estiver em uso por alguma referência, e
+ *  recusa sempre a remoção do `consome`). */
+export async function saveVerbos(rows: VerboApiRow[]): Promise<SaveResult> {
+  return postJson('/api/verbos', { rows })
 }
 
 /** POST + interpretação da resposta {ok, warnings|errors}, comum às duas APIs. */

@@ -1,14 +1,17 @@
 // Balão de detalhe ancorado no nó selecionado. Um único layout para TODO
 // componente: chips (domínio, nível, tipo de componente, débito, produto de
 // dados quando a linha o declara), campos de
-// governança, corpo markdown, listas de relações e — por último — a árvore de
-// linhagem, que é a seção que cresce sem limite. Não há variação por categoria
-// de nó, porque não há categorias.
+// governança, corpo markdown, uma lista de ligações POR VERBO e — por último —
+// a árvore de linhagem, que é a seção que cresce sem limite. Não há variação
+// por categoria de nó, porque não há categorias.
+// Quais seções de ligação existem e em que ordem é decisão de
+// ligacoes-por-verbo.ts; aqui só se desenha o que ele devolveu.
 // A ancoragem segue o nó a cada frame (pan/zoom/física) via getAnchor().
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { GraphNodeData } from './graph-types'
-import { debitoDe, ehProdutoDeDados, linkLabel, tipoComponenteDe } from './graph-types'
+import { debitoDe, ehProdutoDeDados, tipoComponenteDe } from './graph-types'
+import { VERBO_PADRAO } from './graph-build'
 import type { LineageEntry } from './lineage'
 import type { CaminhoRamo } from './lineage-expand'
 import {
@@ -19,14 +22,11 @@ import {
   ramoAberto,
   rotuloDoRamo,
 } from './lineage-expand'
+import type { SecaoDeLigacoes } from './ligacoes-por-verbo'
+import { papelDoVerbo } from './ligacoes-por-verbo'
 import { DEBITO_LABEL, domainColor, produtoChipColor } from './palette'
 import { LOSANGO_PONTOS, LOSANGO_S } from './shapes'
 import Markdown from './Markdown'
-
-export interface Connection {
-  node: GraphNodeData
-  label: string
-}
 
 /** Posição do nó em coordenadas de tela + raio visual em px. */
 export interface BalloonAnchor {
@@ -37,16 +37,18 @@ export interface BalloonAnchor {
 
 interface NodeBalloonProps {
   node: GraphNodeData
-  /** Arestas de saída (este componente consome / se associa ao alvo). */
-  outgoing: Connection[]
-  /** Arestas de entrada (quem consome ou cita este componente). */
-  incoming: Connection[]
+  /** As ligações do componente já agrupadas por verbo e sentido de leitura
+   *  (ver ligacoes-por-verbo.ts). Lista vazia = sem conexão nenhuma. */
+  secoesDeLigacoes: SecaoDeLigacoes[]
   /** Árvore de linhagem montante; null quando o nó não está no grafo. */
   lineage: LineageEntry | null
   /** O nó já é o centro do modo foco (esconde o botão Focar). */
   isFocused: boolean
   /** Título do nível pelo slug (chip do nível). */
   nivelTituloDe(slug: string): string
+  /** Título do verbo pelo rótulo da aresta (o verbo de cada relação). Espelha
+   *  o nivelTituloDe: o vocabulário é dado, e quem o tem é o App. */
+  verboTituloDe(label: string): string
   resolveWikiLink(target: string): string | null
   onNavigate(id: string): void
   /** Entra em modo foco neste nó (ou re-foca, se já em foco). */
@@ -75,21 +77,28 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function ConnectionList({
-  title,
-  items,
+/** Uma seção de ligações: o verbo no cabeçalho, os alvos daquele verbo embaixo.
+ *
+ *  Não há rótulo de verbo POR ITEM: o cabeçalho já o diz para a lista inteira,
+ *  e repeti-lo em cada linha era o que sobrava de quando havia duas seções
+ *  fixas ("Consome →" e "← Consumido por") e o verbo real tinha de se esgueirar
+ *  ao lado do nome — dizendo "Envia" debaixo de um título que afirmava
+ *  "Consome". */
+function SecaoDeLigacao({
+  secao,
   onNavigate,
 }: {
-  title: string
-  items: Connection[]
+  secao: SecaoDeLigacoes
   onNavigate(id: string): void
 }) {
-  if (items.length === 0) return null
   return (
     <section className="connections">
-      <h3>{title}</h3>
+      <h3>{secao.titulo}</h3>
       <ul>
-        {items.map(({ node }) => (
+        {/* A chave é o alvo: dentro de uma seção o verbo é o mesmo para todos, e
+            duas arestas de verbos diferentes entre os MESMOS dois componentes
+            já caem em seções diferentes. */}
+        {secao.itens.map(({ node }) => (
           <li key={node.id}>
             <button type="button" className="wikilink" onClick={() => onNavigate(node.id)}>
               {node.nome}
@@ -104,7 +113,9 @@ function ConnectionList({
 
 /** Ramo recursivo da linhagem: o componente, a alça que abre o que ele consome
  *  e — quando aberto — os galhos de baixo. O rótulo da aresta só aparece quando
- *  não é o consumo padrão.
+ *  não é o consumo padrão, e vem com ↩ quando a travessia andou ao contrário
+ *  do que a relação declara (verbo `jusante`: quem ENVIA é montante de quem
+ *  recebe, e a linhagem sobe pelo lado de quem enviou).
  *
  *  A alça é indexada pelo CAMINHO do galho, nunca pelo id: a árvore reusa a
  *  mesma entrada para um componente que várias cadeias consomem (ver
@@ -115,6 +126,7 @@ function LineageBranch({
   papel,
   isRoot = false,
   abertos,
+  verboTituloDe,
   onAlternar,
   onNavigate,
 }: {
@@ -123,6 +135,7 @@ function LineageBranch({
   papel?: string
   isRoot?: boolean
   abertos: ReadonlySet<CaminhoRamo>
+  verboTituloDe(label: string): string
   onAlternar(caminho: CaminhoRamo): void
   onNavigate(id: string): void
 }) {
@@ -158,13 +171,18 @@ function LineageBranch({
       )}
       {aberto && filhos.length > 0 && (
         <ul className="lineage__children">
-          {filhos.map(({ label, entry: filho }, i) => (
+          {filhos.map(({ label, invertida, entry: filho }, i) => (
             <LineageBranch
               key={`${filho.data.id}-${i}`}
               entry={filho}
               caminho={caminhoFilho(caminho, i, filho.data.id)}
-              papel={label === 'consome' ? undefined : label}
+              papel={
+                label === VERBO_PADRAO && !invertida
+                  ? undefined
+                  : papelDoVerbo(verboTituloDe(label), invertida)
+              }
               abertos={abertos}
+              verboTituloDe={verboTituloDe}
               onAlternar={onAlternar}
               onNavigate={onNavigate}
             />
@@ -182,7 +200,15 @@ function LineageBranch({
  *  render em App.tsx), então a expansão de um vazaria para o próximo. Com a
  *  chave no id, trocar de componente remonta a árvore e o estado volta ao
  *  inicial sem nenhum efeito para sincronizar. */
-function LineageTree({ raiz, onNavigate }: { raiz: LineageEntry; onNavigate(id: string): void }) {
+function LineageTree({
+  raiz,
+  verboTituloDe,
+  onNavigate,
+}: {
+  raiz: LineageEntry
+  verboTituloDe(label: string): string
+  onNavigate(id: string): void
+}) {
   const [abertos, setAbertos] = useState(RAMOS_INICIAIS)
   const alternar = useCallback((caminho: CaminhoRamo) => {
     setAbertos((atuais) => comRamoAlternado(atuais, caminho))
@@ -195,6 +221,7 @@ function LineageTree({ raiz, onNavigate }: { raiz: LineageEntry; onNavigate(id: 
         caminho={CAMINHO_RAIZ}
         isRoot
         abertos={abertos}
+        verboTituloDe={verboTituloDe}
         onAlternar={alternar}
         onNavigate={onNavigate}
       />
@@ -207,11 +234,11 @@ type BalloonContentProps = Omit<NodeBalloonProps, 'onClose' | 'getAnchor'>
 /** Corpo do balão — o mesmo para qualquer componente. */
 function BalloonContent({
   node,
-  outgoing,
-  incoming,
+  secoesDeLigacoes,
   lineage,
   isFocused,
   nivelTituloDe,
+  verboTituloDe,
   resolveWikiLink,
   onNavigate,
   onFocus,
@@ -219,10 +246,6 @@ function BalloonContent({
 }: BalloonContentProps) {
   const debito = debitoDe(node)
   const nivel = node.nivel ?? ''
-  // As duas relações de saída têm listas próprias: consumo de dado e
-  // associação declarada apontam para coisas diferentes.
-  const consome = outgoing.filter((c) => linkLabel({ label: c.label }) === 'consome')
-  const associacoes = outgoing.filter((c) => linkLabel({ label: c.label }) === 'vem de')
 
   return (
     <>
@@ -307,15 +330,15 @@ function BalloonContent({
         </>
       )}
 
-      <ConnectionList title="Consome →" items={consome} onNavigate={onNavigate} />
-      <ConnectionList title="Associações →" items={associacoes} onNavigate={onNavigate} />
-      <ConnectionList title="← Consumido por" items={incoming} onNavigate={onNavigate} />
+      {/* Uma seção por verbo, na ordem do vocabulário: o que este componente
+          declara primeiro, o que declararam sobre ele depois. */}
+      {secoesDeLigacoes.map((secao) => (
+        <SecaoDeLigacao key={secao.chave} secao={secao} onNavigate={onNavigate} />
+      ))}
       {/* Fica colado às listas porque é sobre ELAS. Nunca disputa espaço com a
-          Linhagem: a árvore sai das MESMAS arestas de saída que alimentam o
-          "Consome", então sem relação nenhuma também não há o que desenhar. */}
-      {outgoing.length === 0 && incoming.length === 0 && (
-        <p className="ghost-note">Sem conexões mapeadas.</p>
-      )}
+          Linhagem: a árvore sai das MESMAS arestas que alimentam as seções,
+          então sem relação nenhuma também não há o que desenhar. */}
+      {secoesDeLigacoes.length === 0 && <p className="ghost-note">Sem conexões mapeadas.</p>}
 
       {/* Por último: as listas de relação são curtas e respondem "com quem este
           componente fala"; a árvore é a parte que cresce, e no fim ela pode
@@ -323,7 +346,12 @@ function BalloonContent({
       {lineage && lineage.upstream.length > 0 && (
         <section className="connections lineage">
           <h3>Linhagem</h3>
-          <LineageTree key={node.id} raiz={lineage} onNavigate={onNavigate} />
+          <LineageTree
+            key={node.id}
+            raiz={lineage}
+            verboTituloDe={verboTituloDe}
+            onNavigate={onNavigate}
+          />
         </section>
       )}
     </>

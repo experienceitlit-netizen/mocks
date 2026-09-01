@@ -224,7 +224,7 @@
   color: #c8c8c8;
 }
 
-/* relações (Consome/Upstream e Associações): empilhadas na célula */
+/* relação (Consome/Upstream): empilhada na célula */
 .table-view__cell--rel {
   min-width: 11rem;
 }
@@ -242,6 +242,14 @@
 
 .table-view__name-link.table-view__rel:hover {
   color: #7fb4e8;
+}
+
+/* verbo da relação, antes do nome do alvo: cinza e sem peso, para o nome
+   continuar sendo o que se lê primeiro na coluna. Só aparece quando o verbo
+   NÃO é o padrão (ver RelacaoCell). */
+.table-view__verbo {
+  color: #8a8a8a;
+  font-weight: 400;
 }
 
 /* ---------- estados de valor (mesmo padrão do balão de detalhe) ---------- */

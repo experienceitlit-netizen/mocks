@@ -1,12 +1,13 @@
 // Testes da camada de persistência da API do catálogo: round-trip do
 // serializador (2 sentidos), validação de conteúdo (validarCatalogo) e
 // validação de forma do body do POST (rowsDoBody) — tudo sem subir servidor.
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   canonizarCatalogo,
   carregarNiveis,
+  carregarVerbos,
   COLUNAS,
   parseCatalogoRows,
   preencherIds,
@@ -31,7 +32,6 @@ const row = (extra: Partial<CatalogoRow>): CatalogoRow => ({
   owner: null,
   centro_de_custo: null,
   observacoes: '',
-  associacoes: [],
   produto_de_dados: '',
   ...extra,
 })
@@ -49,8 +49,7 @@ describe('serializarCatalogo — round-trip', () => {
         nome: 'Custo de Capital (KE)',
         nivel: 'final',
         tipo_componente: 'Tabela Delta',
-        consome: ['gdad', 'capital-regulatorio'],
-        associacoes: ['tabela-a-ucs', 'tabela-b-ucs'],
+        consome: ['gdad', 'capital-regulatorio', 'tabela-a-ucs', 'tabela-b-ucs'],
         descricao: 'ponto e vírgula; no meio',
         debito: 'avaliar',
         observacoes: 'Primeira linha com "aspas".\n\nSegunda linha; com ponto e vírgula.',
@@ -71,11 +70,44 @@ describe('serializarCatalogo — round-trip', () => {
 
   it('canonizar converte as referências por nome em id, e é idempotente', () => {
     const rows = [
-      row({ nome: 'Alfa', consome: ['GDAD'], associacoes: ['gdad'] }),
+      row({ nome: 'Alfa', consome: ['GDAD'] }),
       row({ nome: 'GDAD', nivel: 'final' }),
     ]
     const canonicas = canonizarCatalogo(rows)
-    expect(canonicas[0]).toMatchObject({ id: 'alfa', consome: ['gdad'], associacoes: ['gdad'] })
+    expect(canonicas[0]).toMatchObject({ id: 'alfa', consome: ['gdad'] })
+    expect(canonizarCatalogo(canonicas)).toEqual(canonicas)
+  })
+
+  // O VERBO mora na própria célula ("envia:alvo"): a gravação resolve SÓ o
+  // alvo e remonta a célula, senão o prefixo viraria parte de um nome.
+  it('canonizar preserva o prefixo do verbo e resolve só o alvo', () => {
+    const rows = [
+      row({ nome: 'Job', consome: ['envia:GDAD'] }),
+      row({ nome: 'GDAD', nivel: 'final' }),
+    ]
+    const canonicas = canonizarCatalogo(rows)
+    expect(canonicas[0]).toMatchObject({ id: 'job', consome: ['envia:gdad'] })
+    expect(canonizarCatalogo(canonicas)).toEqual(canonicas)
+  })
+
+  it('o verbo padrão explícito é dispensado na gravação: "consome:GDAD" vira "gdad"', () => {
+    // É o que mantém o catalogo.csv de hoje byte a byte: célula sem prefixo e
+    // célula com o prefixo padrão são a MESMA referência.
+    const canonicas = canonizarCatalogo([
+      row({ nome: 'Alfa', consome: ['consome:GDAD'] }),
+      row({ nome: 'GDAD', nivel: 'final' }),
+    ])
+    expect(canonicas[0].consome).toEqual(['gdad'])
+  })
+
+  it('prefixo desconhecido sobrevive à gravação sem reescrita', () => {
+    // Cadastrar o verbo depois conserta a referência retroativamente — o que
+    // uma normalização apressada (jogar tudo em `consome`) impediria.
+    const canonicas = canonizarCatalogo([
+      row({ nome: 'Job', consome: ['transp:gdad'] }),
+      row({ id: 'gdad', nome: 'GDAD', nivel: 'final' }),
+    ])
+    expect(canonicas[0].consome).toEqual(['transp:gdad'])
     expect(canonizarCatalogo(canonicas)).toEqual(canonicas)
   })
 
@@ -110,10 +142,10 @@ describe('serializarCatalogo — round-trip', () => {
   })
 
   it('a MESMA linha vale em qualquer nível: nada é canonizado por nível', () => {
-    // Antes, `associacoes` era zerada em fonte/fonte-secundaria (a lista morava
-    // nas colunas de rota). Agora a linha é a mesma em todo nível.
+    // Antes, a lista de relações era zerada em fonte/fonte-secundaria (ela
+    // morava nas colunas de rota). Agora a linha é a mesma em todo nível.
     const rows = ['fonte', 'fonte-secundaria', 'origem', 'raiz'].map((nivel) =>
-      row({ id: `n-${nivel}`, nome: `N-${nivel}`, nivel, associacoes: ['alvo'] }),
+      row({ id: `n-${nivel}`, nome: `N-${nivel}`, nivel, consome: ['alvo'] }),
     )
     expect(parseCatalogoRows(serializarCatalogo(rows))).toEqual(rows)
   })
@@ -126,7 +158,7 @@ describe('serializarCatalogo — round-trip', () => {
     expect(csv.split('\r\n')[0].split(';')).toHaveLength(COLUNAS.length)
     expect(csv.split('\r\n')[0].endsWith(';produto_de_dados')).toBe(true)
     expect(csv.endsWith('\r\n')).toBe(true)
-    expect(csv).toContain('\r\na;A;primario;;Risco;;d;nao;producao;;;sem aspas necessárias;;\r\n')
+    expect(csv).toContain('\r\na;A;primario;;Risco;;d;nao;producao;;;sem aspas necessárias;\r\n')
   })
 
   it('CSV legado (sem a coluna `id`) parseia: a célula vem vazia, e a gravação a preenche', () => {
@@ -212,7 +244,17 @@ describe('validarCatalogo', () => {
     const raiz = resolve(import.meta.dirname, '..')
     const original = readFileSync(resolve(raiz, 'catalogo.csv'), 'utf8')
     const { niveis } = carregarNiveis(readFileSync(resolve(raiz, 'niveis.csv'), 'utf8'))
-    expect(validarCatalogo(parseCatalogoRows(original), niveis)).toEqual({ errors: [], warnings: [] })
+    // O vocabulário vem do arquivo quando ele existe, como no build: sem ele,
+    // um verbo cadastrado pelo usuário viraria "prefixo desconhecido" e este
+    // caso acusaria erro no catálogo por causa da própria fixture.
+    const arquivoVerbos = resolve(raiz, 'verbos.csv')
+    const { verbos } = carregarVerbos(
+      existsSync(arquivoVerbos) ? readFileSync(arquivoVerbos, 'utf8') : '',
+    )
+    expect(validarCatalogo(parseCatalogoRows(original), niveis, verbos)).toEqual({
+      errors: [],
+      warnings: [],
+    })
   })
 
   it('id duplicado é erro: duas linhas com a mesma chave seriam o mesmo componente', () => {
@@ -311,22 +353,11 @@ describe('validarCatalogo', () => {
     ])
   })
 
-  it('associação inexistente é warning próprio (o build a ignora, sem criar nó)', () => {
-    const { errors, warnings } = validarCatalogo([
-      row({ nome: 'Alfa', associacoes: ['Beta', 'Não Existe'] }),
-      row({ nome: 'Beta', nivel: 'fonte', debito: '' }),
-    ])
-    expect(errors).toEqual([])
-    expect(warnings).toEqual([
-      '"Alfa": associação "Não Existe" não existe no catálogo — o build vai ignorá-la',
-    ])
-  })
-
-  it('consome/associacoes valem em qualquer nível, cruzando a cadeia livremente', () => {
+  it('consome vale em qualquer nível, cruzando a cadeia livremente', () => {
     expect(
       validarCatalogo([
         row({ nome: 'Fonte X', nivel: 'fonte', debito: '', consome: ['Origem Y'] }),
-        row({ nome: 'Origem Y', nivel: 'origem', debito: '', associacoes: ['Raiz Z'] }),
+        row({ nome: 'Origem Y', nivel: 'origem', debito: '', consome: ['Raiz Z'] }),
         row({ nome: 'Raiz Z', nivel: 'raiz', debito: '' }),
       ]),
     ).toEqual({ errors: [], warnings: [] })

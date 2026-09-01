@@ -6,7 +6,12 @@
 // nó de outro é só o nível dele, e níveis são dados (niveis.csv), não tipos.
 // Disso vem a regra central do build: NENHUM nó é derivado de campo. Todo nó
 // vem de uma LINHA do catálogo, e toda aresta vem de uma referência declarada
-// (`consome` ou `associacoes`). Nada é inferido.
+// na coluna `consome`. Nada é inferido.
+//
+// Há UMA relação declarada, e ela aponta para o UPSTREAM: a linha diz o que
+// consome, e "consumido por" é a leitura das arestas de ENTRADA, derivada — não
+// existe uma segunda coluna para declarar o outro lado. A coluna `associacoes`
+// foi a segunda relação e saiu (ver COLUNAS_OBSOLETAS).
 
 /** Tipos de componente aceitos na coluna `tipo_componente`. Célula vazia =
  *  "Default"; valor fora da lista vira warning no build e erro no POST.
@@ -82,7 +87,7 @@ export interface GraphNode {
   descricao: string
   /** Coluna "observacoes" do CSV: texto livre em markdown; ausente se vazia.
    *  [[Wikilinks]] no texto viram links de navegação no balão, mas NÃO geram
-   *  arestas — arestas vêm só de `consome` e `associacoes`. */
+   *  arestas — arestas vêm só de `consome`. */
   corpo?: string
   /** Gap de governança: owner OU centro de custo vazio. Regra única para todos
    *  os níveis — nenhum nível é dispensado dela. */
@@ -98,6 +103,10 @@ export interface GraphNode {
 export interface GraphLink {
   source: string
   target: string
+  /** Slug do VERBO da referência: o prefixo da célula ("envia:x") ou
+   *  {@link VERBO_PADRAO} quando ela não traz nenhum. O par (source, target,
+   *  label) é a chave da aresta — dois verbos entre os mesmos dois nós são
+   *  duas arestas. */
   label: string
 }
 
@@ -105,6 +114,9 @@ export interface Graph {
   /** TODOS os níveis da cadeia (built-ins + customizados), ordenados por
    *  `ordem` asc — a UI monta colunas/faixas/selects a partir daqui. */
   niveis: NivelInfo[]
+  /** TODOS os verbos do vocabulário (embutidos + cadastrados), na ordem do
+   *  arquivo — é o que dá título, sentido e seta a cada `label` de aresta. */
+  verbos: VerboInfo[]
   nodes: GraphNode[]
   links: GraphLink[]
 }
@@ -113,10 +125,9 @@ export interface Graph {
  *  referências que ela declara, ainda não resolvidas. */
 export interface ParsedRow {
   node: GraphNode
-  /** ids (ou nomes, por compatibilidade) da coluna "consome" */
+  /** ids (ou nomes, por compatibilidade) da coluna "consome" — já com o que
+   *  vinha da coluna aposentada `associacoes` dobrado dentro. */
   consome: string[]
-  /** ids (ou nomes, por compatibilidade) da coluna "associacoes" */
-  associacoes: string[]
 }
 
 export interface CatalogoParseResult {
@@ -557,6 +568,495 @@ export function validarNiveisContraCatalogo(rows: NivelRow[], catalogo: Catalogo
   })
 }
 
+// ---------------------------------------------------------------------------
+// Verbos da referência: o VOCABULÁRIO das relações. Uma célula de `consome`
+// pode trazer um prefixo — "envia:rar-grupo" —, e é ele que diz QUAL relação a
+// linha está declarando. Célula sem prefixo vale {@link VERBO_PADRAO}, que é
+// justamente o que mantém todo catálogo já escrito valendo o que valia.
+//
+// Os cinco embutidos são só a lista que vale quando o verbos.csv não diz outra
+// coisa (colunas titulo;slug;sentido;seta). Ao contrário do niveis.csv, aqui
+// não há modo legado × explícito: **arquivo ausente ou vazio = os embutidos;
+// arquivo presente = a lista COMPLETA** — verbo embutido que não estiver
+// listado está removido. O único que não pode sumir é o `consome`: ele é o
+// significado de uma referência sem prefixo, e sem ele o catálogo inteiro
+// ficaria sem verbo.
+//
+// A coluna `slug` é a chave, como nos níveis: preenchida, amarra a linha a um
+// verbo já existente e sobrevive a renomeações — trocar o título de "Envia"
+// para "Manda" não reescreve nenhuma célula do catalogo.csv.
+//
+// Os dois atributos são eixos INDEPENDENTES, e é de propósito:
+// - `sentido` responde "a linhagem sobe, desce, faz os dois ou ignora?";
+// - `seta` responde "a aresta desenha ponta?".
+// "Associado" não tem ponta e mesmo assim carrega o dado (sentido `ambos`):
+// sem ponta ≠ fora da linhagem. A ponta, quando existe, aponta sempre para o
+// ALVO DECLARADO — quem lê o `sentido` é a travessia, nunca o desenho.
+// ---------------------------------------------------------------------------
+
+/** Como a linhagem percorre uma aresta deste verbo: `montante` é o consumo de
+ *  sempre (o alvo está acima); `jusante` é o contrário (quem declara está
+ *  acima do alvo); `ambos` percorre nos dois sentidos (relação sem direção que
+ *  mesmo assim carrega o dado); `nenhum` fica FORA da linhagem. */
+export type Sentido = (typeof SENTIDOS)[number]
+
+/** Linha do verbos.csv na forma bruta (formato trocado com GET/POST
+ *  /api/verbos): tudo texto, como veio do arquivo. `sentido` e `seta` fora do
+ *  vocabulário são pegos em validarVerbos/carregarVerbos. */
+export interface VerboRow {
+  titulo: string
+  /** Chave semântica: ausente/vazia = derivar do título (verbo novo);
+   *  preenchida = esta linha É aquele verbo, com o título que ela disser. */
+  slug?: string
+  /** Um de {@link SENTIDOS}; ausente/vazio = {@link SENTIDO_PADRAO}. */
+  sentido?: string
+  /** "sim"/"nao" ({@link SIM_NAO}); ausente/vazio = {@link SETA_PADRAO}. */
+  seta?: string
+}
+
+/** Verbo resolvido: `slug` é o prefixo aceito na célula do `consome`. */
+export interface VerboDef {
+  slug: string
+  titulo: string
+  sentido: Sentido
+  seta: boolean
+}
+
+/** Entrada do bloco `verbos` do graph.json (embutidos + cadastrados, na ordem
+ *  do arquivo — verbo não tem ordem semântica, só a de um `<select>`). */
+export interface VerboInfo extends VerboDef {
+  builtin: boolean
+}
+
+/**
+ * Leitura de UMA célula do `consome`. NÃO é campo de {@link CatalogoRow} — a
+ * coluna continua sendo `string[]`, e isto é a interpretação dela no ponto de
+ * uso. (O nome `Referencia` já está tomado em catalog-delete.ts.)
+ */
+export interface RefConsome {
+  /** Slug do verbo declarado; "" = célula sem prefixo, que vale
+   *  {@link VERBO_PADRAO}. */
+  verbo: string
+  /** O que a referência aponta — é isto, e só isto, que é resolvido contra o
+   *  catálogo (e o nome que um nó fantasma recebe). */
+  alvo: string
+  /** Prefixo que TEM cara de verbo mas não está cadastrado. A célula inteira
+   *  vira o `alvo` (fantasma com dois-pontos no nome, feio de propósito) e
+   *  quem chama reclama citando o prefixo: o buraco aparece no mapa em vez de
+   *  sumir dele, e cadastrar o verbo depois conserta retroativamente. */
+  prefixoDesconhecido: string | null
+}
+
+/** Verbo de uma referência SEM prefixo — o que todo catálogo escrito até aqui
+ *  declara, e por isso não pode ser removido do vocabulário. */
+export const VERBO_PADRAO = 'consome'
+
+/** Colunas do verbos.csv, na ordem canônica do cabeçalho. Só `titulo` é
+ *  exigida na LEITURA; o serializador sempre escreve as quatro. */
+export const COLUNAS_VERBOS = ['titulo', 'slug', 'sentido', 'seta'] as const
+
+/** Colunas do verbos.csv que podem faltar do cabeçalho sem warning. */
+const COLUNAS_VERBOS_OPCIONAIS = new Set<string>(['slug', 'sentido', 'seta'])
+
+/** Vocabulário da coluna `sentido` (ver {@link Sentido}). */
+export const SENTIDOS = ['montante', 'jusante', 'ambos', 'nenhum'] as const
+
+const SENTIDOS_SET = new Set<string>(SENTIDOS)
+
+/** Mensagem de valores válidos de `sentido`, para warnings e erros. */
+const SENTIDOS_MSG = SENTIDOS.map((s) => `"${s}"`).join(', ')
+
+/** Sentido de uma linha que não declara nenhum: o consumo de sempre. */
+export const SENTIDO_PADRAO: Sentido = 'montante'
+
+/** Seta de uma linha que não declara nenhuma: relação com direção. */
+export const SETA_PADRAO = true
+
+/** Os cinco verbos embutidos, na ordem em que o `<select>` os oferece.
+ *  `consome` vem primeiro por ser o padrão. */
+export const VERBOS_BUILTIN: readonly VerboDef[] = [
+  { slug: 'consome', titulo: 'Consome', sentido: 'montante', seta: true },
+  { slug: 'acessa', titulo: 'Acessa', sentido: 'montante', seta: true },
+  { slug: 'envia', titulo: 'Envia', sentido: 'jusante', seta: true },
+  { slug: 'associado', titulo: 'Associado', sentido: 'ambos', seta: false },
+  { slug: 'relaciona', titulo: 'Relaciona', sentido: 'nenhum', seta: false },
+]
+
+const SLUGS_VERBOS_BUILTIN = new Set<string>(VERBOS_BUILTIN.map((v) => v.slug))
+
+/** Os cinco embutidos: é o que vale quando o verbos.csv não existe ou está
+ *  vazio — o estado NORMAL do projeto, já que o arquivo só nasce na primeira
+ *  gravação da tela de verbos. */
+export const VERBOS_PADRAO: readonly VerboInfo[] = VERBOS_BUILTIN.map((v) => ({
+  ...v,
+  builtin: true,
+}))
+
+/** Slug efetivo de uma linha: o da coluna `slug` quando preenchida (chave
+ *  semântica, imune a renomeação), senão derivado do título. */
+export function slugDoVerbo(row: VerboRow): string {
+  const explicito = (row.slug ?? '').trim()
+  return explicito !== '' ? explicito : slugify(row.titulo)
+}
+
+/** Texto da coluna `sentido` → valor canônico. Vazio = {@link SENTIDO_PADRAO};
+ *  fora do vocabulário = padrão + motivo do warning (null = sem warning). */
+function normalizarSentido(bruto: string): { sentido: Sentido; invalido: string | null } {
+  const texto = bruto.trim()
+  if (texto === '') return { sentido: SENTIDO_PADRAO, invalido: null }
+  if (SENTIDOS_SET.has(texto)) return { sentido: texto as Sentido, invalido: null }
+  return { sentido: SENTIDO_PADRAO, invalido: texto }
+}
+
+/** Texto da coluna `seta` → bandeira. Vazio = {@link SETA_PADRAO}; fora de
+ *  {@link SIM_NAO} = padrão + motivo do warning (null = sem warning). */
+function normalizarSeta(bruto: string): { seta: boolean; invalido: string | null } {
+  const texto = bruto.trim()
+  if (texto === '') return { seta: SETA_PADRAO, invalido: null }
+  if (SIM_NAO_SET.has(texto)) return { seta: texto === 'sim', invalido: null }
+  return { seta: SETA_PADRAO, invalido: texto }
+}
+
+/** VerboRow (bruta) → VerboDef (com slug), sem validar. */
+export function defsDeVerbos(rows: VerboRow[]): VerboDef[] {
+  return rows.map((r) => ({
+    slug: slugDoVerbo(r),
+    titulo: r.titulo.trim(),
+    sentido: normalizarSentido(r.sentido ?? '').sentido,
+    seta: normalizarSeta(r.seta ?? '').seta,
+  }))
+}
+
+/**
+ * Lê o verbos.csv na forma bruta, preservando a ordem das linhas. Cabeçalho
+ * por nome de coluna (ordem livre); célula vazia não vira campo, que é o que
+ * mantém o round-trip com o serializador.
+ */
+export function parseVerbosRows(texto: string): VerboRow[] {
+  const registros = parseCsv(texto)
+  if (registros.length === 0) return []
+
+  const cabecalho = registros[0].map((c) => c.trim())
+  const indice = new Map<string, number>(cabecalho.map((c, i) => [c, i]))
+  const celula = (registro: string[], col: (typeof COLUNAS_VERBOS)[number]): string => {
+    const i = indice.get(col)
+    return i === undefined ? '' : (registro[i] ?? '').trim()
+  }
+
+  return registros.slice(1).map((registro) => {
+    const row: VerboRow = { titulo: celula(registro, 'titulo') }
+    // Coluna ausente ou vazia não vira campo: só existe o que foi declarado.
+    // O valor entra CRU (sem normalizar) porque a validação precisa dele para
+    // citar o que o usuário escreveu.
+    for (const campo of ['slug', 'sentido', 'seta'] as const) {
+      const bruto = celula(registro, campo)
+      if (bruto !== '') row[campo] = bruto
+    }
+    return row
+  })
+}
+
+/**
+ * Serializa o verbos.csv canônico: BOM UTF-8 + cabeçalho
+ * titulo;slug;sentido;seta + separador ";", registros em \r\n e aspas mínimas.
+ * Round-trip garantido para valores já trimados.
+ *
+ * O arquivo NÃO nasce no repositório: ele aparece na primeira gravação da tela
+ * de verbos, sempre por aqui — nunca à mão.
+ */
+export function serializarVerbos(rows: VerboRow[]): string {
+  const linhas = rows.map((r) =>
+    [
+      celulaCsv(r.titulo),
+      celulaCsv((r.slug ?? '').trim()),
+      celulaCsv((r.sentido ?? '').trim()),
+      celulaCsv((r.seta ?? '').trim()),
+    ].join(';'),
+  )
+  return '\uFEFF' + [COLUNAS_VERBOS.join(';'), ...linhas].join('\r\n') + '\r\n'
+}
+
+/** Erros de UMA linha do verbos.csv contra os slugs já ocupados. Registra a
+ *  linha no mapa se ok. */
+function checarVerbo(
+  row: VerboRow,
+  linha: number,
+  porSlug: Map<string, { titulo: string; linha: number }>,
+): string[] {
+  const errors: string[] = []
+  const titulo = row.titulo.trim()
+  if (titulo === '') {
+    errors.push(`linha ${linha}: "titulo" é obrigatório`)
+    return errors
+  }
+
+  const explicito = (row.slug ?? '').trim()
+  let slug = ''
+  if (explicito !== '') {
+    if (slugify(explicito) !== explicito) {
+      errors.push(
+        `linha ${linha} ("${titulo}"): slug "${explicito}" inválido — use minúsculas sem acentos, separadas por "-"`,
+      )
+    } else {
+      slug = explicito
+    }
+  } else {
+    const derivado = slugify(titulo)
+    if (derivado === '') {
+      errors.push(`linha ${linha} ("${titulo}"): titulo inválido — precisa conter letras ou números`)
+    } else {
+      slug = derivado
+    }
+  }
+
+  if (slug !== '') {
+    const anterior = porSlug.get(slug)
+    if (anterior !== undefined) {
+      errors.push(
+        `linha ${linha} ("${titulo}"): verbo duplicado — colide com "${anterior.titulo}" (linha ${anterior.linha})`,
+      )
+    } else {
+      porSlug.set(slug, { titulo, linha })
+    }
+  }
+
+  const { invalido: sentidoInvalido } = normalizarSentido(row.sentido ?? '')
+  if (sentidoInvalido !== null) {
+    errors.push(
+      `linha ${linha} ("${titulo}"): sentido "${sentidoInvalido}" inválido` +
+        ` (use ${SENTIDOS_MSG}, ou deixe vazio para "${SENTIDO_PADRAO}")`,
+    )
+  }
+  const { invalido: setaInvalida } = normalizarSeta(row.seta ?? '')
+  if (setaInvalida !== null) {
+    errors.push(`linha ${linha} ("${titulo}"): seta "${setaInvalida}" inválida (use ${SIM_NAO_MSG})`)
+  }
+  return errors
+}
+
+/**
+ * Valida linhas brutas antes de gravar o verbos.csv (POST /api/verbos).
+ * Erros (impedem a gravação): titulo vazio ou sem letras/números, slug fora do
+ * kebab-case, verbo duplicado por slug, sentido fora de {@link SENTIDOS}, seta
+ * fora de {@link SIM_NAO} e — a regra própria daqui — lista SEM o
+ * {@link VERBO_PADRAO}, que é o significado de toda célula sem prefixo.
+ *
+ * Lista VAZIA passa: um arquivo sem linhas lê de volta como os embutidos (ver
+ * {@link carregarVerbos}), e ali o `consome` está de pé. "linha N" conta o
+ * cabeçalho do CSV como linha 1.
+ */
+export function validarVerbos(rows: VerboRow[]): ValidacaoCatalogo {
+  const errors: string[] = []
+  const porSlug = new Map<string, { titulo: string; linha: number }>()
+  rows.forEach((row, i) => {
+    errors.push(...checarVerbo(row, i + 2, porSlug))
+  })
+  if (rows.length > 0 && !porSlug.has(VERBO_PADRAO)) {
+    errors.push(
+      `o verbo "${VERBO_PADRAO}" não pode ser removido — é o que vale para toda` +
+        ` referência sem prefixo na coluna "consome"`,
+    )
+  }
+  return { errors, warnings: [] }
+}
+
+/**
+ * Linhas brutas → lista COMPLETA de verbos. Tolerante, como o resolver dos
+ * níveis: linha inválida vira warning e é descartada (o arquivo gravado pela
+ * API é sempre válido; isto protege contra edição manual quebrada sem derrubar
+ * o build). Se o `consome` sumir no caminho, ele volta embutido — nenhuma
+ * célula do catálogo pode ficar sem verbo.
+ */
+function resolverLinhasVerbos(rows: VerboRow[]): { verbos: VerboInfo[]; warnings: string[] } {
+  const warnings: string[] = []
+  const porSlug = new Map<string, { titulo: string; linha: number }>()
+  const verbos: VerboInfo[] = []
+  rows.forEach((row, i) => {
+    const errosLinha = checarVerbo(row, i + 2, porSlug)
+    if (errosLinha.length > 0) {
+      warnings.push(...errosLinha.map((e) => `verbos.csv ${e} — verbo ignorado`))
+      return
+    }
+    const slug = slugDoVerbo(row)
+    verbos.push({
+      slug,
+      titulo: row.titulo.trim(),
+      sentido: normalizarSentido(row.sentido ?? '').sentido,
+      seta: normalizarSeta(row.seta ?? '').seta,
+      builtin: SLUGS_VERBOS_BUILTIN.has(slug),
+    })
+  })
+  if (verbos.length > 0 && !verbos.some((v) => v.slug === VERBO_PADRAO)) {
+    warnings.push(
+      `verbos.csv: o verbo "${VERBO_PADRAO}" não está na lista — usando o embutido,` +
+        ` senão toda referência sem prefixo ficaria sem verbo`,
+    )
+    const padrao = VERBOS_BUILTIN.find((v) => v.slug === VERBO_PADRAO)
+    if (padrao !== undefined) verbos.unshift({ ...padrao, builtin: true })
+  }
+  return { verbos, warnings }
+}
+
+/** Lista completa de verbos de linhas JÁ validadas (POST /api/verbos). Lista
+ *  vazia = os embutidos, a mesma leitura do arquivo ausente. */
+export function resolverVerbos(rows: VerboRow[]): VerboInfo[] {
+  return rows.length === 0 ? [...VERBOS_PADRAO] : resolverLinhasVerbos(rows).verbos
+}
+
+/**
+ * Carrega o verbos.csv para o build. Arquivo ausente ou vazio = os cinco
+ * embutidos; arquivo presente = a lista completa que ele declara (embutido que
+ * não estiver listado está removido).
+ */
+export function carregarVerbos(texto: string): { verbos: VerboInfo[]; warnings: string[] } {
+  const warnings: string[] = []
+  const registros = parseCsv(texto)
+  if (registros.length === 0) return { verbos: [...VERBOS_PADRAO], warnings }
+
+  const cabecalho = registros[0].map((c) => c.trim())
+  for (const col of COLUNAS_VERBOS) {
+    if (!cabecalho.includes(col) && !COLUNAS_VERBOS_OPCIONAIS.has(col)) {
+      warnings.push(`verbos.csv: coluna obrigatória "${col}" ausente do cabeçalho`)
+    }
+  }
+
+  const rows = parseVerbosRows(texto)
+  // Só cabeçalho (nenhuma linha de dado) é o mesmo caso do arquivo ausente.
+  if (rows.length === 0) return { verbos: [...VERBOS_PADRAO], warnings }
+
+  const resolvido = resolverLinhasVerbos(rows)
+  const todas = [...warnings, ...resolvido.warnings]
+  // Toda linha descartada é um arquivo efetivamente vazio: valem os embutidos.
+  // Sem isto, um cabeçalho quebrado deixaria o vocabulário inteiro sem nada.
+  if (resolvido.verbos.length === 0) return { verbos: [...VERBOS_PADRAO], warnings: todas }
+  return { verbos: resolvido.verbos, warnings: todas }
+}
+
+/**
+ * Erros de remoção de verbo em uso: toda referência do catálogo que declara um
+ * verbo precisa encontrá-lo na lista nova. Renomear não entra — o slug é a
+ * chave, e quem mantém o slug mantém as células.
+ *
+ * `verbosAtuais` é o vocabulário VIGENTE, e serve para saber o que é prefixo:
+ * um `transp:` que nunca foi cadastrado não é verbo em uso, é referência
+ * quebrada — e essa o build já reclama por conta própria.
+ */
+export function validarVerbosContraCatalogo(
+  rows: VerboRow[],
+  catalogo: CatalogoRow[],
+  verbosAtuais: readonly VerboDef[] = VERBOS_PADRAO,
+): string[] {
+  const novos = new Set(resolverVerbos(rows).map((v) => v.slug))
+  const indice = criarIndiceVerbos(verbosAtuais)
+  const usosPorVerbo = new Map<string, string[]>()
+  for (const row of catalogo) {
+    for (const celula of row.consome) {
+      const { verbo } = indice.referencia(celula)
+      if (verbo === '' || novos.has(verbo)) continue
+      const usos = usosPorVerbo.get(verbo) ?? []
+      usos.push(row.nome)
+      usosPorVerbo.set(verbo, usos)
+    }
+  }
+  return [...usosPorVerbo.entries()].map(([verbo, nomes]) => {
+    const citados = nomes.slice(0, MAX_NOMES_EM_USO).map((n) => `"${n}"`).join(', ')
+    const resto = nomes.length > MAX_NOMES_EM_USO ? ` e mais ${nomes.length - MAX_NOMES_EM_USO}` : ''
+    return (
+      `verbo "${verbo}" está em uso por ${nomes.length} referência(s) do catálogo` +
+      ` (${citados}${resto}) — troque essas referências de verbo antes de removê-lo`
+    )
+  })
+}
+
+/** Forma de um prefixo de verbo: kebab-case minúsculo seguido de ":". É o que
+ *  impede um componente chamado "RAR: 12 meses" de perder metade do nome. */
+const PREFIXO_VERBO = /^[a-z0-9][a-z0-9-]*$/
+
+/** Parte uma célula de `consome` no primeiro ":" quando o que vem antes TEM
+ *  CARA de prefixo de verbo; null quando não tem (aí a célula é toda alvo).
+ *  Os dois lados saem trimados: quem escreve "envia : x" na planilha declara o
+ *  mesmo que "envia:x". */
+function partirPrefixo(celula: string): { prefixo: string; resto: string } | null {
+  const bruto = celula.trim()
+  const i = bruto.indexOf(':')
+  if (i < 0) return null
+  const prefixo = bruto.slice(0, i).trim()
+  if (!PREFIXO_VERBO.test(prefixo)) return null
+  return { prefixo, resto: bruto.slice(i + 1).trim() }
+}
+
+/**
+ * Alvo provável de uma célula, SEM consultar o vocabulário: o que sobra depois
+ * de um prefixo com cara de verbo.
+ *
+ * É heurística, e existe só para servir de CHAVE DE DEDUP onde o vocabulário
+ * não está à mão ({@link mesclarAssociacoes}). Nunca a use para decidir o que
+ * a célula guarda — para isso existe `referencia()`, que confere o cadastro.
+ */
+export function alvoDaReferencia(celula: string): string {
+  return partirPrefixo(celula)?.resto ?? celula.trim()
+}
+
+/**
+ * Célula canônica a partir de verbo + alvo. O {@link VERBO_PADRAO} e o verbo
+ * vazio devolvem SÓ o alvo — é o que faz uma referência de sempre continuar
+ * gravada byte a byte como está hoje, e o que mantém o catalogo.csv intocado
+ * enquanto ninguém usar prefixo.
+ */
+export function formatarReferencia(ref: Pick<RefConsome, 'verbo' | 'alvo'>): string {
+  const verbo = ref.verbo.trim()
+  const alvo = ref.alvo.trim()
+  return verbo === '' || verbo === VERBO_PADRAO ? alvo : `${verbo}:${alvo}`
+}
+
+/** Aviso de célula com prefixo fora do vocabulário: nada é assumido, a célula
+ *  inteira virou o nome do alvo (e um fantasma com dois-pontos no nome). É a
+ *  mesma mensagem na validação da gravação e no build. */
+function avisoPrefixo(origem: string, celula: string, prefixo: string): string {
+  return (
+    `"${origem}": consome "${celula}" com o prefixo "${prefixo}:", que não é um verbo cadastrado —` +
+    ` a célula inteira virou o nome do alvo; cadastre o verbo para a referência voltar a apontar`
+  )
+}
+
+export interface IndiceVerbos {
+  /** Todos os verbos do vocabulário, na ordem recebida. */
+  lista: readonly VerboDef[]
+  /** Definição pelo slug; slug não cadastrado = undefined. */
+  def(slug: string): VerboDef | undefined
+  /** Lê UMA célula de `consome`. Só é PREFIXO o texto que tem cara de slug
+   *  (minúsculas, dígitos e "-", seguido de ":") E está cadastrado: um
+   *  componente chamado "RAR: 12 meses" resolve inteiro, e "transp:x" com
+   *  `transp` fora do vocabulário vira alvo inteiro + `prefixoDesconhecido`. */
+  referencia(celula: string): RefConsome
+}
+
+/** Índice do vocabulário: consulta por slug e leitura das células do
+ *  `consome`. Espelha {@link criarIndiceAlvos}, que faz o mesmo pelo outro
+ *  lado da referência (o alvo). */
+export function criarIndiceVerbos(verbos: readonly VerboDef[] = VERBOS_PADRAO): IndiceVerbos {
+  const porSlug = new Map<string, VerboDef>(verbos.map((v) => [v.slug, v]))
+  return {
+    lista: verbos,
+    def(slug) {
+      return porSlug.get(slug)
+    },
+    referencia(celula) {
+      const partido = partirPrefixo(celula)
+      if (partido === null) {
+        return { verbo: '', alvo: celula.trim(), prefixoDesconhecido: null }
+      }
+      if (porSlug.has(partido.prefixo)) {
+        return { verbo: partido.prefixo, alvo: partido.resto, prefixoDesconhecido: null }
+      }
+      // Prefixo com cara de verbo mas sem cadastro: a célula INTEIRA vira o
+      // alvo (fantasma com dois-pontos no nome) em vez de virar `consome`
+      // calado. O buraco fica visível, e cadastrar o verbo o conserta.
+      return { verbo: '', alvo: celula.trim(), prefixoDesconhecido: partido.prefixo }
+    },
+  }
+}
+
 export type Debito = 'sim' | 'nao' | 'avaliar'
 
 /**
@@ -571,8 +1071,8 @@ export type Debito = 'sim' | 'nao' | 'avaliar'
  */
 export interface CatalogoRow {
   /** Chave ESTÁVEL e imutável da linha (ver {@link atribuirIds}). É o id do nó
-   *  no grafo e o alvo das referências de `consome`/`associacoes`. "" = ainda
-   *  não tem id: o build e a gravação geram um a partir do nome. */
+   *  no grafo e o alvo das referências de `consome`. "" = ainda não tem id: o
+   *  build e a gravação geram um a partir do nome. */
   id: string
   nome: string
   /** slug de um nível ativo (built-in ou cadastrado no niveis.csv). */
@@ -581,6 +1081,8 @@ export interface CatalogoRow {
    *  erro no POST e warning no build. */
   tipo_componente: string
   dominio: string
+  /** ÚNICA relação declarada: os upstreams deste componente. O outro lado
+   *  ("consumido por") não é coluna — é derivado das arestas de entrada. */
   consome: string[]
   descricao: string
   /** Opcional em qualquer nível: "" ou um dos três valores. */
@@ -589,7 +1091,6 @@ export interface CatalogoRow {
   owner: string | null
   centro_de_custo: string | null
   observacoes: string
-  associacoes: string[]
   /** Bandeira de PRODUTO DE DADOS: "" vale "nao" (célula nunca declarada).
    *  Fora de {@link SIM_NAO} é warning no build e erro no POST. Vale em
    *  qualquer nível — a flag é ortogonal à camada, como o débito. */
@@ -599,14 +1100,11 @@ export interface CatalogoRow {
 /**
  * Colunas do catalogo.csv, na ordem canônica do cabeçalho.
  *
- * `id`, `tipo_componente`, `associacoes` e `produto_de_dados` são opcionais na
- * LEITURA (CSV legado sem elas parseia sem warning), mas o serializador sempre
- * escreve as 14.
+ * `id`, `tipo_componente` e `produto_de_dados` são opcionais na LEITURA (CSV
+ * legado sem elas parseia sem warning), mas o serializador sempre escreve as 13.
  *
- * As colunas `origem`, `fonte_sistema` e `fontes_secundarias` existiram
- * enquanto fonte e origem eram campos de um produto; viraram níveis próprios e
- * saíram do arquivo. Um CSV que ainda as traga é lido normalmente — elas são
- * ignoradas e não voltam na regravação.
+ * As colunas `origem`, `fonte_sistema`, `fontes_secundarias` e `associacoes`
+ * saíram do formato — ver {@link COLUNAS_OBSOLETAS}.
  */
 export const COLUNAS = [
   'id',
@@ -621,23 +1119,64 @@ export const COLUNAS = [
   'owner',
   'centro_de_custo',
   'observacoes',
-  'associacoes',
   'produto_de_dados',
 ] as const
 
 /** Colunas que podem faltar do cabeçalho sem warning: `id` porque o build o
  *  gera do nome (é o que deixa acrescentar linhas na planilha sem saber de
  *  ids), as outras por serem posteriores ao formato original. */
-const COLUNAS_OPCIONAIS = new Set<string>([
-  'id',
-  'tipo_componente',
-  'associacoes',
-  'produto_de_dados',
-])
+const COLUNAS_OPCIONAIS = new Set<string>(['id', 'tipo_componente', 'produto_de_dados'])
+
+/** Coluna aposentada que ainda carrega DADO: `associacoes` era a segunda
+ *  coluna de aresta ("vem de") e o modelo passou a ter uma relação só. O
+ *  conteúdo dela não é descartado — cada referência vira um `consome` na
+ *  leitura (ver {@link mesclarAssociacoes}), porque uma associação de A para B
+ *  dizia exatamente que A se liga a B, e ignorá-la seria perder relação em
+ *  silêncio. A coluna não volta na regravação. */
+const COLUNA_ASSOCIACOES = 'associacoes'
 
 /** Colunas de versões anteriores do catálogo: um arquivo que ainda as traga é
- *  lido sem reclamação (elas são ignoradas e não voltam na regravação). */
-const COLUNAS_OBSOLETAS = new Set<string>(['origem', 'fonte_sistema', 'fontes_secundarias'])
+ *  lido sem reclamação de coluna desconhecida, e elas não voltam na
+ *  regravação. `origem`, `fonte_sistema` e `fontes_secundarias` existiram
+ *  enquanto fonte e origem eram campos de um produto; viraram níveis próprios,
+ *  e o conteúdo delas é ignorado (já está nas linhas). `associacoes` é o caso
+ *  diferente: o conteúdo é MIGRADO, não ignorado. */
+const COLUNAS_OBSOLETAS = new Set<string>([
+  'origem',
+  'fonte_sistema',
+  'fontes_secundarias',
+  COLUNA_ASSOCIACOES,
+])
+
+/**
+ * Referências de `consome` mais as da coluna aposentada `associacoes`, sem
+ * repetir (a comparação ignora caixa e acentos, como a resolução de nomes).
+ *
+ * É a migração de um arquivo antigo acontecendo na LEITURA: quem abrir um CSV
+ * de antes da fusão vê as duas colunas viradas numa só, e a próxima gravação
+ * escreve o arquivo já no formato novo. A ordem preserva o `consome` original
+ * na frente.
+ *
+ * A comparação é pelo ALVO ({@link alvoDaReferencia}): "envia:x" e "x" apontam
+ * para o mesmo componente, e a associação não tem por que duplicá-lo. Aqui o
+ * vocabulário não está à mão — a leitura da célula é heurística, e serve só
+ * para esta chave.
+ */
+export function mesclarAssociacoes(
+  consome: readonly string[],
+  associacoes: readonly string[],
+): string[] {
+  if (associacoes.length === 0) return [...consome]
+  const vistos = new Set(consome.map((ref) => chaveNome(alvoDaReferencia(ref))))
+  const extras: string[] = []
+  for (const ref of associacoes) {
+    const chave = chaveNome(alvoDaReferencia(ref))
+    if (vistos.has(chave)) continue
+    vistos.add(chave)
+    extras.push(ref)
+  }
+  return [...consome, ...extras]
+}
 
 type Coluna = (typeof COLUNAS)[number]
 
@@ -813,8 +1352,9 @@ function nivelsMsg(niveis: readonly NivelInfo[]): string {
  * é ignorada — o nó não teria onde existir no mapa.
  *
  * Warnings legíveis para coluna faltando/desconhecida, linha sem nome, nível
- * ausente ou inexistente e tipo_componente/produto_de_dados fora do
- * vocabulário; "linha N" conta o cabeçalho como linha 1.
+ * ausente ou inexistente, tipo_componente/produto_de_dados fora do vocabulário
+ * e referência vinda da coluna aposentada `associacoes`; "linha N" conta o
+ * cabeçalho como linha 1.
  */
 export function parseCatalogo(
   texto: string,
@@ -845,6 +1385,12 @@ export function parseCatalogo(
   // a gravação escreve no arquivo sejam o mesmo (uma linha ignorada aqui segue
   // reservando o id dela, para não roubar o de ninguém quando voltar).
   const celulaBruta = (registro: string[], col: Coluna): string => {
+    const i = indice.get(col)
+    return i === undefined ? '' : (registro[i] ?? '').trim()
+  }
+  /** Célula de uma coluna que não está mais em {@link COLUNAS} (por isso fora
+   *  do tipo `Coluna`) e cujo conteúdo ainda é lido. */
+  const colunaObsoleta = (registro: string[], col: string): string => {
     const i = indice.get(col)
     return i === undefined ? '' : (registro[i] ?? '').trim()
   }
@@ -930,10 +1476,21 @@ export function parseCatalogo(
     const corpo = celula('observacoes')
     if (corpo !== '') node.corpo = corpo
 
+    // Arquivo anterior à fusão: o que estava em `associacoes` entra em
+    // `consome` (com aviso — a relação continua, mas mudou de nome e de
+    // rótulo de aresta), em vez de sumir sem ninguém ver.
+    const associacoes = splitLista(colunaObsoleta(registro, COLUNA_ASSOCIACOES))
+    if (associacoes.length > 0) {
+      warnings.push(
+        `catalogo.csv linha ${linha} ("${nome}"): coluna "associacoes" foi aposentada —` +
+          ` ${associacoes.length} referência(s) migrada(s) para "consome"` +
+          ` (a próxima gravação atualiza o arquivo)`,
+      )
+    }
+
     rows.push({
       node,
-      consome: splitLista(celula('consome')),
-      associacoes: splitLista(celula('associacoes')),
+      consome: mesclarAssociacoes(splitLista(celula('consome')), associacoes),
     })
   }
 
@@ -945,6 +1502,11 @@ export function parseCatalogo(
  * das linhas do arquivo. Não valida nada além do formato CSV: nivel, debito e
  * tipo_componente saem como estão no arquivo (a validação é papel de
  * {@link validarCatalogo}); células são trimadas, como em parseCatalogo.
+ *
+ * Arquivo anterior à fusão das relações entra já migrado: a coluna aposentada
+ * `associacoes` é dobrada dentro de `consome` (o aviso fica com parseCatalogo,
+ * que tem canal para isso) — é o que faz a próxima gravação preservar a
+ * relação em vez de descartá-la.
  */
 export function parseCatalogoRows(texto: string): CatalogoRow[] {
   const registros = parseCsv(texto)
@@ -958,6 +1520,7 @@ export function parseCatalogoRows(texto: string): CatalogoRow[] {
       const i = indice.get(col)
       return i === undefined ? '' : (registro[i] ?? '').trim()
     }
+    const iAssoc = indice.get(COLUNA_ASSOCIACOES)
     const textoOuNull = (col: Coluna): string | null => {
       const v = celula(col)
       return v === '' ? null : v
@@ -970,14 +1533,16 @@ export function parseCatalogoRows(texto: string): CatalogoRow[] {
       nivel: celula('nivel'),
       tipo_componente: celula('tipo_componente'),
       dominio: celula('dominio'),
-      consome: splitLista(celula('consome')),
+      consome: mesclarAssociacoes(
+        splitLista(celula('consome')),
+        splitLista(iAssoc === undefined ? '' : (registro[iAssoc] ?? '').trim()),
+      ),
       descricao: celula('descricao'),
       debito: celula('debito') as Debito | '',
       status: celula('status'),
       owner: textoOuNull('owner'),
       centro_de_custo: textoOuNull('centro_de_custo'),
       observacoes: celula('observacoes'),
-      associacoes: splitLista(celula('associacoes')),
       produto_de_dados: celula('produto_de_dados') as SimNao | '',
     }
   })
@@ -1022,7 +1587,6 @@ export function serializarCatalogo(rows: readonly CatalogoRow[]): string {
       owner: row.owner ?? '',
       centro_de_custo: row.centro_de_custo ?? '',
       observacoes: row.observacoes,
-      associacoes: row.associacoes.join(' | '),
       produto_de_dados: row.produto_de_dados,
     }
     return COLUNAS.map((c) => celulaCsv(celulas[c])).join(';')
@@ -1048,14 +1612,16 @@ export interface ValidacaoCatalogo {
  * gera um.
  *
  * Warnings (não impedem): `consome` que não resolve contra nenhuma linha — o
- * build criará um nó fantasma — e `associacoes` que não resolve, que o build
- * simplesmente ignora.
+ * build criará um nó fantasma — e prefixo de verbo fora do vocabulário, que
+ * faz a célula inteira virar o nome do alvo. Nenhum dos dois impede a
+ * gravação: cadastrar a linha (ou o verbo) depois conserta retroativamente.
  *
  * "linha N" conta o cabeçalho do CSV como linha 1.
  */
 export function validarCatalogo(
   rows: CatalogoRow[],
   niveis: readonly NivelInfo[] = NIVEIS_PADRAO,
+  verbos: readonly VerboDef[] = VERBOS_PADRAO,
 ): ValidacaoCatalogo {
   const errors: string[] = []
   const warnings: string[] = []
@@ -1139,18 +1705,17 @@ export function validarCatalogo(
   }
   const conhece = (alvo: string): boolean =>
     conhecidos.has(chaveNome(alvo)) || conhecidos.has(alvo.trim())
+  // A célula pode trazer verbo ("envia:rar-grupo"): quem resolve é só o ALVO.
+  const indiceVerbos = criarIndiceVerbos(verbos)
   for (const row of rows) {
-    for (const alvo of row.consome) {
-      if (!conhece(alvo)) {
-        warnings.push(
-          `"${row.nome}": consome "${alvo}", que não existe no catálogo — o build criará um nó fantasma`,
-        )
+    for (const celula of row.consome) {
+      const ref = indiceVerbos.referencia(celula)
+      if (ref.prefixoDesconhecido !== null) {
+        warnings.push(avisoPrefixo(row.nome, celula, ref.prefixoDesconhecido))
       }
-    }
-    for (const alvo of row.associacoes) {
-      if (!conhece(alvo)) {
+      if (!conhece(ref.alvo)) {
         warnings.push(
-          `"${row.nome}": associação "${alvo}" não existe no catálogo — o build vai ignorá-la`,
+          `"${row.nome}": consome "${ref.alvo}", que não existe no catálogo — o build criará um nó fantasma`,
         )
       }
     }
@@ -1160,8 +1725,8 @@ export function validarCatalogo(
 }
 
 // ---------------------------------------------------------------------------
-// Resolução de referências entre linhas (`consome`, `associacoes`): toda
-// referência aponta para QUALQUER linha do catálogo, de qualquer nível.
+// Resolução das referências de `consome`: toda referência aponta para QUALQUER
+// linha do catálogo, de qualquer nível.
 //
 // A célula guarda o ID do alvo, que é imutável: renomear um componente ou
 // movê-lo de nível não mexe em quem aponta para ele. A resolução tenta, nesta
@@ -1170,7 +1735,7 @@ export function validarCatalogo(
 //   2. NOME (sem distinguir caixa nem acentos) — compatibilidade com o formato
 //      antigo e com quem edita a planilha à mão; resolve, mas avisa, e a
 //      próxima gravação troca a célula pelo id;
-//   3. nada — fantasma em `consome`, warning em `associacoes`.
+//   3. nada — nó fantasma.
 // ---------------------------------------------------------------------------
 
 /** Candidato de uma referência: id do nó final e o nível a que ele pertence
@@ -1195,8 +1760,12 @@ export interface IndiceAlvos {
   adicionar(alvos: readonly AlvoRef[]): void
   /** Resolve por id e, sem casar, por nome sem distinguir caixa nem acentos.
    *  `candidatos` traz todos os homônimos — vence o de menor ordem de nível
-   *  (empate: menor id). */
-  resolver(texto: string, excluirId?: string): ResolucaoRef
+   *  (empate: menor id).
+   *
+   *  Não há exclusão do próprio nó: uma linha que cita a si mesma em `consome`
+   *  vira um laço, e é o formulário que impede criar isso. O parâmetro
+   *  `excluirId` que existia aqui servia só à autoexclusão de `associacoes`. */
+  resolver(texto: string): ResolucaoRef
 }
 
 export function criarIndiceAlvos(
@@ -1225,13 +1794,13 @@ export function criarIndiceAlvos(
 
   return {
     adicionar,
-    resolver(texto, excluirId) {
+    resolver(texto) {
       const bruto = texto.trim()
       const exato = porId.get(bruto)
-      if (exato !== undefined && exato.id !== excluirId) {
+      if (exato !== undefined) {
         return { alvo: exato, candidatos: [exato], porNome: false }
       }
-      const candidatos = (porNome.get(chaveNome(bruto)) ?? []).filter((a) => a.id !== excluirId)
+      const candidatos = porNome.get(chaveNome(bruto)) ?? []
       const alvo = candidatos[0] ?? null
       return { alvo, candidatos, porNome: alvo !== null }
     },
@@ -1239,9 +1808,16 @@ export function criarIndiceAlvos(
 }
 
 /**
- * Linhas com `consome` e `associacoes` já em ids: toda referência que resolve
- * (por id ou por nome) vira o id do alvo; a que não resolve fica como está —
- * nome inventado continua virando fantasma, e apagá-lo aqui esconderia o gap.
+ * Linhas com `consome` já em ids: toda referência que resolve (por id ou por
+ * nome) vira o id do alvo; a que não resolve fica como está — nome inventado
+ * continua virando fantasma, e apagá-lo aqui esconderia o gap.
+ *
+ * O VERBO da célula é preservado: só o alvo é resolvido, e a célula é
+ * remontada por {@link formatarReferencia} ("envia:GDAD" → "envia:gdad"). Uma
+ * referência sem prefixo sai sem prefixo, byte a byte como entrou — é o que
+ * mantém o catalogo.csv de hoje intocado. Prefixo desconhecido também
+ * sobrevive à gravação sem reescrita: cadastrar o verbo depois conserta a
+ * referência retroativamente, o que uma normalização apressada impediria.
  *
  * Roda sobre linhas que já têm id ({@link preencherIds} antes), e é o que
  * cumpre a promessa do warning de resolução por nome: gravou, normalizou.
@@ -1249,6 +1825,7 @@ export function criarIndiceAlvos(
 export function normalizarReferencias(
   rows: readonly CatalogoRow[],
   niveis: readonly NivelInfo[] = NIVEIS_PADRAO,
+  verbos: readonly VerboDef[] = VERBOS_PADRAO,
 ): CatalogoRow[] {
   const indice = criarIndiceAlvos(
     niveis,
@@ -1256,15 +1833,16 @@ export function normalizarReferencias(
       .filter((r) => r.id.trim() !== '' && r.nome.trim() !== '')
       .map((r) => ({ id: r.id.trim(), nome: r.nome.trim(), nivel: r.nivel.trim() })),
   )
-  // Mesma disciplina do build: `consome` resolve contra tudo e `associacoes`
-  // se exclui, para uma linha não se associar a si mesma por homonímia.
-  const converter = (lista: readonly string[], excluirId?: string): string[] =>
-    lista.map((ref) => indice.resolver(ref, excluirId).alvo?.id ?? ref)
-
+  const indiceVerbos = criarIndiceVerbos(verbos)
   return rows.map((row) => ({
     ...row,
-    consome: converter(row.consome),
-    associacoes: converter(row.associacoes, row.id.trim()),
+    consome: row.consome.map((celula) => {
+      const ref = indiceVerbos.referencia(celula)
+      return formatarReferencia({
+        verbo: ref.verbo,
+        alvo: indice.resolver(ref.alvo).alvo?.id ?? ref.alvo,
+      })
+    }),
   }))
 }
 
@@ -1277,8 +1855,9 @@ export function normalizarReferencias(
 export function canonizarCatalogo(
   rows: readonly CatalogoRow[],
   niveis: readonly NivelInfo[] = NIVEIS_PADRAO,
+  verbos: readonly VerboDef[] = VERBOS_PADRAO,
 ): CatalogoRow[] {
-  return normalizarReferencias(preencherIds(rows), niveis)
+  return normalizarReferencias(preencherIds(rows), niveis, verbos)
 }
 
 /**
@@ -1312,20 +1891,30 @@ function nodeFantasma(nomeAlvo: string, nivel: string, id: string): GraphNode {
  * - um nó por LINHA do catálogo, em qualquer nível — nada é derivado de campo;
  * - id do nó = id da LINHA (coluna `id`, gerada do nome quando vazia); duas
  *   linhas com o mesmo id viram warning e a repetida é ignorada;
- * - `consome` vira aresta "consome" e `associacoes` vira aresta "vem de";
- *   ambas resolvem contra QUALQUER linha, por id e, por compatibilidade, por
- *   nome (com warning: a próxima gravação normaliza a célula). Nome homônimo
- *   em vários níveis → warning, e vence o nível de menor ordem;
- * - `consome` que não resolve vira nó fantasma (+ warning); `associacoes` que
- *   não resolve vira só warning, sem criar nó — não dá para adivinhar em que
- *   nível ele existiria;
+ * - `consome` — a ÚNICA coluna de relação — vira aresta rotulada com o VERBO
+ *   da célula ("envia:x" → label "envia"; sem prefixo → "consome"), resolvida
+ *   contra QUALQUER linha, por id e, por compatibilidade, por nome (com
+ *   warning: a próxima gravação normaliza a célula). Nome homônimo em vários
+ *   níveis → warning, e vence o nível de menor ordem;
+ * - o ALVO que não resolve vira nó fantasma (+ warning), e o fantasma nasce
+ *   com o nome do alvo — nunca "verbo:alvo": duas linhas citando "x" e
+ *   "acessa:x" apontam para o MESMO componente;
+ * - prefixo fora do vocabulário não vira `consome` calado: a célula inteira
+ *   vira o alvo (fantasma com dois-pontos no nome) + warning citando o
+ *   prefixo;
  * - saída determinística (nodes por id, links por source/target/label).
  *
  * `niveis` é a lista COMPLETA de níveis ativos (built-ins + customs). Linha de
  * um nível que não está na lista é ignorada com warning: sem nível, o
- * componente não teria lugar no mapa.
+ * componente não teria lugar no mapa. `verbos` é a lista COMPLETA do
+ * vocabulário — ausente, valem os embutidos, e todo catálogo sem prefixo
+ * builda exatamente como antes.
  */
-export function buildGraph(csv: string, niveis: readonly NivelInfo[] = NIVEIS_PADRAO): BuildResult {
+export function buildGraph(
+  csv: string,
+  niveis: readonly NivelInfo[] = NIVEIS_PADRAO,
+  verbos: readonly VerboInfo[] = VERBOS_PADRAO,
+): BuildResult {
   const { rows, warnings } = parseCatalogo(csv, niveis)
 
   const nodes: GraphNode[] = []
@@ -1391,8 +1980,18 @@ export function buildGraph(csv: string, niveis: readonly NivelInfo[] = NIVEIS_PA
     `"${origem}": ${campo} "${ref}" resolvido por NOME (id "${alvo.id}") —` +
     ` a ligação por nome quebra ao renomear; a próxima gravação normaliza a célula para o id`
 
+  const indiceVerbos = criarIndiceVerbos(verbos)
+
   for (const p of aceitas) {
-    for (const ref of p.consome) {
+    for (const celula of p.consome) {
+      // O verbo é só o RÓTULO da aresta; quem é resolvido contra o catálogo
+      // (e quem dá nome a um fantasma) é o alvo, sozinho.
+      const referencia = indiceVerbos.referencia(celula)
+      if (referencia.prefixoDesconhecido !== null) {
+        warnings.push(avisoPrefixo(p.node.nome, celula, referencia.prefixoDesconhecido))
+      }
+      const label = referencia.verbo === '' ? VERBO_PADRAO : referencia.verbo
+      const ref = referencia.alvo
       const { alvo, candidatos, porNome } = indice.resolver(ref)
       if (alvo === null) {
         const chave = chaveNome(ref)
@@ -1408,7 +2007,7 @@ export function buildGraph(csv: string, niveis: readonly NivelInfo[] = NIVEIS_PA
           id = fantasma.id
           idFantasmaPorNome.set(chave, id)
         }
-        links.push({ source: p.node.id, target: id, label: 'consome' })
+        links.push({ source: p.node.id, target: id, label })
         continue
       }
       if (candidatos.length > 1) {
@@ -1417,26 +2016,7 @@ export function buildGraph(csv: string, niveis: readonly NivelInfo[] = NIVEIS_PA
         )
       }
       if (porNome) warnings.push(avisoPorNome(p.node.nome, 'consome', ref, alvo))
-      links.push({ source: p.node.id, target: alvo.id, label: 'consome' })
-    }
-  }
-
-  for (const p of aceitas) {
-    for (const ref of p.associacoes) {
-      const { alvo, candidatos, porNome } = indice.resolver(ref, p.node.id)
-      if (alvo === null) {
-        warnings.push(
-          `"${p.node.nome}": associação "${ref}" não corresponde a nenhum componente do mapa — ignorada (nenhum nó criado)`,
-        )
-        continue
-      }
-      if (candidatos.length > 1) {
-        warnings.push(
-          `"${p.node.nome}": associação "${ref}" é ambígua (${candidatos.length} componentes) — usando "${alvo.nome}" (${alvo.nivel})`,
-        )
-      }
-      if (porNome) warnings.push(avisoPorNome(p.node.nome, 'associação', ref, alvo))
-      links.push({ source: p.node.id, target: alvo.id, label: 'vem de' })
+      links.push({ source: p.node.id, target: alvo.id, label })
     }
   }
 
@@ -1459,6 +2039,9 @@ export function buildGraph(csv: string, niveis: readonly NivelInfo[] = NIVEIS_PA
   return {
     graph: {
       niveis: [...niveis].sort((a, b) => a.ordem - b.ordem),
+      // Sem ordenar: verbo não tem ordem semântica, e a do arquivo é a que a
+      // UI oferece no `<select>`.
+      verbos: verbos.map((v) => ({ ...v })),
       nodes: todosNodes,
       links: todosLinks,
     },

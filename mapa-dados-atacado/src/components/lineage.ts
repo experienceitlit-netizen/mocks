@@ -1,7 +1,9 @@
-// Vista em níveis: a partir de um componente focado, resolve TUDO de que ele
-// depende seguindo as arestas de saída ("consome" e "vem de", montante e
-// recursivo) e distribui os nós alcançados em colunas — uma por nível, na
-// ordem do bloco `niveis` do graph.json.
+// Vista em níveis: a partir de um componente focado, resolve o entorno dele
+// seguindo o SENTIDO de cada verbo e distribui os nós alcançados em colunas —
+// uma por nível, na ordem do bloco `niveis` do graph.json.
+//
+// Quanto de entorno entra é escolha do usuário, não constante do código: ver
+// {@link Alcance}, a régua de três posições que a barra de foco expõe.
 //
 // Não há camada especial de linhagem nem nó sintetizado: cada componente cai
 // na coluna do seu `nivel` e as arestas cruzam colunas livremente (um nível
@@ -12,12 +14,14 @@ import type {
   NivelDef,
   SimLink,
   SimNode,
+  VerboDef,
 } from './graph-types'
 import {
   isReal,
   linkLabel,
   nivelDe,
   ordemDoNivel,
+  sentidoDoVerbo,
   tituloDoNivel,
 } from './graph-types'
 import { extentDoDado, grausPorId, ROTULO_E_FOLGA } from './node-size'
@@ -77,7 +81,14 @@ export interface LineageColumn {
 
 /** Aresta de saída de um componente, já resolvida no nó de destino. */
 export interface LineageEdge {
+  /** Verbo declarado na aresta — o `label` do grafo, SEMPRE o do sentido em
+   *  que a linha foi escrita. Não muda quando a travessia anda ao contrário:
+   *  é `invertida` que diz isso, e quem exibe decide como marcar. */
   label: string
+  /** A travessia andou da PONTA para a ORIGEM da aresta (verbo `jusante`, ou
+   *  o lado de volta de um `ambos`). Quem envia aparece como montante de quem
+   *  recebe, e o balão prefixa o papel com "↩". */
+  invertida: boolean
   entry: LineageEntry
 }
 
@@ -100,25 +111,169 @@ export interface Lineage {
   chainOf(id: string): Set<string>
 }
 
+/** Um passo da travessia: de quem sai, para quem vai, com que verbo e se a
+ *  aresta foi percorrida ao contrário do que ela declara. */
+interface PassoDaTravessia {
+  para: string
+  label: string
+  invertida: boolean
+}
+
+/**
+ * Até onde o foco ALCANÇA a partir do componente — quem entra na vista.
+ *
+ * O foco sempre foi a cadeia montante e nada mais, e isso escondia metade do
+ * que um componente declara: um Job que `envia` para uma tabela é a ORIGEM
+ * daquela aresta, e a travessia montante (que para um verbo `jusante` sobe da
+ * ponta para a origem) nunca chega ao alvo. Focar no Job mostrava só o que ele
+ * consome. O alcance é a resposta: em vez de uma constante, um controle.
+ *
+ *   `montante`  a cadeia de que o componente depende, recursiva — o
+ *               comportamento de sempre, sem uma vírgula de diferença;
+ *   `vizinhos`  o montante inteiro MAIS todo vizinho de primeiro nível do
+ *               focado, em qualquer sentido (inclusive o do verbo `nenhum`,
+ *               que não conduz dado mas é uma ligação declarada — e o pedido é
+ *               ver TODAS as ligações do componente);
+ *   `ambos`     montante e jusante, os dois recursivos.
+ *
+ * As três posições são uma ESCADA: cada uma contém a anterior. É por isso que
+ * `ambos` também traz os vizinhos diretos — sem isso, andar do meio para a
+ * direita esconderia justamente o vizinho ligado por um verbo sem sentido, e um
+ * controle de "alcance" que tira coisa ao ser aumentado não se explica.
+ */
+export type Alcance = 'montante' | 'vizinhos' | 'ambos'
+
+/** As três posições, na ordem do controle (menor → maior alcance). */
+export const ALCANCES: readonly Alcance[] = ['montante', 'vizinhos', 'ambos']
+
+/** Alcance com que a TELA abre o foco.
+ *
+ *  Não é o default de {@link buildLineage}, e a diferença é de propósito: a
+ *  função assume `montante` para que nenhuma chamada antiga mude de resultado
+ *  ao ganhar o parâmetro, e a tela assume `vizinhos` porque é ele que responde
+ *  à queixa ("só aparecem as de consumo") sem estourar o mapa. */
+export const ALCANCE_INICIAL: Alcance = 'vizinhos'
+
+/** Slug conhecido? Usado por quem lê o alcance de fora (URL). */
+export function ehAlcance(valor: string | null): valor is Alcance {
+  return valor !== null && (ALCANCES as readonly string[]).includes(valor)
+}
+
+/**
+ * Índice dos passos MONTANTE por componente: de cada um, para onde a linhagem
+ * sobe, com o verbo e se a aresta foi lida ao contrário do que declara.
+ *
+ * É a ÚNICA leitura do `sentido` no módulo — a árvore (buildLineageTree) e o
+ * alcance do mapa (buildLineage) saem daqui, e assim não existem duas respostas
+ * para "por onde a linhagem anda".
+ */
+function indiceMontante(
+  byId: ReadonlyMap<string, GraphNodeData>,
+  links: readonly GraphLinkData[],
+  verbos: readonly VerboDef[],
+): Map<string, PassoDaTravessia[]> {
+  const saidas = new Map<string, PassoDaTravessia[]>()
+  const passo = (de: string, p: PassoDaTravessia) => {
+    const lista = saidas.get(de)
+    if (lista) lista.push(p)
+    else saidas.set(de, [p])
+  }
+  for (const l of links) {
+    if (!byId.has(l.source) || !byId.has(l.target)) continue
+    const label = linkLabel(l)
+    const sentido = sentidoDoVerbo(verbos, label)
+    if (sentido === 'nenhum') continue
+    if (sentido === 'montante' || sentido === 'ambos') {
+      passo(l.source, { para: l.target, label, invertida: false })
+    }
+    if (sentido === 'jusante' || sentido === 'ambos') {
+      passo(l.target, { para: l.source, label, invertida: true })
+    }
+  }
+  return saidas
+}
+
+/**
+ * O que o alcance ACRESCENTA à cadeia montante do componente focado.
+ *
+ * Só ids: quem entra na vista entra como qualquer outro nó, na coluna do seu
+ * nível, e as arestas vêm de graça — buildLineage já desenha toda aresta cujas
+ * duas pontas estão na vista.
+ */
+function extraDoAlcance(
+  rootId: string,
+  alcance: Alcance,
+  byId: ReadonlyMap<string, GraphNodeData>,
+  links: readonly GraphLinkData[],
+  verbos: readonly VerboDef[],
+): Set<string> {
+  const extra = new Set<string>()
+  if (alcance === 'montante') return extra
+
+  // Vizinhos de primeiro nível do FOCADO, em qualquer sentido. Aqui a aresta
+  // vale pelo que ela é — uma ligação declarada —, e não pelo sentido do verbo:
+  // é a posição que existe para mostrar tudo que o componente declara.
+  for (const l of links) {
+    if (!byId.has(l.source) || !byId.has(l.target)) continue
+    if (l.source === rootId) extra.add(l.target)
+    else if (l.target === rootId) extra.add(l.source)
+  }
+  if (alcance === 'vizinhos') {
+    extra.delete(rootId)
+    return extra
+  }
+
+  // `ambos`: mais a cadeia JUSANTE inteira — o inverso exato dos passos que a
+  // árvore montante percorre, e por isso lendo o mesmo índice. Não é o fecho
+  // não direcionado do grafo: quem consome um IRMÃO do focado não entra, senão
+  // qualquer componente de um grafo conexo abriria o mapa inteiro.
+  const desce = new Map<string, string[]>()
+  for (const [de, passos] of indiceMontante(byId, links, verbos)) {
+    for (const { para } of passos) {
+      const lista = desce.get(para)
+      if (lista) lista.push(de)
+      else desce.set(para, [de])
+    }
+  }
+  // `vistos` é separado de `extra` de propósito: um vizinho direto já está em
+  // `extra` sem ter sido percorrido, e reusar o conjunto como marca de visita
+  // pararia a descida justamente no primeiro passo dela.
+  const vistos = new Set<string>([rootId])
+  const fila = [rootId]
+  while (fila.length > 0) {
+    const atual = fila.pop()
+    if (atual === undefined) break
+    for (const viz of desce.get(atual) ?? []) {
+      if (vistos.has(viz)) continue
+      vistos.add(viz)
+      extra.add(viz)
+      fila.push(viz)
+    }
+  }
+  extra.delete(rootId)
+  return extra
+}
+
 /**
  * Árvore montante de um componente: ele, tudo que consome e tudo a que se
  * associa, recursivamente. null quando o id não existe no grafo.
+ *
+ * O SENTIDO do verbo é quem decide por onde a travessia anda — não a direção
+ * em que a aresta foi declarada. `montante` (o consumo de sempre) sobe para o
+ * alvo; `jusante` sobe para a ORIGEM (quem envia é insumo de quem recebe);
+ * `ambos` sobe dos dois lados; `nenhum` fica de fora da árvore. `verbos`
+ * vazio = tudo montante, que é o comportamento de antes do vocabulário.
  */
 export function buildLineageTree(
   rootId: string,
   nodes: readonly GraphNodeData[],
   links: readonly GraphLinkData[],
+  verbos: readonly VerboDef[] = [],
 ): LineageEntry | null {
   const byId = new Map(nodes.map((n) => [n.id, n]))
   if (!byId.has(rootId)) return null
 
-  const saidas = new Map<string, GraphLinkData[]>()
-  for (const l of links) {
-    if (!byId.has(l.source) || !byId.has(l.target)) continue
-    const lista = saidas.get(l.source)
-    if (lista) lista.push(l)
-    else saidas.set(l.source, [l])
-  }
+  const saidas = indiceMontante(byId, links, verbos)
 
   // Entradas memoizadas: alvo compartilhado vira o mesmo objeto em cada ramo.
   const entries = new Map<string, LineageEntry>()
@@ -129,10 +284,13 @@ export function buildLineageTree(
     if (!data) return null
     const entry: LineageEntry = { data, upstream: [] }
     entries.set(id, entry)
-    for (const l of saidas.get(id) ?? []) {
-      if (trilha.has(l.target)) continue // guarda contra ciclo
-      const filho = build(l.target, new Set([...trilha, l.target]))
-      if (filho) entry.upstream.push({ label: linkLabel(l), entry: filho })
+    for (const { para, label, invertida } of saidas.get(id) ?? []) {
+      // Guarda contra ciclo — e com `ambos` ela passa a valer sempre: a mesma
+      // aresta é um passo de ida e um de volta, e sem a trilha a recursão
+      // voltaria para quem acabou de chamá-la.
+      if (trilha.has(para)) continue
+      const filho = build(para, new Set([...trilha, para]))
+      if (filho) entry.upstream.push({ label, invertida, entry: filho })
     }
     return entry
   }
@@ -155,16 +313,24 @@ export function buildLineageTree(
  * que focar num componente da primeira coluna não isolava nada, e a barra
  * anunciava um foco que não estava valendo. A entrada do app passou a ser
  * simplesmente "sem foco", que já significa inventário pelo caminho legítimo.
+ *
+ * O {@link Alcance} diz quanto do entorno entra além da cadeia montante. O
+ * default é `montante` — o comportamento de sempre —, e não o padrão da tela:
+ * ganhar o parâmetro não pode mudar o resultado de nenhuma chamada que não o
+ * passe. Sem foco (`rootId` null) ele não tem o que fazer: o inventário já é
+ * todo o catálogo.
  */
 export function buildLineage(
   rootId: string | null,
   nodes: readonly GraphNodeData[],
   links: readonly GraphLinkData[],
   niveis: readonly NivelDef[] = [],
+  verbos: readonly VerboDef[] = [],
+  alcance: Alcance = 'montante',
 ): Lineage | null {
   // Sem foco, a vista é só o inventário: nenhum componente é indispensável,
   // então o mapa em níveis existe mesmo com a primeira coluna vazia.
-  const root = rootId === null ? null : buildLineageTree(rootId, nodes, links)
+  const root = rootId === null ? null : buildLineageTree(rootId, nodes, links, verbos)
   if (rootId !== null && !root) return null
 
   // Achata a árvore em nós únicos — a ordem de visita agrupa cada cadeia perto
@@ -181,20 +347,40 @@ export function buildLineage(
   }
   if (root) walk(root, new Set())
 
+  // O alcance entra DEPOIS da árvore: ela é a espinha da vista (e a ordem de
+  // visita dela é o que agrupa cada cadeia perto de quem a puxou), e o que o
+  // alcance faz é pendurar mais componentes ao redor — nunca reordenar o que
+  // já estava. `root` continua sendo a árvore MONTANTE pura, e é isso que
+  // mantém a linhagem do balão fora desta decisão.
+  if (rootId !== null && alcance !== 'montante') {
+    const byId = new Map(nodes.map((n) => [n.id, n]))
+    for (const id of extraDoAlcance(rootId, alcance, byId, links, verbos)) {
+      const n = byId.get(id)
+      if (n) addNode(n)
+    }
+  }
+
   if (root === null) {
     for (const n of nodes) if (isReal(n)) addNode(n)
   }
 
   // Toda aresta cujas duas pontas estão na vista — inclusive as que ligam nós
   // irmãos, que a árvore montante não percorre.
+  //
+  // A chave de dedup é a MESMA do build (source \0 target \0 label): duas
+  // linhas do catálogo podem declarar verbos diferentes entre o mesmo par
+  // ("envia" e "associado", por exemplo), e são duas arestas. Enquanto a chave
+  // ignorava o label, as duas colapsavam numa só e qual sobrevivia era
+  // arbitrário — a segunda sumia do mapa sem nenhum aviso.
   const graphLinks: GraphLinkData[] = []
   const linkKeys = new Set<string>()
   for (const l of links) {
     if (!nodeById.has(l.source) || !nodeById.has(l.target)) continue
-    const key = `${l.source}→${l.target}`
+    const label = linkLabel(l)
+    const key = `${l.source}\u0000${l.target}\u0000${label}`
     if (linkKeys.has(key)) continue
     linkKeys.add(key)
-    graphLinks.push({ source: l.source, target: l.target, label: linkLabel(l) })
+    graphLinks.push({ source: l.source, target: l.target, label })
   }
 
   // Colunas da esquerda para a direita: só os níveis presentes (nível vazio
@@ -245,9 +431,24 @@ export function buildLineage(
   })
 
   // Cadeia do hover: fecho nas duas direções sobre as arestas da vista.
+  //
+  // Aresta de verbo `nenhum` fica de fora — ela é desenhada, mas não conduz
+  // dado nenhum. Como o fecho aqui é NÃO direcionado, incluí-la acenderia,
+  // pelo lado errado, a cadeia inteira de quem só está "relacionado".
+  //
+  // O ALCANCE NÃO ENTRA AQUI, e isso é decisão, não esquecimento. São duas
+  // perguntas diferentes: o alcance responde "o que ENTRA na vista", o chainOf
+  // responde "o que ACENDE dentro dela". Ele já é calculado sobre `graphLinks`,
+  // as arestas da vista — então segue o alcance sozinho, sem uma segunda regra:
+  // trazer mais componentes traz mais arestas, e a cadeia acesa cresce junto.
+  // Filtrá-lo pelo alcance seria pior nas duas pontas: em `montante` o hover
+  // deixaria de acender o lado jusante que ele acende hoje (e a posição tem de
+  // reproduzir o comportamento atual, à risca), e nas outras duas o usuário
+  // teria dois conceitos de "cadeia" para conciliar na mesma tela.
   const up = new Map<string, string[]>()
   const down = new Map<string, string[]>()
   for (const l of graphLinks) {
+    if (sentidoDoVerbo(verbos, linkLabel(l)) === 'nenhum') continue
     const saida = up.get(l.source)
     if (saida) saida.push(l.target)
     else up.set(l.source, [l.target])

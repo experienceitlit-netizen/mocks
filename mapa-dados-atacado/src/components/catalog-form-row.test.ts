@@ -12,7 +12,6 @@ const estado = (extra: Partial<RowFormState> = {}): RowFormState => ({
   tipoComponente: 'Tabela Delta',
   dominio: 'Resultado',
   consome: ['PSDC'],
-  associacoes: ['Databricks'],
   descricao: 'resultado realizado',
   observacoes: 'corpo',
   debito: 'nao',
@@ -31,7 +30,6 @@ const base: CatalogoRow = {
   tipo_componente: 'Default',
   dominio: 'Resultado',
   consome: [],
-  associacoes: [],
   descricao: '',
   debito: '',
   status: '',
@@ -100,10 +98,9 @@ describe('montarRow', () => {
     })
   })
 
-  it('auto-referência sai de consome e de associações — pelo id e pelo nome', () => {
-    const row = montarRow(estado({ consome: ['gdad', 'PSDC'], associacoes: ['GDAD'] }), base)
+  it('auto-referência sai de consome — pelo id e pelo nome', () => {
+    const row = montarRow(estado({ consome: ['gdad', 'PSDC', 'GDAD'] }), base)
     expect(row.consome).toEqual(['PSDC'])
-    expect(row.associacoes).toEqual([])
   })
 
   it('id de OUTRO componente homônimo não conta como auto-referência', () => {
@@ -112,5 +109,42 @@ describe('montarRow', () => {
     const outro: CatalogoRow = { ...base, id: 'gdad-2' }
     const row = montarRow(estado({ consome: ['gdad'] }), outro, new Set(['gdad']))
     expect(row.consome).toEqual(['gdad'])
+  })
+})
+
+// A auto-referência é do ALVO, não da célula: "envia:gdad" na linha do próprio
+// `gdad` é o mesmo laço que "gdad" — e sem parsear a célula ele passaria batido
+// e viraria uma aresta do nó para ele mesmo no mapa.
+describe('montarRow — auto-referência com verbo', () => {
+  it('sai pelo id do próprio componente, com qualquer verbo', () => {
+    const row = montarRow(estado({ consome: ['envia:gdad', 'PSDC'] }), base)
+    expect(row.consome).toEqual(['PSDC'])
+  })
+
+  it('sai pelo nome do próprio componente, com qualquer verbo', () => {
+    const row = montarRow(estado({ consome: ['acessa:GDAD', 'PSDC'] }), base)
+    expect(row.consome).toEqual(['PSDC'])
+  })
+
+  it('a referência com verbo ao ID de um homônimo fica — é outro componente', () => {
+    // A linha em edição é a `gdad-2`; `gdad` é o id de outro componente com o
+    // mesmo nome, e "envia:gdad" é uma ligação legítima entre as duas.
+    const outro: CatalogoRow = { ...base, id: 'gdad-2' }
+    const row = montarRow(estado({ consome: ['envia:gdad'] }), outro, new Set(['gdad']))
+    expect(row.consome).toEqual(['envia:gdad'])
+  })
+
+  it('a célula sobrevive com o prefixo intacto quando não é auto-referência', () => {
+    const row = montarRow(estado({ consome: ['envia:psdc', 'acessa:Bronze'] }), base)
+    expect(row.consome).toEqual(['envia:psdc', 'acessa:Bronze'])
+  })
+
+  it('prefixo fora do vocabulário passado é parte do nome, não verbo', () => {
+    // Com só o `consome` cadastrado, "envia:gdad" é o nome inteiro de um
+    // fantasma — e por isso não coincide com o id nem com o nome desta linha.
+    const row = montarRow(estado({ consome: ['envia:gdad'] }), base, undefined, [
+      { slug: 'consome', titulo: 'Consome', sentido: 'montante', seta: true },
+    ])
+    expect(row.consome).toEqual(['envia:gdad'])
   })
 })
