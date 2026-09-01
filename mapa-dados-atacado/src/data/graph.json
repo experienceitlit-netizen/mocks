@@ -55,15 +55,58 @@
       "corBorda": "#724927"
     },
     {
+      "slug": "jobs-pipelines",
+      "titulo": "Jobs (Pipelines)",
+      "ordem": 50,
+      "builtin": false
+    },
+    {
       "slug": "fonte",
       "titulo": "Fonte",
-      "ordem": 50,
+      "ordem": 60,
       "builtin": true
     },
     {
       "slug": "origem",
       "titulo": "Origem",
-      "ordem": 60,
+      "ordem": 70,
+      "builtin": true
+    }
+  ],
+  "verbos": [
+    {
+      "slug": "consome",
+      "titulo": "Consome",
+      "sentido": "montante",
+      "seta": true,
+      "builtin": true
+    },
+    {
+      "slug": "acessa",
+      "titulo": "Acessa",
+      "sentido": "montante",
+      "seta": true,
+      "builtin": true
+    },
+    {
+      "slug": "envia",
+      "titulo": "Envia",
+      "sentido": "jusante",
+      "seta": true,
+      "builtin": true
+    },
+    {
+      "slug": "associado",
+      "titulo": "Associado",
+      "sentido": "ambos",
+      "seta": false,
+      "builtin": true
+    },
+    {
+      "slug": "relaciona",
+      "titulo": "Relaciona",
+      "sentido": "nenhum",
+      "seta": false,
       "builtin": true
     }
   ],
@@ -129,6 +172,20 @@
       "corpo": "## Relações\n\n- ingere de [[Salesforce CRM]]\n\n## Detalhes\n\n- Frequência: diária."
     },
     {
+      "id": "bureau-neoway",
+      "nome": "Bureau (neoway API)",
+      "nivel": "fonte",
+      "tipoComponente": "API REST",
+      "dominio": "",
+      "debito": "nao",
+      "status": "producao",
+      "owner": "Ramiro Costa",
+      "centroDeCusto": "aaad",
+      "descricao": "",
+      "incompleto": false,
+      "produtoDeDados": false
+    },
+    {
       "id": "dashboard-tableau-carteira",
       "nome": "Rentabilidade da carteira (Tableau)",
       "nivel": "fonte-secundaria",
@@ -150,7 +207,7 @@
       "tipoComponente": "Tabela Delta",
       "dominio": "",
       "debito": "nao",
-      "status": "",
+      "status": "producao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
@@ -195,7 +252,7 @@
       "tipoComponente": "Data Cloud",
       "dominio": "",
       "debito": "nao",
-      "status": "",
+      "status": "producao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
@@ -210,7 +267,7 @@
       "tipoComponente": "Data Cloud",
       "dominio": "",
       "debito": "nao",
-      "status": "",
+      "status": "producao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
@@ -310,12 +367,12 @@
     },
     {
       "id": "estatag",
-      "nome": "ESTATAG — risco",
+      "nome": "RIsco",
       "nivel": "origem",
       "tipoComponente": "Default",
       "dominio": "",
       "debito": "nao",
-      "status": "",
+      "status": "producao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "Sistema de origem do risco.",
@@ -370,12 +427,12 @@
     },
     {
       "id": "gdad",
-      "nome": "GDAD — resultado gerencial",
+      "nome": "Resultado Gerencial",
       "nivel": "origem",
       "tipoComponente": "Default",
       "dominio": "",
       "debito": "nao",
-      "status": "",
+      "status": "producao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "Sistema de origem do resultado gerencial.",
@@ -429,21 +486,6 @@
       "corpo": "## Relações\n\n- transforma de [[Rentabilidade Atacado]] — regra \"último mês fechado\""
     },
     {
-      "id": "ingestao-capital-reg",
-      "nome": "a confirmar",
-      "nivel": "fonte",
-      "tipoComponente": "Default",
-      "dominio": "",
-      "debito": "avaliar",
-      "status": "",
-      "owner": null,
-      "centroDeCusto": null,
-      "descricao": "Ingestão da Base de Capital Regulatório: mecanismo ainda não identificado.",
-      "incompleto": true,
-      "produtoDeDados": false,
-      "corpo": "## Relações\n\n- ingere de [[Base de Capital Regulatório]]\n\n## Detalhes\n\n- O nome é a própria célula da planilha: **a confirmar**. O nó existe para o buraco ficar visível."
-    },
-    {
       "id": "insight-variacao-rar",
       "nome": "Variação do RAR em 6 meses",
       "nivel": "fonte-secundaria",
@@ -457,6 +499,48 @@
       "incompleto": true,
       "produtoDeDados": false,
       "corpo": "## Relações\n\n- lê de [[Rentabilidade_Grupo_Mensal]]\n\n## Detalhes\n\n- Mecanismo: `insight`."
+    },
+    {
+      "id": "job-001-jj",
+      "nome": "Job 001 - JJ",
+      "nivel": "jobs-pipelines",
+      "tipoComponente": "Processos",
+      "dominio": "",
+      "debito": "nao",
+      "status": "producao",
+      "owner": "Ramiro Costa",
+      "centroDeCusto": "aaad",
+      "descricao": "",
+      "incompleto": false,
+      "produtoDeDados": false
+    },
+    {
+      "id": "job-002-aaad",
+      "nome": "Job 002 - aaad",
+      "nivel": "jobs-pipelines",
+      "tipoComponente": "Processos",
+      "dominio": "",
+      "debito": "nao",
+      "status": "producao",
+      "owner": "Ramiro Costa",
+      "centroDeCusto": "aaad",
+      "descricao": "",
+      "incompleto": false,
+      "produtoDeDados": false
+    },
+    {
+      "id": "neoway",
+      "nome": "Neoway",
+      "nivel": "origem",
+      "tipoComponente": "Default",
+      "dominio": "",
+      "debito": "nao",
+      "status": "producao",
+      "owner": null,
+      "centroDeCusto": null,
+      "descricao": "",
+      "incompleto": true,
+      "produtoDeDados": false
     },
     {
       "id": "produto-dados-corporativo",
@@ -490,12 +574,12 @@
     },
     {
       "id": "psdc",
-      "nome": "PSDC — cadastro corporativo",
+      "nome": "Cadastro Corporativo",
       "nivel": "origem",
       "tipoComponente": "Default",
       "dominio": "",
       "debito": "nao",
-      "status": "",
+      "status": "producao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "Sistema de origem do cadastro corporativo.",
@@ -579,13 +663,27 @@
       "corpo": "## Relações\n\n- ingere por [[Produto de dados corporativo]]"
     },
     {
+      "id": "raw-neoway",
+      "nome": "raw_neoway",
+      "nivel": "broze",
+      "tipoComponente": "Tabela Delta",
+      "dominio": "",
+      "debito": "nao",
+      "status": "producao",
+      "owner": "Ramiro Costa",
+      "centroDeCusto": "aaad",
+      "descricao": "",
+      "incompleto": false,
+      "produtoDeDados": false
+    },
+    {
       "id": "raw-psdc",
       "nome": "raw_psdc",
       "nivel": "broze",
       "tipoComponente": "Tabela Delta",
       "dominio": "",
       "debito": "nao",
-      "status": "",
+      "status": "producao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "",
@@ -705,7 +803,7 @@
       "tipoComponente": "API REST",
       "dominio": "",
       "debito": "nao",
-      "status": "",
+      "status": "producao",
       "owner": null,
       "centroDeCusto": null,
       "descricao": "Leva o RAR do último mês fechado para o Data Cloud.",
@@ -756,8 +854,18 @@
       "label": "consome"
     },
     {
+      "source": "bureau-neoway",
+      "target": "neoway",
+      "label": "acessa"
+    },
+    {
       "source": "dashboard-tableau-carteira",
       "target": "gold-rar-grupo",
+      "label": "consome"
+    },
+    {
+      "source": "dim-cliente",
+      "target": "bureau-neoway",
       "label": "consome"
     },
     {
@@ -788,12 +896,7 @@
     {
       "source": "dlo-cadastro-cliente",
       "target": "transp-cadastro-cliente",
-      "label": "consome"
-    },
-    {
-      "source": "dlo-rar-grupo-atual",
-      "target": "transp-rar-grupo-atual",
-      "label": "consome"
+      "label": "associado"
     },
     {
       "source": "dlo-rar-grupo-mensal",
@@ -828,7 +931,7 @@
     {
       "source": "dmo-party-identification",
       "target": "dmo-account",
-      "label": "vem de"
+      "label": "consome"
     },
     {
       "source": "dmo-rentabilidade-atual",
@@ -838,7 +941,7 @@
     {
       "source": "dmo-rentabilidade-atual",
       "target": "dmo-account",
-      "label": "vem de"
+      "label": "consome"
     },
     {
       "source": "dmo-rentabilidade-mensal",
@@ -848,7 +951,7 @@
     {
       "source": "dmo-rentabilidade-mensal",
       "target": "dmo-account",
-      "label": "vem de"
+      "label": "consome"
     },
     {
       "source": "fato-capital",
@@ -906,13 +1009,33 @@
       "label": "consome"
     },
     {
-      "source": "ingestao-capital-reg",
-      "target": "base-capital-regulatorio",
+      "source": "insight-variacao-rar",
+      "target": "dmo-rentabilidade-mensal",
       "label": "consome"
     },
     {
-      "source": "insight-variacao-rar",
-      "target": "dmo-rentabilidade-mensal",
+      "source": "job-001-jj",
+      "target": "bureau-neoway",
+      "label": "consome"
+    },
+    {
+      "source": "job-001-jj",
+      "target": "raw-neoway",
+      "label": "envia"
+    },
+    {
+      "source": "job-002-aaad",
+      "target": "dim-cliente",
+      "label": "envia"
+    },
+    {
+      "source": "job-002-aaad",
+      "target": "gold-rar-grupo",
+      "label": "envia"
+    },
+    {
+      "source": "job-002-aaad",
+      "target": "raw-psdc",
       "label": "consome"
     },
     {
@@ -946,11 +1069,6 @@
       "label": "consome"
     },
     {
-      "source": "raw-capital-reg",
-      "target": "ingestao-capital-reg",
-      "label": "consome"
-    },
-    {
       "source": "raw-custo-capital",
       "target": "staging-relacional",
       "label": "consome"
@@ -962,11 +1080,6 @@
     },
     {
       "source": "raw-gdad",
-      "target": "produto-dados-corporativo",
-      "label": "consome"
-    },
-    {
-      "source": "raw-psdc",
       "target": "produto-dados-corporativo",
       "label": "consome"
     },
@@ -1004,6 +1117,11 @@
       "source": "transp-rar-grupo",
       "target": "gold-rar-grupo",
       "label": "consome"
+    },
+    {
+      "source": "transp-rar-grupo-atual",
+      "target": "dlo-rar-grupo-atual",
+      "label": "associado"
     },
     {
       "source": "transp-rar-grupo-atual",
