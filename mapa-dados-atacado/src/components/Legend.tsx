@@ -228,7 +228,13 @@ export default function Legend({
           relação sem direção não tem ponta
         </li>
         <li className="legend__hint">
-          botão direito no nó = detalhes · clique fixa o destaque
+          botão direito no nó = detalhes · clique acumula o rastro
+        </li>
+        {/* O rastro é o único gesto do mapa que GUARDA estado entre cliques, e
+            por isso é o único que precisa dizer como se desfaz — senão a única
+            saída que o usuário descobre sozinho é recarregar a página. */}
+        <li className="legend__hint">
+          clicar de novo tira do rastro · fundo, Esc ou ✕ soltam tudo
         </li>
         {/* O gesto de borda não tem botão nem menu — a dica é o único lugar que
             o anuncia, junto com o cursor de alça que aparece ao passar por lá.

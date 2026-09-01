@@ -277,6 +277,47 @@
   cursor: default;
 }
 
+/* Contador do rastro fixado. Veste o mesmo azul do breadcrumb atual e do chip
+   ativo — é o mesmo assunto ("o que está em evidência agora") —, e não pisca
+   nem se anima: ele muda a cada clique do usuário e um destaque animado a cada
+   clique viraria ruído. */
+.focus-bar__rastro {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  padding: 0.1rem 0.3rem 0.1rem 0.1rem;
+  border: 1px solid rgba(127, 180, 232, 0.45);
+  border-radius: 6px;
+  background: rgba(127, 180, 232, 0.12);
+}
+
+.focus-bar__rastro .focus-bar__tag {
+  margin-right: 0;
+  border-color: rgba(127, 180, 232, 0.45);
+  color: #7fb4e8;
+}
+
+.focus-bar__rastro-conta {
+  font-size: 0.72rem;
+  color: #d8e6f4;
+  white-space: nowrap;
+}
+
+.focus-bar__rastro-limpar {
+  border: none;
+  background: none;
+  padding: 0 0.15rem;
+  font-size: 0.72rem;
+  line-height: 1;
+  color: #8fb8dd;
+  cursor: pointer;
+}
+
+.focus-bar__rastro-limpar:hover {
+  color: #f0f0f0;
+}
+
 .focus-bar__vista {
   display: flex;
   border: 1px solid #3a3a3a;

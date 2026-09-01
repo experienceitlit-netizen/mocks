@@ -82,19 +82,34 @@ interface GraphProps {
    *  que é da travessia (lineage.ts) e nunca do desenho: a ponta, quando
    *  existe, aponta sempre para o alvo DECLARADO. */
   verbos: readonly VerboDef[]
-  /** Conjunto final de nós esmaecidos (hover + filtros, calculado no App). */
+  /** Nós ESMAECIDOS pelos filtros (calculado no App). Continuam na tela, no
+   *  lugar deles, dizendo que existem mas não são o assunto. */
   dimmedIds: ReadonlySet<string>
-  /** false esconde todas as arestas, menos as do nó em destaque (hover, clique
-   *  fixado ou balão aberto) — visão limpa sem perder a relação sob análise. */
+  /** Nós fora do PRIMEIRO NÍVEL do destaque, também esmaecidos. Continuam
+   *  desenhados como qualquer outro: o destaque nunca tira ninguém do mapa —
+   *  senão não haveria como mirar no vizinho seguinte, e o mapa piscaria a cada
+   *  vez que o cursor cruzasse o vazio entre dois nós. Vem separado de
+   *  `dimmedIds` porque as duas contas são independentes e se somam na tela
+   *  (ver vizinhanca-destacada.ts). Vazio = nada em destaque. */
+  foraDoDestaqueIds: ReadonlySet<string>
+  /** As ÂNCORAS do destaque: hover + rastro fixado + nó do balão, já filtradas
+   *  pela vista. É o conjunto que decide qual aresta aparece (a que encosta em
+   *  uma delas), qual embranquece, qual engrossa e qual ganha o rótulo do
+   *  verbo; e é quem marca o halo. Vazio = mapa em repouso. */
+  ancorasIds: ReadonlySet<string>
+  /** "Mostrar ligações" — vale EM REPOUSO: ligado, a teia inteira; desligado,
+   *  o mapa fica só com os nós. Com destaque ativo quem manda é o primeiro
+   *  nível, nos dois casos (ver arestas-visiveis.ts). */
   ligacoesOn: boolean
   /** Slugs de verbo com o chip apagado na barra de foco: as arestas deles não
    *  são desenhadas, nem as do nó em destaque. Os NÓS não saem do mapa —
    *  esconder um tipo de ligação não é esconder quem ela liga. Ver
    *  arestas-visiveis.ts, onde a regra dos dois controles mora. */
   verbosOcultos: ReadonlySet<string>
-  hoverId: string | null
-  /** "Hover fixado" pelo clique esquerdo: mesmo visual do hover, persistente. */
-  pinnedId: string | null
+  /** O RASTRO: os nós fixados pelo clique esquerdo, acumulados. Só é lido pelo
+   *  gesto de redimensionar — para o destaque, eles já vêm dentro de
+   *  `ancorasIds`, junto com o hover e o nó do balão. */
+  pinnedIds: ReadonlySet<string>
   selectedId: string | null
   /** Nó a centralizar quando a física estabilizar (seleção vinda da URL). */
   initialFocusId: string | null
@@ -234,10 +249,11 @@ export default function Graph({
   degreeById,
   verbos,
   dimmedIds,
+  foraDoDestaqueIds,
+  ancorasIds,
   ligacoesOn,
   verbosOcultos,
-  hoverId,
-  pinnedId,
+  pinnedIds,
   selectedId,
   initialFocusId,
   fixedLayout,
@@ -359,10 +375,15 @@ export default function Graph({
    *  move, então o gesto está livre. No modo Força, só o nó EM EVIDÊNCIA
    *  (balão aberto ou destaque fixado no clique) — no resto do mapa o arraste
    *  continua sendo o de reposicionar, e não faria sentido roubar a borda de
-   *  todo nó do grafo para um gesto que interessa a um de cada vez. */
+   *  todo nó do grafo para um gesto que interessa a um de cada vez.
+   *
+   *  O rastro entra inteiro — cada nó fixado é um nó em evidência —, mas o
+   *  HOVER não: a alça vive na borda do nó, e dar borda de arraste a todo nó
+   *  que o cursor encosta é roubar o gesto de reposicionar do mapa todo. */
   const podeRedimensionar = useCallback(
-    (node: SimNode) => fixedLayout || node.id === selectedId || node.id === pinnedId,
-    [fixedLayout, selectedId, pinnedId],
+    (node: SimNode) =>
+      fixedLayout || node.id === selectedId || pinnedIds.has(node.id),
+    [fixedLayout, selectedId, pinnedIds],
   )
 
   /** Ponto do cursor na origem do canvas (a mesma de graph2ScreenCoords). */
@@ -1007,7 +1028,13 @@ export default function Graph({
       const y = node.y ?? 0
       const r = raioDe(node)
       const extent = extentDoNo(node, r)
-      const dimmed = dimmedIds.has(node.id)
+      // As DUAS contas de esmaecimento se somam aqui, e só aqui: o filtro
+      // ("isto me interessa?") e o destaque ("estou olhando aqui"). São
+      // independentes até este ponto de propósito — um conjunto só não saberia
+      // dizer por que o nó recuou, e o destaque acabava tendo de anular o
+      // filtro. Na tinta as duas dão no mesmo, e é o que se quer: TODO nó
+      // continua desenhado, no lugar dele; nenhum sai do mapa.
+      const dimmed = dimmedIds.has(node.id) || foraDoDestaqueIds.has(node.id)
       const produto = ehProdutoDeDados(node)
       ctx.globalAlpha = dimmed ? DIM_ALPHA : 1
 
@@ -1068,8 +1095,10 @@ export default function Graph({
         if (glifoVisivel(r, scale)) drawGlifo(ctx, tipoComponenteDe(node), x, y, r)
       }
 
-      // Halo: seleção (balão) forte; hover e "hover fixado" com o mesmo traço.
-      if (node.id === selectedId || node.id === hoverId || node.id === pinnedId) {
+      // Halo em toda ÂNCORA (hover, nó do rastro, balão): é o que marca no
+      // próprio mapa quais componentes o usuário fixou — o contador da barra dá
+      // o tamanho do rastro, e os halos dizem onde ele passou.
+      if (ancorasIds.has(node.id)) {
         ctx.beginPath()
         ctx.arc(x, y, raioHalo(extent, scale), 0, 2 * Math.PI)
         ctx.strokeStyle =
@@ -1121,7 +1150,7 @@ export default function Graph({
         drawBordaAtiva(node, ctx, scale, r, borda.theta, null)
       }
     },
-    [raioDe, dimmedIds, hoverId, pinnedId, selectedId, drawBordaAtiva],
+    [raioDe, dimmedIds, foraDoDestaqueIds, ancorasIds, selectedId, drawBordaAtiva],
   )
 
   const paintPointerArea = useCallback(
@@ -1135,28 +1164,28 @@ export default function Graph({
     [raioDe],
   )
 
-  // Arestas acesas do nó "ativo": hover momentâneo sobrepõe o fixado, que por
-  // sua vez sobrepõe o nó do balão.
-  const activeId = hoverId ?? pinnedId ?? selectedId
+  // O PRIMEIRO NÍVEL do destaque, do lado das arestas: a aresta em que alguma
+  // ÂNCORA é uma das duas pontas. Com o rastro acumulando, são as arestas de
+  // todos os nós fixados somadas às do nó sob o cursor — e é este mesmo
+  // conjunto que aparece, embranquece, engrossa e ganha o rótulo do verbo.
+  const temDestaque = ancorasIds.size > 0
   const linkTouchesActive = useCallback(
     (link: SimLink) =>
-      activeId !== null &&
-      (linkEndId(link.source) === activeId || linkEndId(link.target) === activeId),
-    [activeId],
+      ancorasIds.has(linkEndId(link.source)) || ancorasIds.has(linkEndId(link.target)),
+    [ancorasIds],
   )
 
-  // Com "Mostrar ligações" desligado o grafo fica só com os nós; as arestas
-  // do destaque atual continuam visíveis (mesma regra do esmaecimento: o que
-  // não está em dimmedIds é o que está em foco). O chip do verbo vem antes dos
-  // dois — a regra inteira, e o porquê da ordem, em arestas-visiveis.ts.
+  // Com destaque ativo, só as arestas do primeiro nível; em repouso, o que o
+  // "Mostrar ligações" disser. O chip do verbo vem antes dos dois — a regra
+  // inteira, e o porquê da ordem entre os três, em arestas-visiveis.ts.
   const linkVisible = useCallback(
     (link: SimLink) =>
       arestaVisivel(
-        { ligacoesOn, verbosOcultos, temDestaque: activeId !== null },
+        { ligacoesOn, verbosOcultos, temDestaque },
         linkLabel(link),
-        !dimmedIds.has(linkEndId(link.source)) && !dimmedIds.has(linkEndId(link.target)),
+        linkTouchesActive(link),
       ),
-    [ligacoesOn, verbosOcultos, activeId, dimmedIds],
+    [ligacoesOn, verbosOcultos, temDestaque, linkTouchesActive],
   )
 
   const linkColor = useCallback(
@@ -1211,12 +1240,13 @@ export default function Graph({
 
   // O VERBO ESCRITO SOBRE A ARESTA.
   //
-  // Escopo: só o PRIMEIRO NÍVEL de ligação do nó em destaque — as arestas em
-  // que ele é uma das duas pontas, que é exatamente `linkTouchesActive`, o mesmo
-  // conjunto que já embranquece (linkColor) e engrossa (linkWidth). Nada de
-  // fecho transitivo, nada de aresta entre dois vizinhos: se o nó ativo não é
-  // ponta, não há rótulo. Vale para os três jeitos de ativar, porque `activeId`
-  // já é hover ?? fixado ?? balão.
+  // Escopo: só o PRIMEIRO NÍVEL de ligação — as arestas em que alguma ÂNCORA é
+  // uma das duas pontas, que é exatamente `linkTouchesActive`, o mesmo conjunto
+  // que já embranquece (linkColor), engrossa (linkWidth) e, desde o destaque de
+  // primeiro nível, é o único que a lib chega a desenhar. Nada de fecho
+  // transitivo, nada de aresta entre dois vizinhos: se nenhuma âncora é ponta,
+  // não há rótulo. Vale para os três jeitos de ancorar, porque `ancorasIds` já
+  // é o rastro fixado + o hover + o nó do balão.
   //
   // Aqui TODO verbo aparece, `consome` inclusive — ao contrário do balão e da
   // Tabela, onde o padrão é omitido de propósito. Lá o rótulo estaria em toda
@@ -1249,7 +1279,7 @@ export default function Graph({
   // exatamente como estavam, porque nada aqui entra no passo das arestas.
   const drawLinkLabels = useCallback(
     (ctx: CanvasRenderingContext2D, scale: number) => {
-      if (activeId === null) return
+      if (!temDestaque) return
       ctx.save()
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
@@ -1298,7 +1328,7 @@ export default function Graph({
       }
       ctx.restore()
     },
-    [activeId, data, linkTouchesActive, linkVisible, verbos],
+    [temDestaque, data, linkTouchesActive, linkVisible, verbos],
   )
 
   return (

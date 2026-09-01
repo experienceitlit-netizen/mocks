@@ -36,6 +36,12 @@ import {
 import type { Alcance } from './components/lineage'
 import { ALCANCE_INICIAL, buildLineage, buildLineageTree, ehAlcance } from './components/lineage'
 import { comVerboAlternado } from './components/arestas-visiveis'
+import {
+  ancorasDoDestaque,
+  comNoAlternado,
+  foraDoDestaque,
+  umSoFixado,
+} from './components/vizinhanca-destacada'
 import { grausPorId } from './components/node-size'
 import CatalogForm from './components/CatalogForm'
 import type { FormTarget } from './components/CatalogForm'
@@ -254,9 +260,12 @@ function App() {
   const [aba, setAba] = useState<Aba>(readUrlAba)
   const [selectedId, setSelectedId] = useState<string | null>(readUrlSelection)
   const [hoverId, setHoverId] = useState<string | null>(null)
-  // "Hover fixado" pelo clique esquerdo: destaque persistente de nó+vizinhos
-  // (cadeia inteira na vista Níveis), sem balão e sem URL. Estado efêmero.
-  const [pinnedId, setPinnedId] = useState<string | null>(null)
+  // O RASTRO: os componentes fixados pelo clique esquerdo, ACUMULADOS. Cada
+  // clique acrescenta a vizinhança daquele nó ao que já está aceso (e um
+  // segundo clique no mesmo nó a retira), para percorrer uma trilha inteira sem
+  // perder o caminho andado. Sem balão e sem URL — estado efêmero da sessão.
+  const [pinnedIds, setPinnedIds] = useState<ReadonlySet<string>>(() => new Set())
+  const limparRastro = useCallback(() => setPinnedIds(new Set()), [])
   const [query, setQuery] = useState('')
   const [selDominios, setSelDominios] = useState<ReadonlySet<string>>(new Set())
   const [selDebitos, setSelDebitos] = useState<ReadonlySet<Debito>>(new Set())
@@ -405,8 +414,8 @@ function App() {
     setGrafoLocal(novo)
     setFocusPath([])
     setSelectedId(null)
-    setPinnedId(null)
-  }, [store])
+    limparRastro()
+  }, [store, limparRastro])
 
   // Save confirmado pelo form: re-busca as rows. Um save NÃO recarrega a
   // página (no dev server o graph.json novo chega por HMR preservando o estado
@@ -604,19 +613,28 @@ function App() {
     somenteProdutos ||
     normQuery.length > 0
 
+  // AS ÂNCORAS do destaque — o rastro fixado, o hover do instante e o nó do
+  // balão, somados —, e o que fica FORA do primeiro nível delas. Ninguém sai da
+  // tela: o que está fora esmaece. Ver vizinhanca-destacada.ts, onde a regra e
+  // o porquê moram.
+  const ancorasIds = useMemo(
+    () => ancorasDoDestaque(hoverId, pinnedIds, selectedId, shownIds),
+    [hoverId, pinnedIds, selectedId, shownIds],
+  )
+
+  const foraDoDestaqueIds = useMemo(
+    () => foraDoDestaque(ancorasIds, neighborsById, shownIds),
+    [ancorasIds, neighborsById, shownIds],
+  )
+
+  // ESMAECIDOS POR FILTRO: só o que os FILTROS dizem, e nada mais.
+  //
+  // O destaque não entra aqui. Eram dois conceitos no mesmo conjunto, e o preço
+  // era o destaque ter de ANULAR o filtro enquanto valesse — um conjunto só não
+  // sabe dizer se um id está nele por não interessar ou por estar longe do que
+  // se está olhando. Separados, os dois convivem: dentro da vizinhança acesa,
+  // quem não passa no filtro continua esmaecido como sempre esteve.
   const dimmedIds = useMemo(() => {
-    // Hover tem prioridade: acende o nó + vizinhos (na vista em níveis, a
-    // cadeia inteira de ancestrais/descendentes) e esmaece todo o resto.
-    // Depois vêm o "hover fixado" (clique esquerdo) e a seleção (balão) —
-    // um hover momentâneo em outro nó sobrepõe e, ao sair, o fixado volta.
-    const persistentId = pinnedId ?? selectedId
-    const highlightId = hoverId ?? (persistentId && shownIds.has(persistentId) ? persistentId : null)
-    if (highlightId) {
-      const lit = lineage
-        ? lineage.chainOf(highlightId)
-        : new Set([highlightId, ...(neighborsById.get(highlightId) ?? [])])
-      return new Set([...shownIds].filter((id) => !lit.has(id)))
-    }
     if (!hasActiveFilter) return new Set<string>()
     const matchIds = new Set(searchMatches.map((n) => n.id))
     return new Set(
@@ -639,11 +657,6 @@ function App() {
   }, [
     shownIds,
     nodesById,
-    hoverId,
-    pinnedId,
-    selectedId,
-    neighborsById,
-    lineage,
     hasActiveFilter,
     normQuery,
     searchMatches,
@@ -656,8 +669,10 @@ function App() {
 
   const select = useCallback((id: string | null, focus = false) => {
     setSelectedId(id)
-    // A seleção assume o destaque persistente: o "hover fixado" anterior sai.
-    if (id) setPinnedId(null)
+    // O rastro NÃO é desfeito aqui. Abrir o balão para ler os detalhes de um
+    // componente é parte de percorrer a trilha, não o fim dela — o nó do balão
+    // vira só mais uma âncora, ao lado das fixadas. Zerar o rastro é gesto
+    // explícito: o clique no fundo, o Esc ou o ✕ da barra.
     if (id && focus) graphRef.current?.focusNode(id)
   }, [])
 
@@ -743,18 +758,20 @@ function App() {
       const now = performance.now()
       const isDouble = lastClickRef.current.id === id && now - lastClickRef.current.t < DBLCLICK_MS
       lastClickRef.current = { id, t: now }
-      // Clique esquerdo simples fixa o destaque de hover (toggle no mesmo nó,
-      // re-fixa em outro) — sem balão, sem URL. Duplo clique entra em foco
-      // (ou re-foca, empilhando no breadcrumb); o foco já isola a vizinhança,
-      // então o fixado é dispensado. O balão fica com o clique direito.
+      // Clique esquerdo simples ACRESCENTA o nó ao rastro — a vizinhança dele
+      // soma à que já está acesa —, e um segundo clique no mesmo nó a retira.
+      // Sem balão, sem URL. Duplo clique entra em foco (ou re-foca, empilhando
+      // no breadcrumb); o foco troca a vista inteira, e um rastro montado na
+      // vista anterior não diz nada na nova, então ele é solto. O balão fica
+      // com o clique direito.
       if (isDouble) {
-        setPinnedId(null)
+        limparRastro()
         focusOn(id)
         return
       }
-      setPinnedId((prev) => (prev === id ? null : id))
+      setPinnedIds((prev) => comNoAlternado(prev, id))
     },
-    [focusOn],
+    [focusOn, limparRastro],
   )
 
   // Clique direito: abre o balão de detalhe (a antiga ação do esquerdo).
@@ -835,7 +852,7 @@ function App() {
           // sumido são descartados pelo efeito sobre nodesById.
           setExclusaoPendente(null)
           setSelectedId(null)
-          setPinnedId(null)
+          limparRastro()
           refreshCatalogo()
         } else {
           falhar(res.errors.join(' · '))
@@ -846,7 +863,7 @@ function App() {
         setExcluindo(false)
       }
     },
-    [store, catalogRows, verbos, refreshCatalogo],
+    [store, catalogRows, verbos, refreshCatalogo, limparRastro],
   )
 
   // Handlers globais leem o estado por ref (o listener é registrado uma vez).
@@ -856,7 +873,15 @@ function App() {
     // um dos modais de vocabulário ou a tabela na tela, a tecla não é do mapa.
     if (catalogForm !== null || niveisOpen || verbosOpen || aba !== 'mapa') return
     if (ehCampoDeTexto(document.activeElement)) return
-    const alvo = alvoDoAtalho({ selectedId, pinnedId, nodesById, rows: catalogRows })
+    // O rastro só serve de alvo quando tem UM componente: com a trilha
+    // acumulada não existe "o componente em evidência", e escolher pela ordem
+    // dos cliques seria apagar uma linha do catálogo por acaso (umSoFixado).
+    const alvo = alvoDoAtalho({
+      selectedId,
+      pinnedId: umSoFixado(pinnedIds),
+      nodesById,
+      rows: catalogRows,
+    })
     if (alvo === null) return
     e.preventDefault()
     select(alvo.id) // abre o balão do alvo (e assume o destaque do fixado)
@@ -876,7 +901,7 @@ function App() {
   }
 
   // Esc em estágios: cancela a exclusão pendente, senão o formulário de edição,
-  // senão fecha o balão, senão desfixa o destaque, senão sai do foco. Na aba
+  // senão fecha o balão, senão SOLTA O RASTRO INTEIRO, senão sai do foco. Na aba
   // Tabela, volta ao mapa (o estado do mapa é invisível ali — não mexe nele).
   // Handlers globais leem o estado via ref (registro único).
   const escRef = useRef(() => {})
@@ -887,7 +912,10 @@ function App() {
     else if (verbosOpen) setVerbosOpen(false)
     else if (aba === 'tabela') setAba('mapa')
     else if (selectedId) setSelectedId(null)
-    else if (pinnedId) setPinnedId(null)
+    // O rastro sai de uma vez, não um nó por Esc: ele é UMA leitura montada, e
+    // desmontá-la clique a clique invertida seria um estágio que nunca acaba.
+    // Quem quer tirar só um passo tem o segundo clique naquele nó.
+    else if (pinnedIds.size > 0) limparRastro()
     else if (focusId) exitFocus()
   }
 
@@ -896,7 +924,7 @@ function App() {
       const id = readUrlSelection()
       setAba(readUrlAba())
       setSelectedId(id)
-      setPinnedId(null)
+      setPinnedIds(new Set())
       setFocusPath(readInitialFocusPath())
       setDepth(readUrlDepth())
       setVista(readUrlVista())
@@ -997,8 +1025,9 @@ function App() {
         degreeById={degreeById}
         verbos={verbos}
         dimmedIds={dimmedIds}
-        hoverId={hoverId}
-        pinnedId={pinnedId}
+        foraDoDestaqueIds={foraDoDestaqueIds}
+        ancorasIds={ancorasIds}
+        pinnedIds={pinnedIds}
         selectedId={selectedId}
         initialFocusId={initialFocusId}
         fixedLayout={lineage !== null}
@@ -1017,9 +1046,13 @@ function App() {
         onNodeClick={handleNodeClick}
         onNodeRightClick={handleNodeRightClick}
         onNodeHover={setHoverId}
+        // Clique no fundo: solta TUDO — o balão e o rastro inteiro. É o gesto
+        // de "sair do assunto" que o mapa já tinha, e por isso ele é o jeito
+        // natural de zerar o acúmulo: o usuário já o conhece, e ele fica
+        // sempre a um clique de distância, em qualquer ponto vazio da tela.
         onBackgroundClick={() => {
           setSelectedId(null)
-          setPinnedId(null)
+          limparRastro()
         }}
       />
 
@@ -1129,6 +1162,8 @@ function App() {
           ligacoesOn={ligacoesOn}
           verbos={verbos}
           verbosOcultos={verbosOcultos}
+          rastro={pinnedIds.size}
+          onLimparRastro={limparRastro}
           onCrumbClick={(i) => setFocusPath((path) => path.slice(0, i + 1))}
           onDepthChange={setDepth}
           onVistaChange={setVista}

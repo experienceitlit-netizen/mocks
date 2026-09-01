@@ -1,7 +1,7 @@
-// Barra do modo foco: breadcrumb do caminho navegado, switch de vista
-// (Níveis, a linhagem completa em colunas, ou Força, a vizinhança com slider
-// de profundidade 1–3), o ALCANCE do foco, os chips por tipo de ligação e a
-// saída para o mapa completo.
+// Barra do modo foco: breadcrumb do caminho navegado, o contador do RASTRO
+// fixado, switch de vista (Níveis, a linhagem completa em colunas, ou Força, a
+// vizinhança com slider de profundidade 1–3), o ALCANCE do foco, os chips por
+// tipo de ligação e a saída para o mapa completo.
 //
 // Os dois controles novos são vizinhos de propósito — e ficam AQUI, e não no
 // painel de filtros, porque a pergunta que os trouxe é "dentro do foco":
@@ -57,8 +57,13 @@ interface FocusBarProps {
   verbos: readonly VerboDef[]
   /** Slugs com o chip apagado (ver arestas-visiveis.ts). */
   verbosOcultos: ReadonlySet<string>
+  /** Quantos componentes estão FIXADOS no rastro (ver vizinhanca-destacada.ts).
+   *  0 = nenhum, e o contador nem aparece. */
+  rastro: number
   /** Clique num item do breadcrumb: volta o foco àquele nó (trunca o caminho). */
   onCrumbClick(index: number): void
+  /** Solta o rastro inteiro — o mesmo que o clique no fundo e o Esc fazem. */
+  onLimparRastro(): void
   onDepthChange(depth: number): void
   onVistaChange(vista: Vista): void
   onAlcanceChange(alcance: Alcance): void
@@ -78,7 +83,9 @@ export default function FocusBar({
   ligacoesOn,
   verbos,
   verbosOcultos,
+  rastro,
   onCrumbClick,
+  onLimparRastro,
   onDepthChange,
   onVistaChange,
   onAlcanceChange,
@@ -112,6 +119,33 @@ export default function FocusBar({
           </Fragment>
         ))}
       </nav>
+
+      {/* O RASTRO acumulado pelo clique. Fica ao lado do breadcrumb porque é a
+          mesma pergunta ("onde eu estou no mapa"), e aparece só quando existe:
+          uma caixa vazia permanente ensinaria o gesto ao custo de ocupar a
+          barra o tempo todo. Sem o contador o usuário perde a conta do que está
+          vendo — dois nós fixados e sete são leituras muito diferentes, e o
+          mapa sozinho não diz quantos são. O ✕ é o terceiro jeito de soltar
+          (junto do clique no fundo e do Esc): é o único que está À VISTA, e
+          quem acabou de descobrir que o clique acumula descobre no mesmo lugar
+          como desfazer. */}
+      {rastro > 0 && (
+        <div className="focus-bar__rastro">
+          <span className="focus-bar__tag">Rastro</span>
+          <span className="focus-bar__rastro-conta">
+            {rastro} {rastro === 1 ? 'componente' : 'componentes'}
+          </span>
+          <button
+            type="button"
+            className="focus-bar__rastro-limpar"
+            onClick={onLimparRastro}
+            title="Soltar o rastro (o mesmo que clicar no fundo do mapa ou apertar Esc)"
+            aria-label="Soltar o rastro"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="focus-bar__vista" role="group" aria-label="Tipo de vista">
         <button
@@ -166,7 +200,7 @@ export default function FocusBar({
 
       <label
         className="focus-bar__bands"
-        title="Mostrar as setas entre os componentes; desligado, só as do nó em destaque aparecem"
+        title="Mostrar as setas entre os componentes quando nada está em destaque; com o mouse ou o clique num nó, só as dele aparecem de qualquer jeito"
       >
         <input type="checkbox" checked={ligacoesOn} onChange={onToggleLigacoes} />
         Mostrar ligações

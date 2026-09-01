@@ -138,7 +138,7 @@ export default function Filters({
 
       <label
         className="filters__toggle"
-        title="Mostrar as setas entre os componentes; desligado, só as do nó em destaque aparecem"
+        title="Mostrar as setas entre os componentes quando nada está em destaque; com o mouse ou o clique num nó, só as dele aparecem de qualquer jeito"
       >
         <input type="checkbox" checked={ligacoesOn} onChange={onToggleLigacoes} />
         Mostrar ligações

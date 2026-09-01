@@ -107,7 +107,15 @@ export interface Lineage {
   columns: LineageColumn[]
   /** Ids de tudo que a vista exibe (para esmaecimento por filtro/hover). */
   ids: ReadonlySet<string>
-  /** Cadeia completa do nó (montante + jusante), para destacar no hover. */
+  /** Cadeia completa do nó (montante + jusante) sobre as arestas da vista.
+   *
+   *  FORA DE USO na tela desde que o destaque passou a ir só até o primeiro
+   *  nível (vizinhanca-destacada.ts): o hover deixou de acender a cadeia
+   *  inteira, e o que percorre a cadeia hoje é o RASTRO — o usuário fixa um nó
+   *  por vez e monta o caminho que quer, em vez de o mapa acender todo o fecho
+   *  de uma vez. Continua aqui, e testada, porque responde a uma pergunta que
+   *  o mapa ainda não tem como responder de outro jeito ("até onde este
+   *  componente chega", ver Pendências no CONTINUAR.md). */
   chainOf(id: string): Set<string>
 }
 
